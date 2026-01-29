@@ -47,7 +47,7 @@ export default function ProtectedPageWrapper({ children }: { children: React.Rea
         
         {/* Background Detail: Industrial Grid Pattern */}
         <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
-             style={{ backgroundImage: `radial-gradient(circle, hsl(var(--primary)) 1px, transparent 1px)`, size: '30px 30px' }} />
+             style={{ backgroundImage: `radial-gradient(circle, hsl(var(--primary)) 1px, transparent 1px)`, backgroundSize: '30px 30px' }} />
 
         <div className="w-full max-w-[350px] space-y-10 z-10">
           
