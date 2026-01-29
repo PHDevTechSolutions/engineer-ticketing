@@ -139,7 +139,7 @@ export function LoginForm({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password" name="password" className="text-xs font-bold uppercase text-muted-foreground/70 tracking-widest">Password</Label>
+                <Label htmlFor="password" className="text-xs font-bold uppercase text-muted-foreground/70 tracking-widest">Password</Label>
                 <div className="relative group">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
                   <Input
