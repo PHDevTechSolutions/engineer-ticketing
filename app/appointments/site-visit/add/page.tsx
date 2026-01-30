@@ -79,7 +79,7 @@ export default function SalesAddAppointmentPage() {
 
   // Logic to show the "Specify Requirement" input
   const isOthersSelected = selectedTypes.includes("others") || 
-    selectedTypes.some(id => options.find(o => o.id === id)?.label.toLowerCase() === "others");
+    selectedTypes.some((id: string) => options.find(o => o.id === id)?.label.toLowerCase() === "others");
 
   const isOthersValid = isOthersSelected ? otherText.trim().length > 0 : true
   const canSubmit = selectedTypes.length > 0 && isOthersValid
