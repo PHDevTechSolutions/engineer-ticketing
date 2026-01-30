@@ -87,7 +87,6 @@ export default function SiteVisitListPage() {
             title="Registry" 
             version="Site_Visits" 
             showBackButton={true}
-            backPath="/dashboard"
           >
             <div className="flex items-center gap-3">
                {!isLoading && isSales && (
