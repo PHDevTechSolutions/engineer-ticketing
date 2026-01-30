@@ -8,16 +8,16 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { Label } from "@/components/ui/label"
-import { 
-  Mail, 
-  Lock, 
-  ArrowRight, 
-  Eye, 
-  EyeOff, 
-  Fingerprint, 
+import {
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  Fingerprint,
   Grid3X3,
-  ShieldCheck
-} from "lucide-react" 
+  ShieldCheck,
+  AlertTriangle
+} from "lucide-react"
 import { v4 as uuidv4 } from "uuid";
 
 export function LoginForm({
@@ -30,6 +30,10 @@ export function LoginForm({
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [showOverlay, setShowOverlay] = useState(false)
+
+  // State to hold the API error message
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
   const router = useRouter()
 
   function getDeviceId() {
@@ -58,11 +62,14 @@ export function LoginForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage(null); // Clear previous errors on new attempt
     const deviceId = getDeviceId();
+
     if (!email || !password) {
-      toast.error("All fields are required!");
+      setErrorMessage("Email and Password are required.");
       return;
     }
+
     setLoading(true);
     try {
       const response = await fetch("/api/login", {
@@ -70,16 +77,20 @@ export function LoginForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ Email: email, Password: password, deviceId }),
       });
+
       const result = await response.json();
+
       if (response.ok) {
         localStorage.setItem("userId", result.userId);
-        localStorage.setItem("token", result.token);
+        localStorage.setItem("userName", result.Username);
         setShowOverlay(true);
       } else {
-        toast.error(result.message || "Login failed!");
+        // This captures "Invalid credentials", "Access denied", etc., from your handler
+        setErrorMessage(result.message || "An unexpected error occurred.");
+        toast.error(result.message || "Login failed");
       }
     } catch (error) {
-      toast.error("An error occurred!");
+      setErrorMessage("System Connection Error. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -87,27 +98,28 @@ export function LoginForm({
 
   return (
     <div className={cn("min-h-screen w-full flex bg-background", className)} {...props}>
-      
-      {/* LEFT SIDE: THE FORM AREA */}
-      <div className="flex-[1] flex flex-col justify-center items-center px-6 md:px-12 lg:px-20 z-10 bg-background relative">
-        
-        {/* Progress Overlay (Mobile & Desktop) */}
-        {showOverlay && (
-          <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background/95 backdrop-blur-md">
-            <div className="w-full max-w-[280px] space-y-6 text-center">
-              <ShieldCheck className="h-16 w-16 text-primary mx-auto animate-pulse" />
-              <h2 className="text-xl font-bold tracking-tight">Authorizing...</h2>
-              <Progress value={progress} className="h-1.5 w-full" />
-            </div>
-          </div>
-        )}
 
+      {showOverlay && (
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background/95 backdrop-blur-md">
+          <div className="w-full max-w-[280px] space-y-6 text-center">
+            <ShieldCheck className="h-16 w-16 text-primary mx-auto animate-pulse" />
+            <h2 className="text-xl font-bold tracking-tight uppercase">Authorizing...</h2>
+            <Progress value={progress} className="h-1.5 w-full" />
+          </div>
+        </div>
+      )}
+
+      <div className="flex-[1] flex flex-col justify-center items-center px-6 md:px-12 lg:px-20 z-10 bg-background relative">
         <div className="w-full max-w-[400px] space-y-8">
-          {/* Logo & Header */}
           <div className="space-y-4">
             <div className="flex items-center gap-3">
-              <div className="bg-primary p-2 rounded-lg">
-                <Lock className="text-primary-foreground h-6 w-6" />
+              <div className="bg-primary p-1 rounded-lg">
+                <img
+                  src="/disruptive.png" // Replace with your engineering background path
+                  alt="Engineering Background"
+                  className="h-12 w-12 object-cover"
+                />
+                {/* <Lock className="text-primary-foreground h-6 w-6" /> */}
               </div>
               <div>
                 <h1 className="text-xl font-black uppercase tracking-tighter leading-none">Disruptive</h1>
@@ -115,13 +127,25 @@ export function LoginForm({
               </div>
             </div>
             <div className="space-y-1">
-               <h2 className="text-3xl font-bold tracking-tight">Portal Access</h2>
-               <p className="text-muted-foreground text-sm">Sign in to manage your tickets and workspace.</p>
+              <h2 className="text-3xl font-bold tracking-tight">Portal Access</h2>
+              <p className="text-muted-foreground text-sm">Sign in to manage your tickets and workspace.</p>
             </div>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-4">
+
+              {/* ERROR MESSAGE DISPLAY */}
+              {errorMessage && (
+                <div className="flex items-center gap-3 p-4 bg-destructive/10 border-l-4 border-destructive rounded-r-xl animate-in fade-in slide-in-from-top-2">
+                  <AlertTriangle className="h-5 w-5 text-destructive" />
+                  <div>
+                    <p className="text-[10px] font-black uppercase text-destructive tracking-widest leading-none">Access Denied</p>
+                    <p className="text-xs font-bold text-destructive/80 mt-1">{errorMessage}</p>
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-xs font-bold uppercase text-muted-foreground/70 tracking-widest">Work Email</Label>
                 <div className="relative group">
@@ -133,7 +157,6 @@ export function LoginForm({
                     className="pl-10 h-14 rounded-xl border-2 border-muted bg-muted/20 focus-visible:ring-0 focus-visible:border-primary transition-all font-medium"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    required
                   />
                 </div>
               </div>
@@ -149,7 +172,6 @@ export function LoginForm({
                     className="pl-10 pr-12 h-14 rounded-xl border-2 border-muted bg-muted/20 focus-visible:ring-0 focus-visible:border-primary transition-all font-medium"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    required
                   />
                   <button
                     type="button"
@@ -162,9 +184,9 @@ export function LoginForm({
               </div>
             </div>
 
-            <Button 
-              type="submit" 
-              className="w-full h-14 rounded-xl text-md font-bold uppercase tracking-widest transition-all active:scale-[0.98] shadow-xl shadow-primary/20" 
+            <Button
+              type="submit"
+              className="w-full h-14 rounded-xl text-md font-bold uppercase tracking-widest transition-all active:scale-[0.98] shadow-xl shadow-primary/20"
               disabled={loading}
             >
               {loading ? "Verifying..." : "Login"}

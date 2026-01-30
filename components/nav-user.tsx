@@ -54,7 +54,7 @@ export function NavUser({ user }: NavUserProps) {
     sessionStorage.clear()
     localStorage.clear()
     toast.success("Successfully logged out!")
-    router.replace("auth/login")
+    router.replace("/auth/login");
   }
 
   // Account click with overlay, toast, and redirect

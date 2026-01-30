@@ -28,10 +28,12 @@ export default async function handler(
     return res.status(401).json({ message: "Invalid credentials." });
   }
 
-  // 🔐 IT Department only
-  if (user.Department !== "IT") {
+  // 🔐 Access Control: IT, IT Sales, and Engineer only
+  const allowedDepartments = ["IT", "Sales", "Engineering"];
+
+  if (!allowedDepartments.includes(user.Department)) {
     return res.status(403).json({
-      message: "Access denied. Only IT Department accounts are allowed.",
+      message: "Access denied.",
     });
   }
 

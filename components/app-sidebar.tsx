@@ -20,8 +20,6 @@ import {
   CalendarDays,
   SquareTerminal,
   Settings2,
-  LifeBuoy,
-  ShieldCheck,
   ExternalLink,
   Users,
   Fingerprint,
@@ -44,6 +42,7 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
     profilePicture: "",
     ReferenceID: "",
     Position: "",
+    Department: "",
   })
 
   React.useEffect(() => {
@@ -63,6 +62,7 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
           profilePicture: data.profilePicture || "/avatars/default.jpg",
           ReferenceID: data.ReferenceID || "",
           Position: data.Position || "",
+          Department: data.Department || "",
         })
       } catch (error) {
         console.error("Failed to fetch user details:", error)
@@ -77,10 +77,9 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
     userId ? (url.includes("?") ? `${url}&userId=${userId}` : `${url}?userId=${userId}`) : url
 
   // ---------------------------------------------------------
-  // CORE NAVIGATION SECTIONS
+  // CORE NAVIGATION DEFINITIONS
   // ---------------------------------------------------------
   const NAV_ITEMS = {
-    // 1. App-to-App Bridge (The "Switchboard")
     bridge: {
       title: "App Ecosystem",
       url: "#",
@@ -91,7 +90,6 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
         { title: "API Gateway", url: appendUserId("/apps/gateway") },
       ],
     },
-    // 2. Appointment & Schedule Logic
     appointments: {
       title: "Appointment Logic",
       url: "#",
@@ -99,11 +97,12 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
       isActive: pathname?.startsWith("/appointments"),
       items: [
         { title: "Schedules & Slots", url: appendUserId("/appointments/slots") },
-        { title: "Booking Rules", url: appendUserId("/appointments/rules") },
+        { title: "Booking Rules", url: appendUserId("/admin/booking_rules") },
+        // ADMIN ONLY: Management of the selectable Assistance Types
+        { title: "Protocol Registry", url: appendUserId("/admin/protocols") },
         { title: "Notification Templates", url: appendUserId("/appointments/notifications") },
       ],
     },
-    // 3. User & Staff Management
     iam: {
       title: "User Management",
       url: "#",
@@ -115,7 +114,6 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
         { title: "Access Logs", url: appendUserId("/admin/logs") },
       ],
     },
-    // 4. Personal Account & Security
     personal: {
       title: "My Account",
       url: "#",
@@ -129,7 +127,6 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
     },
   }
 
-  // 5. Direct External/Linked Apps
   const PROJECTS = [
     { name: "Taskflow SMS", url: appendUserId("/taskflow"), icon: ExternalLink },
     { name: "Ecodesk Ticketing", url: appendUserId("/ecodesk"), icon: ExternalLink },
@@ -137,17 +134,22 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
   ]
 
   // ---------------------------------------------------------
-  // FILTER LOGIC (Based on User Position)
+  // FILTER LOGIC (Role-Based Access Control)
   // ---------------------------------------------------------
-  const position = userDetails.Position?.trim()
-  const hasFullAccess = ["IT Manager", "IT Senior Supervisor", "Senior Fullstack Developer"].includes(position)
+  const department = userDetails.Department?.trim()
+  
+  // Full Access Roles (IT + Engineering Management)
+  const hasFullAccess = [
+    "IT",
+    "Engineering"
+  ].includes(department)
 
   const getFilteredData = () => {
     if (isLoading) return { navMain: [], navSecondary: [], projects: [] }
     
-    // Everyone sees "My Account"
     const baseItems = [NAV_ITEMS.personal]
 
+    // 1. ADMIN / ENGINEERING MGMT VIEW
     if (hasFullAccess) {
       return {
         navMain: [NAV_ITEMS.bridge, NAV_ITEMS.appointments, NAV_ITEMS.iam, ...baseItems],
@@ -159,20 +161,36 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
       }
     }
 
-    // Role Specific
-    switch (position) {
+    // 2. ROLE-SPECIFIC VIEWS
+    switch (department) {
+      case "Sales":
+        return {
+          navMain: [
+            {
+              ...NAV_ITEMS.appointments,
+              // Sales can see logic but cannot modify the Registry Protocols
+              items: NAV_ITEMS.appointments.items.filter(i => i.title !== "Protocol Registry")
+            },
+            ...baseItems
+          ],
+          navSecondary: [],
+          projects: [PROJECTS[0]], // Only Taskflow
+        }
+
       case "IT Associate":
         return {
           navMain: [NAV_ITEMS.appointments, ...baseItems],
           navSecondary: [],
           projects: PROJECTS.filter(p => p.name !== "Acculog Attendance"),
         }
+
       case "Asset Supervisor":
         return {
-          navMain: [...baseItems],
+          navMain: baseItems,
           navSecondary: [],
-          projects: [PROJECTS[0]], // Only Taskflow
+          projects: [PROJECTS[0]],
         }
+
       default:
         return { navMain: baseItems, navSecondary: [], projects: [] }
     }
@@ -192,7 +210,9 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
                 </div>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-black uppercase tracking-tight">Engineer Portal</span>
-                  <span className="truncate text-xs opacity-60">Management Console</span>
+                  <span className="truncate text-xs opacity-60 font-bold italic tracking-tighter">
+                    {department || "System User"}
+                  </span>
                 </div>
               </button>
             </SidebarMenuButton>

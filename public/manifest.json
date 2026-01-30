@@ -1,0 +1,21 @@
+{
+  "name": "Disruptive Engineering Portal",
+  "short_name": "Disruptive",
+  "description": "Engineering Ticketing and Site Visit Management",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/icons/disruptive.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/disruptive.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
