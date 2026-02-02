@@ -1,59 +1,29 @@
 "use client"
 
 import * as React from "react"
+// ... (Previous icons)
 import { 
-  Plus, 
-  Settings2, 
-  Search, 
-  Terminal,
-  Activity,
-  Loader2,
-  Trash2,
-  Zap,
-  ShieldCheck,
-  Users
+  Plus, Settings2, Search, Terminal, Activity, Loader2, Trash2, Zap, ShieldCheck, Users 
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-// FIREBASE IMPORTS
+// FIREBASE
 import { db } from "@/lib/firebase";
 import { 
-  collection, 
-  addDoc, 
-  onSnapshot, 
-  query, 
-  orderBy,
-  doc,
-  updateDoc,
-  deleteDoc 
+  collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc, where 
 } from "firebase/firestore";
 
-// SHADCN COMPONENTS
+// SHADCN
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
-} from "@/components/ui/table"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-
-// CUSTOM COMPONENTS
 import { PageHeader } from "@/components/page-header"
 
+// --- MAIN PAGE COMPONENT ---
 export default function BookingRulesPage() {
   const [searchTerm, setSearchTerm] = React.useState("")
   const [isOpen, setIsOpen] = React.useState(false)
@@ -61,28 +31,18 @@ export default function BookingRulesPage() {
   const [loading, setLoading] = React.useState(true)
   const [selectedRule, setSelectedRule] = React.useState<any>(null)
 
-  // REAL-TIME DATABASE SYNC
   React.useEffect(() => {
     const q = query(collection(db, "booking_rules"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const ruleList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setRules(ruleList);
+      setRules(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setLoading(false);
     });
-
     return () => unsubscribe();
   }, []);
 
   const deleteRule = async (id: string) => {
     if (window.confirm("CRITICAL: Permanent deletion of assignment logic. Proceed?")) {
-      try {
-        await deleteDoc(doc(db, "booking_rules", id));
-      } catch (e) {
-        console.error("Delete error: ", e);
-      }
+      await deleteDoc(doc(db, "booking_rules", id));
     }
   };
 
@@ -98,49 +58,37 @@ export default function BookingRulesPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-background font-sans antialiased text-foreground pb-24 md:pb-0">
-      
       <PageHeader title="Assignment Logic" version="DSI-AUTH-v1.2">
-        <Dialog 
-          open={isOpen} 
-          onOpenChange={(val) => {
-            setIsOpen(val);
-            if(!val) setSelectedRule(null); 
-          }}
-        >
+        <Dialog open={isOpen} onOpenChange={(val) => { setIsOpen(val); if(!val) setSelectedRule(null); }}>
           <DialogTrigger asChild>
             <Button size="sm" className="hidden md:flex h-8 rounded-none bg-primary text-primary-foreground font-black uppercase italic text-[10px] tracking-widest px-4">
               <Plus className="size-3 mr-1" /> New_Rule
             </Button>
           </DialogTrigger>
-          <RuleModalContent 
-            setIsOpen={setIsOpen} 
-            initialData={selectedRule} 
-            onDelete={deleteRule} 
-          />
+          <RuleModalContent setIsOpen={setIsOpen} initialData={selectedRule} onDelete={deleteRule} />
         </Dialog>
       </PageHeader>
 
       <main className="flex flex-1 flex-col gap-4 md:gap-6 p-4 md:p-6 max-w-6xl mx-auto w-full relative">
-        
-        {/* --- SYSTEM STATUS BAR --- */}
+        {/* Status Bar Section */}
         <section className="grid grid-cols-2 md:grid-cols-4 gap-px bg-muted/30 border border-muted/30">
-            {[
-                { label: "Active_Rules", val: rules.length, icon: Zap },
-                { label: "Specialists", val: rules.filter(r => r.type === "specialist").length, icon: ShieldCheck },
-            ].map((stat, i) => (
-                <div key={i} className="bg-background p-3 md:p-4 flex flex-col gap-1">
-                    <div className="flex items-center gap-2 opacity-40">
-                        <stat.icon className="size-3" />
-                        <span className="text-[9px] font-black uppercase tracking-widest">{stat.label}</span>
-                    </div>
-                    <span className="text-xl md:text-2xl font-black italic tracking-tighter">
-                      {loading ? "--" : stat.val.toString().padStart(2, '0')}
-                    </span>
-                </div>
-            ))}
+          {[
+            { label: "Active_Rules", val: rules.length, icon: Zap },
+            { label: "Specialists", val: rules.filter(r => r.type === "specialist").length, icon: ShieldCheck },
+          ].map((stat, i) => (
+            <div key={i} className="bg-background p-3 md:p-4 flex flex-col gap-1">
+              <div className="flex items-center gap-2 opacity-40">
+                <stat.icon className="size-3" />
+                <span className="text-[9px] font-black uppercase tracking-widest">{stat.label}</span>
+              </div>
+              <span className="text-xl md:text-2xl font-black italic tracking-tighter">
+                {loading ? "--" : stat.val.toString().padStart(2, '0')}
+              </span>
+            </div>
+          ))}
         </section>
 
-        {/* --- SEARCH --- */}
+        {/* Search Input */}
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-primary opacity-50" />
           <Input 
@@ -151,65 +99,62 @@ export default function BookingRulesPage() {
           />
         </div>
 
-        {/* --- RULES TABLE --- */}
+        {/* Rules Table */}
         <div className="border-2 border-muted/50 bg-muted/5 overflow-hidden min-h-[400px]">
-            <div className="bg-muted/10 border-b-2 border-muted/50 p-2 flex items-center justify-between">
-                <span className="text-[9px] font-black uppercase tracking-[0.3em] px-2 opacity-50">Assignment_Registry</span>
-                {loading && <Loader2 className="size-3 animate-spin mr-2 opacity-50" />}
-            </div>
-            
-            <div className="hidden md:block">
-                <Table>
-                <TableHeader>
-                    <TableRow className="border-muted/50 hover:bg-transparent">
-                    <TableHead className="text-[10px] font-black uppercase tracking-widest py-4">Priority</TableHead>
-                    <TableHead className="text-[10px] font-black uppercase tracking-widest">Condition (Team/Keyword)</TableHead>
-                    <TableHead className="text-[10px] font-black uppercase tracking-widest">Assigned PIC</TableHead>
-                    <TableHead className="text-right"></TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {filteredRules.map((r) => (
-                    <TableRow key={r.id} className="group border-muted/20 hover:bg-primary/5 transition-colors">
-                        <TableCell>
-                          <Badge className={cn(
-                            "rounded-none text-[8px] font-black uppercase italic",
-                            r.type === 'specialist' ? "bg-amber-500 text-black" : "bg-primary text-primary-foreground"
-                          )}>
-                            {r.type}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm font-black uppercase italic tracking-tight">{r.condition}</span>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-[11px] font-mono font-bold text-primary">→ {r.assignedPIC}</span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                            <Button 
-                                onClick={() => openEditModal(r)} 
-                                variant="ghost" size="icon" 
-                                className="size-8 rounded-none text-primary"
-                            >
-                                <Settings2 className="size-4" />
-                            </Button>
-                        </TableCell>
-                    </TableRow>
-                    ))}
-                </TableBody>
-                </Table>
-            </div>
+          <div className="bg-muted/10 border-b-2 border-muted/50 p-2 flex items-center justify-between">
+            <span className="text-[9px] font-black uppercase tracking-[0.3em] px-2 opacity-50">Assignment_Registry</span>
+            {loading && <Loader2 className="size-3 animate-spin mr-2 opacity-50" />}
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow className="border-muted/50 hover:bg-transparent uppercase font-black text-[10px]">
+                <TableHead>Priority</TableHead>
+                <TableHead>Condition</TableHead>
+                <TableHead>Assigned PIC</TableHead>
+                <TableHead className="text-right"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredRules.map((r) => (
+                <TableRow key={r.id} className="group border-muted/20 hover:bg-primary/5 transition-colors">
+                  <TableCell>
+                    <Badge className={cn("rounded-none text-[8px] font-black uppercase", r.type === 'specialist' ? "bg-amber-500 text-black" : "bg-primary text-primary-foreground")}>
+                      {r.type}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-sm font-black uppercase italic tracking-tight">{r.condition}</TableCell>
+                  <TableCell className="text-[11px] font-mono font-bold text-primary">→ {r.assignedPIC}</TableCell>
+                  <TableCell className="text-right">
+                    <Button onClick={() => openEditModal(r)} variant="ghost" size="icon" className="size-8 rounded-none text-primary">
+                      <Settings2 className="size-4" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       </main>
     </div>
   )
 }
 
+// --- MODAL COMPONENT WITH PIC DROPDOWN ---
 function RuleModalContent({ setIsOpen, initialData, onDelete }: any) {
     const [type, setType] = React.useState("team")
     const [condition, setCondition] = React.useState("")
     const [assignedPIC, setAssignedPIC] = React.useState("")
     const [isSubmitting, setIsSubmitting] = React.useState(false)
+    const [staff, setStaff] = React.useState<any[]>([])
+
+    // Fetch Staff List (Filter for Engineering/Technical if needed)
+    React.useEffect(() => {
+      const q = query(collection(db, "staff"), orderBy("Firstname", "asc"));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        setStaff(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      });
+      return () => unsubscribe();
+    }, []);
 
     React.useEffect(() => {
       if (initialData) {
@@ -223,12 +168,11 @@ function RuleModalContent({ setIsOpen, initialData, onDelete }: any) {
       if (!condition || !assignedPIC) return;
       setIsSubmitting(true);
       try {
+        const payload = { type, condition, assignedPIC, updatedAt: new Date() };
         if (initialData) {
-          await updateDoc(doc(db, "booking_rules", initialData.id), { type, condition, assignedPIC });
+          await updateDoc(doc(db, "booking_rules", initialData.id), payload);
         } else {
-          await addDoc(collection(db, "booking_rules"), {
-            type, condition, assignedPIC, createdAt: new Date()
-          });
+          await addDoc(collection(db, "booking_rules"), { ...payload, createdAt: new Date() });
         }
         setIsOpen(false);
       } catch (e) { console.error(e); } finally { setIsSubmitting(false); }
@@ -254,6 +198,7 @@ function RuleModalContent({ setIsOpen, initialData, onDelete }: any) {
             </div>
             
             <div className="p-6 space-y-6">
+                {/* Logic Type Select */}
                 <div className="grid gap-2">
                     <Label className="text-[10px] font-black uppercase opacity-50 ml-1">Logic Priority</Label>
                     <Select value={type} onValueChange={setType}>
@@ -267,14 +212,33 @@ function RuleModalContent({ setIsOpen, initialData, onDelete }: any) {
                     </Select>
                 </div>
                 
+                {/* Condition Input */}
                 <div className="grid gap-2">
                     <Label className="text-[10px] font-black uppercase opacity-50 ml-1">Condition Name</Label>
                     <Input value={condition} onChange={(e) => setCondition(e.target.value)} placeholder="E.G. TEAM CHI OR DIALUX" className="h-11 rounded-none border-2 border-muted/50 uppercase font-mono text-xs" />
                 </div>
 
+                {/* --- UPDATED PIC DROPDOWN --- */}
                 <div className="grid gap-2">
-                    <Label className="text-[10px] font-black uppercase opacity-50 ml-1">Target PIC</Label>
-                    <Input value={assignedPIC} onChange={(e) => setAssignedPIC(e.target.value)} placeholder="ENGINEER NAME" className="h-11 rounded-none border-2 border-muted/50 uppercase font-mono text-xs" />
+                    <Label className="text-[10px] font-black uppercase opacity-50 ml-1">Assigned PIC (Staff List)</Label>
+                    <Select value={assignedPIC} onValueChange={setAssignedPIC}>
+                      <SelectTrigger className="h-11 rounded-none border-2 border-muted/50 font-mono text-xs uppercase">
+                        <SelectValue placeholder="SELECT ENGINEER..." />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-none border-2 border-primary/20 max-h-60">
+                        {staff.length === 0 ? (
+                          <div className="p-4 text-center text-[10px] uppercase font-bold opacity-30">No_Staff_Found</div>
+                        ) : staff.map((member) => (
+                          <SelectItem 
+                            key={member.id} 
+                            value={`${member.Firstname} ${member.Lastname}`}
+                            className="font-mono text-[10px] uppercase"
+                          >
+                            {member.Firstname} {member.Lastname}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                 </div>
             </div>
 

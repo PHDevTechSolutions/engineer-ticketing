@@ -1,6 +1,6 @@
-// /lib/firebase.ts
 import { initializeApp, getApps } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage"; // 1. Import the Storage getter
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -17,3 +17,6 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
 
 // Export Firestore DB instance
 export const db = getFirestore(app);
+
+// 2. Initialize and Export Storage instance
+export const storage = getStorage(app);

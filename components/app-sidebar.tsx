@@ -91,7 +91,7 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
       ],
     },
     appointments: {
-      title: "Appointment Logic",
+      title: "Appointment Config",
       url: "#",
       icon: CalendarDays,
       isActive: pathname?.startsWith("/appointments"),

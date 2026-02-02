@@ -1,20 +1,39 @@
 "use client"
 
 import * as React from "react"
-// Note: SidebarProvider is still needed if your ProtectedPageWrapper or other components depend on it, 
-// but we will not render the Sidebar or the Trigger here.
 import { SidebarProvider } from "@/components/ui/sidebar" 
 import ProtectedPageWrapper from "@/components/protected-page-wrapper"
 
 const AppointmentContext = React.createContext<any>(null);
 
 export default function AddAppointmentLayout({ children }: { children: React.ReactNode }) {
-  const [selectedAssistance, setSelectedAssistance] = React.useState<string[]>([]);
-  const [otherSpec, setOtherSpec] = React.useState("");
+  // Initialize state from localStorage if available
+  const [selectedAssistance, setSelectedAssistance] = React.useState<string[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("selected_assistance");
+      return saved ? JSON.parse(saved) : [];
+    }
+    return [];
+  });
+
+  const [otherSpec, setOtherSpec] = React.useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("other_spec") || "";
+    }
+    return "";
+  });
+
+  // Sync to localStorage whenever values change
+  React.useEffect(() => {
+    localStorage.setItem("selected_assistance", JSON.stringify(selectedAssistance));
+  }, [selectedAssistance]);
+
+  React.useEffect(() => {
+    localStorage.setItem("other_spec", otherSpec);
+  }, [otherSpec]);
 
   return (
     <ProtectedPageWrapper>
-      {/* We keep the provider so hooks don't break, but we don't render the AppSidebar */}
       <SidebarProvider defaultOpen={false}>
         <AppointmentContext.Provider value={{ selectedAssistance, setSelectedAssistance, otherSpec, setOtherSpec }}>
           <div className="flex-1 flex flex-col min-h-screen bg-background">
