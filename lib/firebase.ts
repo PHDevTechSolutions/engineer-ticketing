@@ -1,22 +1,40 @@
-import { initializeApp, getApps } from "firebase/app";
+import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage"; // 1. Import the Storage getter
+import { getStorage } from "firebase/storage";
 
-const firebaseConfig = {
+// --- MAIN PROJECT CONFIG ---
+const mainConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-// Initialize Firebase only once
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
+// --- LOGS PROJECT CONFIG ---
+const logsConfig = {
+  apiKey: process.env.NEXT_PUBLIC_LOGS_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_LOGS_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_LOGS_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_LOGS_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_LOGS_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_LOGS_FIREBASE_APP_ID,
+};
 
-// Export Firestore DB instance
-export const db = getFirestore(app);
+// 1. Initialize Main App (Default)
+const mainApp = !getApps().length ? initializeApp(mainConfig) : getApp();
 
-// 2. Initialize and Export Storage instance
-export const storage = getStorage(app);
+// 2. Initialize Logs App (Named "logsApp")
+const logsApp = !getApps().find(app => app.name === "logsApp") 
+  ? initializeApp(logsConfig, "logsApp") 
+  : getApp("logsApp");
+
+// --- EXPORTS ---
+
+// Main Exports
+export const db = getFirestore(mainApp);
+export const storage = getStorage(mainApp);
+
+// Logs Exports
+export const logsDb = getFirestore(logsApp);

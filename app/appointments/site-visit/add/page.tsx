@@ -14,9 +14,11 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
+// FIREBASE IMPORTS
 import { db } from "@/lib/firebase"
 import { collection, query, where, onSnapshot } from "firebase/firestore"
 
+// Shadcn UI Imports
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -38,6 +40,7 @@ export default function SalesAddAppointmentPage() {
   const [options, setOptions] = React.useState<any[]>([])
   const [loading, setLoading] = React.useState(true)
 
+  // FETCH PROTOCOLS + INJECT "OTHERS"
   React.useEffect(() => {
     const q = query(collection(db, "protocols"), where("isActive", "==", true));
     
@@ -48,11 +51,13 @@ export default function SalesAddAppointmentPage() {
         desc: doc.data().desc,
       }));
       
+      // Check if "Others" already exists in DB to avoid duplicates
       const hasOthersInDb = fetchedOptions.some(opt => opt.label.toLowerCase() === "others");
 
       if (!hasOthersInDb) {
+        // Manually push the "Others" protocol if not found in Firestore
         fetchedOptions.push({
-          id: "others",
+          id: "others", // Hardcoded ID for the manual option
           label: "Others",
           desc: "Any requirement not covered by standard protocols."
         });
@@ -65,17 +70,16 @@ export default function SalesAddAppointmentPage() {
     return () => unsubscribe();
   }, []);
 
-  // --- CHANGED: Passing the whole option to use the label ---
-  const toggleAssistance = (option: any) => {
-    const label = option.label;
-    setSelectedTypes(selectedTypes.includes(label) 
-      ? selectedTypes.filter((t: string) => t !== label) 
-      : [...selectedTypes, label]
+  const toggleAssistance = (id: string) => {
+    setSelectedTypes(selectedTypes.includes(id) 
+      ? selectedTypes.filter((t: string) => t !== id) 
+      : [...selectedTypes, id]
     )
   }
 
-  // --- CHANGED: Check logic to use label ---
-  const isOthersSelected = selectedTypes.some(t => t.toLowerCase() === "others");
+  // Logic to show the "Specify Requirement" input
+  const isOthersSelected = selectedTypes.includes("others") || 
+    selectedTypes.some(id => options.find(o => o.id === id)?.label.toLowerCase() === "others");
 
   const isOthersValid = isOthersSelected ? otherText.trim().length > 0 : true
   const canSubmit = selectedTypes.length > 0 && isOthersValid
@@ -116,12 +120,11 @@ export default function SalesAddAppointmentPage() {
                 </div>
               ) : (
                 options.map((option) => {
-                  // --- CHANGED: isActive now checks the label ---
-                  const isActive = selectedTypes.includes(option.label);
+                  const isActive = selectedTypes.includes(option.id);
                   return (
                     <div key={option.id} className="group relative">
                       <div 
-                        onClick={() => toggleAssistance(option)}
+                        onClick={() => toggleAssistance(option.id)}
                         className={cn(
                           "relative flex items-center p-4 border-2 transition-all cursor-pointer",
                           isActive ? "border-foreground bg-muted/20" : "border-muted/30 hover:border-muted-foreground/50"
@@ -159,6 +162,7 @@ export default function SalesAddAppointmentPage() {
               )}
             </div>
 
+            {/* Specify box appears if "Others" is selected */}
             {isOthersSelected && (
               <div className="mt-4 animate-in fade-in slide-in-from-top-2">
                 <div className="p-4 border-2 border-primary/40 bg-primary/5">
@@ -177,6 +181,7 @@ export default function SalesAddAppointmentPage() {
             )}
           </main>
 
+          {/* Fixed Footer */}
           <div className="fixed bottom-0 left-0 right-0 p-6 bg-background/80 backdrop-blur-md border-t-2 border-muted/20">
             <div className="max-w-2xl mx-auto flex justify-end">
                 <Tooltip>

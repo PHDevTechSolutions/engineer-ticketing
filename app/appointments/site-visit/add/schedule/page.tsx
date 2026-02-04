@@ -6,7 +6,7 @@ import { useAppointmentData } from "../layout"
 import { 
   Paperclip, Send, ChevronLeft, Layers, Navigation, Loader2,
   RefreshCw, ShieldCheck, X, User, AlertTriangle,
-  ChevronRight, CalendarDays, Info, ShieldAlert, Fingerprint,
+  ChevronRight, Info, ShieldAlert, Fingerprint,
   ClipboardList, MapPin
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -45,7 +45,7 @@ export default function SchedulePage() {
     address: "", 
     landmark: "",
     agenda: "",
-    notes: "", // RESTORED
+    notes: "", 
     tsa: "NOT_SET", 
     tsm: "NOT_SET"  
   });
@@ -63,7 +63,7 @@ export default function SchedulePage() {
     setSelectedDate(null);
   };
 
-  // --- SYNC PERSONNEL DATA ---
+  // --- SYNC PERSONNEL DATA BASED ON SELECTED SERVICES ---
   React.useEffect(() => {
     const q = query(collection(db, "protocols"), where("isActive", "==", true));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -75,7 +75,7 @@ export default function SchedulePage() {
       );
       setProtocolMetadata(matched);
       const uniquePics = Array.from(new Set(matched.flatMap(p => p.pic || []))) as string[];
-      const finalPics = uniquePics.length > 0 ? uniquePics : ["Patrick"];
+      const finalPics = uniquePics.length > 0 ? uniquePics : ["Staff"];
       setAssignedPics(finalPics);
       
       if (!selectedPic || !finalPics.includes(selectedPic)) {
@@ -89,12 +89,20 @@ export default function SchedulePage() {
     return () => unsubscribe();
   }, [selectedAssistance]);
 
-  // --- REAL-TIME BUSY SYNC ---
+  // --- FILTER CALENDAR BY SELECTED PIC ---
   React.useEffect(() => {
     if (!selectedPic) return;
     const start = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
     const end = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0);
-    const q = query(collection(db, "appointments"), where("pic", "==", selectedPic), where("appointmentDate", ">=", start), where("appointmentDate", "<=", end));
+    
+    // Query appointments ONLY for the selected individual
+    const q = query(
+      collection(db, "appointments"), 
+      where("pic", "==", selectedPic), 
+      where("appointmentDate", ">=", start), 
+      where("appointmentDate", "<=", end)
+    );
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const apps = snapshot.docs.map(doc => ({ 
         day: doc.data().appointmentDate.toDate().getDate(),
@@ -109,7 +117,7 @@ export default function SchedulePage() {
 
   const handlePicChange = (name: string) => {
     setSelectedPic(name);
-    setSelectedDate(null);
+    setSelectedDate(null); // Reset date when switching personnel to avoid accidental conflict
     const match = protocolMetadata.find(p => p.pic?.includes(name));
     if (match) setFormData(prev => ({ ...prev, tsa: match.tsa || "NOT_SET", tsm: match.tsm || "NOT_SET" }));
   };
@@ -158,60 +166,34 @@ export default function SchedulePage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground font-sans relative overflow-x-hidden">
-      {/* IMPROVED DETAILS MODAL */}
+      {/* CONFLICT MODAL */}
       {viewingDetails && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white border-[3px] border-black w-full max-w-md overflow-hidden shadow-[12px_12px_0px_0px_rgba(0,0,0,1)]">
-            <div className="bg-black p-4 flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <ShieldAlert className="size-4 text-red-500" />
-                <span className="text-white text-[10px] font-black uppercase tracking-[0.2em]">Conflict Insight</span>
-              </div>
-              <button onClick={() => setViewingDetails(null)} className="text-white/60 hover:text-white transition-colors">
-                <X className="size-5" />
-              </button>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-white border-[3px] border-black w-full max-w-md shadow-[12px_12px_0px_0px_rgba(0,0,0,1)]">
+            <div className="bg-black p-4 flex justify-between items-center text-white font-black uppercase tracking-widest text-[10px]">
+              <div className="flex items-center gap-2"><ShieldAlert className="size-4 text-red-500" /> CONFLICT DETECTED</div>
+              <button onClick={() => setViewingDetails(null)}><X className="size-5" /></button>
             </div>
-            
-            <div className="p-6 space-y-6">
-              <div className="flex items-start gap-4 pb-4 border-b-2 border-muted/20">
-                <div className="bg-red-50 p-3 border-2 border-red-100">
-                  <Fingerprint className="size-8 text-red-600" />
-                </div>
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-4 pb-4 border-b-2">
+                <div className="bg-red-50 p-2 border-2 border-red-100"><Fingerprint className="size-8 text-red-600" /></div>
                 <div>
-                  <h4 className="text-lg font-black uppercase leading-none italic">{selectedPic}</h4>
-                  <p className="text-[10px] font-mono opacity-50 mt-1 uppercase tracking-tighter">Current Assignment Found</p>
+                  <h4 className="text-lg font-black uppercase italic">{selectedPic}</h4>
+                  <p className="text-[9px] font-mono opacity-50 uppercase">Occupied on this date</p>
                 </div>
               </div>
-
-              <div className="grid grid-cols-1 gap-4">
-                <div className="space-y-1">
-                  <span className="text-[8px] font-black uppercase text-primary">Target Entity</span>
-                  <div className="bg-muted/30 p-3 border border-muted/50 font-mono text-xs font-bold uppercase">
-                    {viewingDetails.client}
-                  </div>
+              <div className="space-y-3">
+                <div className="bg-muted/30 p-3 border border-muted/50 font-mono text-xs uppercase font-bold">
+                  <span className="block text-[8px] opacity-40 mb-1 tracking-widest">Client</span>
+                  {viewingDetails.client}
                 </div>
-                <div className="space-y-1">
-                  <span className="text-[8px] font-black uppercase text-primary">Mission/Agenda</span>
-                  <div className="bg-muted/30 p-3 border border-muted/50 font-mono text-xs font-bold uppercase italic">
-                    {viewingDetails.agenda}
-                  </div>
+                <div className="bg-muted/30 p-3 border border-muted/50 font-mono text-xs uppercase italic">
+                  <span className="block text-[8px] opacity-40 mb-1 tracking-widest">Agenda</span>
+                  {viewingDetails.agenda}
                 </div>
-              </div>
-
-              <div className="bg-red-600/5 p-3 border border-red-600/20 flex gap-3 items-center">
-                <AlertTriangle className="size-4 text-red-600 shrink-0" />
-                <p className="text-[9px] font-bold text-red-900 leading-tight uppercase">
-                  Double booking prevented. Personnel is locked to the registry above.
-                </p>
               </div>
             </div>
-
-            <button 
-              onClick={() => setViewingDetails(null)} 
-              className="w-full bg-black text-white py-4 font-black uppercase text-[10px] tracking-[0.3em] hover:bg-zinc-800 transition-all flex items-center justify-center gap-2"
-            >
-              Acknowledge & Close
-            </button>
+            <button onClick={() => setViewingDetails(null)} className="w-full bg-black text-white py-4 font-black uppercase text-[10px] tracking-[0.3em] hover:bg-zinc-800 transition-all">Acknowledge & Close</button>
           </div>
         </div>
       )}
@@ -219,9 +201,7 @@ export default function SchedulePage() {
       {/* HEADER */}
       <header className="flex h-16 shrink-0 items-center px-4 border-b-2 border-muted/30 sticky top-0 bg-background z-20 justify-between">
         <div className="flex items-center">
-          <button onClick={() => router.back()} className="p-2 hover:bg-muted/50 rounded-sm mr-4 transition-colors">
-            <ChevronLeft className="size-5" />
-          </button>
+          <button onClick={() => router.back()} className="p-2 hover:bg-muted/50 rounded-sm mr-4 transition-colors"><ChevronLeft className="size-5" /></button>
           <div className="flex flex-col">
             <h2 className="text-[10px] font-black uppercase tracking-widest text-primary italic leading-none">Step 2: Logistics & Schedule</h2>
             <span className="text-[8px] font-mono opacity-40 uppercase mt-1">Registry_Linked</span>
@@ -234,7 +214,8 @@ export default function SchedulePage() {
       </header>
 
       <main className="p-4 md:p-8 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8 pb-32">
-        {/* LEFT COLUMN: FORM (RESTORED & IMPROVED) */}
+        
+        {/* LEFT COLUMN: FORM */}
         <div className="lg:col-span-5 space-y-6">
           <div className="space-y-2">
             <p className="text-[8px] font-black uppercase text-primary tracking-widest flex items-center gap-2"><Layers className="size-3" /> Selected Protocols</p>
@@ -255,14 +236,12 @@ export default function SchedulePage() {
             </div>
             <div className="flex flex-wrap gap-2">
               {assignedPics.map((name, i) => (
-                <button key={i} onClick={() => handlePicChange(name)} className={cn("flex-1 text-[11px] font-black uppercase px-4 py-2 border-2 transition-all", selectedPic === name ? "bg-black text-white border-black" : "bg-white border-muted/50")}>{name}</button>
+                <button key={i} onClick={() => handlePicChange(name)} className={cn("flex-1 text-[11px] font-black uppercase px-4 py-2 border-2 transition-all", selectedPic === name ? "bg-black text-white border-black" : "bg-white border-muted/50 hover:border-black/30")}>{name}</button>
               ))}
             </div>
           </section>
 
-          {/* FORM INPUTS */}
           <section className="space-y-6">
-            {/* CLIENT SECTION */}
             <div className="space-y-4">
                 <p className="text-[8px] font-black uppercase text-primary flex items-center gap-2 opacity-50"><ClipboardList className="size-3"/> Client Identification</p>
                 <div className="space-y-1">
@@ -273,14 +252,13 @@ export default function SchedulePage() {
                     <label className="text-[9px] font-black uppercase text-primary">Agenda/Scope</label>
                     <input className="w-full bg-white border-2 border-muted/50 p-3 text-xs uppercase font-mono outline-none focus:border-primary" placeholder="PURPOSE..." value={formData.agenda} onChange={e => setFormData({...formData, agenda: e.target.value})} />
                 </div>
-                {/* RESTORED NOTES FIELD */}
+                {/* NOTES FIELD RESTORED */}
                 <div className="space-y-1">
                     <label className="text-[9px] font-black uppercase text-primary">Notes or Instructions</label>
                     <textarea className="w-full bg-white border-2 border-muted/50 p-3 text-xs uppercase font-mono outline-none focus:border-primary" rows={3} placeholder="SPECIAL INSTRUCTIONS OR REMARKS..." value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
                 </div>
             </div>
 
-            {/* SITE SECTION */}
             <div className="space-y-4 pt-4 border-t-2 border-muted/10">
                 <p className="text-[8px] font-black uppercase text-primary flex items-center gap-2 opacity-50"><MapPin className="size-3"/> Geographical Data</p>
                 <div className="space-y-1">
@@ -324,7 +302,7 @@ export default function SchedulePage() {
             <div className="flex items-center justify-between mb-8">
               <div className="flex flex-col">
                 <h3 className="text-2xl font-black uppercase tracking-tighter italic leading-none">{monthLabel}</h3>
-                <span className="text-[8px] font-mono opacity-40 uppercase mt-1 tracking-[0.2em]">Deployment_Schedule</span>
+                <span className="text-[8px] font-mono opacity-40 uppercase mt-1 tracking-[0.2em]">Deployment_Schedule: {selectedPic}</span>
               </div>
               <div className="flex items-center gap-2 bg-muted/10 p-1 border-2 border-muted/20">
                 <button onClick={() => handleMonthChange(-1)} disabled={viewDate.getMonth() === today.getMonth() && viewDate.getFullYear() === today.getFullYear()} className="p-2 hover:bg-black hover:text-white transition-colors disabled:opacity-20"><ChevronLeft className="size-4" /></button>
@@ -399,7 +377,7 @@ export default function SchedulePage() {
             disabled={!isComplete || isSubmitting} 
             className={cn(
                 "h-16 px-10 rounded-full font-black uppercase text-xs tracking-widest border-4 border-background flex items-center gap-4 shadow-2xl transition-all", 
-                isComplete ? "bg-black text-white hover:bg-zinc-800" : "bg-muted text-muted-foreground opacity-50 cursor-not-allowed"
+                isComplete ? "bg-black text-white hover:bg-zinc-800 shadow-black/40" : "bg-muted text-muted-foreground opacity-50 cursor-not-allowed"
             )}
         >
           {isSubmitting ? "SYNCING..." : "INITIALIZE PROTOCOL"}
