@@ -34,13 +34,15 @@ type Ticket = {
   date_created: string;
 };
 
+type TicketSummary = Pick<Ticket, "ticket_id" | "date_created">;
+
 export function LoginForm({ className, ...props }: React.ComponentProps<"div">) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [isAuthorizing, setIsAuthorizing] = useState(false); // New State for integrated button loading
   const [progress, setProgress] = useState(0);
+  const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const [pendingLoginData, setPendingLoginData] = useState<any | null>(null);
@@ -48,8 +50,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
   const [showTicketDialog, setShowTicketDialog] = useState(false);
   const [remarks, setRemarks] = useState("");
   const [ticketSubmitting, setTicketSubmitting] = useState(false);
-  
-  const [existingTickets, setExistingTickets] = useState<Ticket[]>([]);
+  const [existingTickets, setExistingTickets] = useState<TicketSummary[]>([]);
 
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
@@ -104,8 +105,10 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
 
   const fetchTickets = useCallback(async () => {
     try {
-      const { data } = await supabase.from("tickets").select("ticket_id, date_created");
-      if (data) setExistingTickets(data as Ticket[]);
+      const { data, error } = await supabase.from("tickets").select("ticket_id, date_created");
+      if (data && !error) {
+        setExistingTickets(data as TicketSummary[]);
+      }
     } catch (e) {
       console.error("Supabase fetch failed", e);
     }
@@ -138,6 +141,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
       toast.success("Ticket submitted successfully.");
       setRemarks("");
       setShowTicketDialog(false);
+      fetchTickets();
     } catch (err: any) {
       toast.error(err.message || "Failed to submit ticket.");
     } finally {
@@ -188,8 +192,6 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
   const handlePostLogin = async (location: any) => {
     if (!pendingLoginData) return;
     setShowLocationDialog(false);
-    
-    // START Integrated Button Authorization
     setIsAuthorizing(true);
 
     const { email, deviceId, result } = pendingLoginData;
@@ -221,7 +223,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
         toast.success("Identity Verified");
         setTimeout(() => router.push(`/dashboard?id=${result.userId}`), 300);
       }
-    }, 80);
+    }, 60);
   };
 
   return (
@@ -266,7 +268,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
                     id="email"
                     type="email"
                     placeholder="name@disruptivesolutionsinc.com"
-                    disabled={isAuthorizing || loading}
+                    disabled={isAuthorizing}
                     className="pl-10 h-14 rounded-xl border-2 border-muted bg-[#F9FAFA] focus-visible:ring-0 focus-visible:border-[#121212] transition-all font-medium"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -282,49 +284,37 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
                     id="password"
                     type={showPassword ? "text" : "password"}
                     placeholder="••••••••"
-                    disabled={isAuthorizing || loading}
+                    disabled={isAuthorizing}
                     className="pl-10 pr-12 h-14 rounded-xl border-2 border-muted bg-[#F9FAFA] focus-visible:ring-0 focus-visible:border-[#121212] transition-all font-medium"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-[#121212] transition-colors"
-                  >
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-[#121212]">
                     {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* INTEGRATED SUBMIT BUTTON */}
-            <div className="space-y-4">
-              <Button
-                type="submit"
-                className={cn(
-                  "w-full h-14 rounded-xl text-md font-bold uppercase tracking-widest transition-all relative overflow-hidden",
-                  isAuthorizing ? "bg-[#121212] cursor-default" : "bg-[#121212] hover:bg-black active:scale-[0.98] shadow-xl shadow-black/10"
-                )}
-                disabled={loading || isAuthorizing}
-              >
-                {/* Visual Progress Bar inside button */}
-                {isAuthorizing && (
-                   <div 
-                     className="absolute left-0 top-0 h-full bg-white/10 transition-all duration-300 ease-out" 
-                     style={{ width: `${progress}%` }} 
-                   />
-                )}
-
-                <div className="relative z-10 flex items-center justify-center gap-2">
-                  {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {isAuthorizing && <ShieldCheck className="h-4 w-4 animate-pulse" />}
-                  <span>
-                    {isAuthorizing ? `Authorizing ${progress}%` : loading ? "Verifying..." : "Secure Login"}
-                  </span>
-                </div>
-              </Button>
-            </div>
+            <Button
+              type="submit"
+              className={cn(
+                "w-full h-14 rounded-xl text-md font-bold uppercase tracking-widest transition-all relative overflow-hidden",
+                isAuthorizing ? "bg-[#121212]" : "bg-[#121212] hover:bg-black active:scale-[0.98] shadow-xl shadow-black/10"
+              )}
+              disabled={loading || isAuthorizing}
+            >
+              {isAuthorizing && (
+                <div className="absolute left-0 top-0 h-full bg-white/20 transition-all duration-300" style={{ width: `${progress}%` }} />
+              )}
+              <div className="relative z-10 flex items-center justify-center gap-2">
+                {loading && <Loader2 className="h-5 w-5 animate-spin" />}
+                {isAuthorizing && <ShieldCheck className="h-5 w-5 animate-pulse" />}
+                <span>
+                  {isAuthorizing ? `Authorizing ${progress}%` : loading ? "Verifying..." : "Secure Login"}
+                </span>
+              </div>
+            </Button>
 
             <div className="relative py-2 flex items-center gap-4">
                <div className="h-[1px] flex-1 bg-muted" />
@@ -345,17 +335,9 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
           </form>
 
           <div className="flex flex-col items-center gap-4 text-xs font-bold uppercase tracking-widest text-muted-foreground/60">
-             {!isAuthorizing && (
-               <button 
-                  onClick={() => {
-                    setResetSent(false);
-                    setShowResetDialog(true);
-                  }} 
-                  className="hover:text-[#121212] transition-colors underline decoration-dotted"
-                >
-                  Request Recovery
-                </button>
-             )}
+             <button onClick={() => { setResetSent(false); setShowResetDialog(true); }} className="hover:text-[#121212] transition-colors underline decoration-dotted">
+                Request Recovery
+              </button>
              <p>© 2026 Disruptive Solutions Inc.</p>
           </div>
         </div>
@@ -373,24 +355,34 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
         </div>
       </div>
 
-      {/* DIALOGS REMAIN SAME FOR GEOLOCATION AND RESET */}
+      {/* DIALOGS */}
       <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
         <DialogContent className="sm:max-w-md bg-[#F9FAFA] border-none shadow-2xl">
           {resetSent ? (
-            <div className="space-y-6 py-4 text-center">
-               <ShieldCheck className="w-16 h-16 text-green-600 mx-auto" />
-               <div className="space-y-2">
-                 <h3 className="text-lg font-bold text-[#121212]">Link Sent</h3>
-                 <p className="text-xs text-muted-foreground">Check your work email for instructions.</p>
-               </div>
-               <Button onClick={() => setShowResetDialog(false)} className="w-full h-12 rounded-xl bg-[#121212]">Dismiss</Button>
+            <div className="space-y-6 py-4">
+               <Alert className="flex items-center p-4 gap-4 border-none bg-white shadow-sm">
+                <div className="flex-1">
+                  <AlertTitle className="text-lg font-bold text-[#121212]">Link Sent</AlertTitle>
+                  <AlertDescription className="text-xs text-muted-foreground font-medium">Check your work email. A recovery sequence has been initiated.</AlertDescription>
+                </div>
+                <ShieldCheck className="w-12 h-12 text-green-600" />
+              </Alert>
+              <Button onClick={() => setShowResetDialog(false)} className="w-full h-12 rounded-xl uppercase font-bold text-xs tracking-widest bg-[#121212]">Dismiss</Button>
             </div>
           ) : (
             <>
-              <DialogHeader><DialogTitle className="uppercase font-black">Recovery Request</DialogTitle></DialogHeader>
+              <DialogHeader>
+                <DialogTitle className="uppercase font-black text-xl tracking-tight text-[#121212]">Recovery Request</DialogTitle>
+                <DialogDescription className="text-xs font-medium">Enter your email to receive recovery instructions.</DialogDescription>
+              </DialogHeader>
               <div className="space-y-4 py-2">
-                <Input placeholder="Work Email" value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} className="h-12 rounded-xl bg-white" />
-                <Button onClick={handleRequestReset} disabled={resetLoading} className="w-full h-12 rounded-xl bg-[#121212]">Initiate Recovery</Button>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-bold uppercase text-muted-foreground">Work Email</Label>
+                  <Input placeholder="name@disruptivesolutionsinc.com" value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} className="h-12 rounded-xl border-2 border-muted bg-white" />
+                </div>
+                <Button onClick={handleRequestReset} disabled={resetLoading || !resetEmail} className="w-full h-12 rounded-xl uppercase font-bold tracking-widest text-xs bg-[#121212]">
+                  {resetLoading ? "Processing..." : "Initiate Recovery"}
+                </Button>
               </div>
             </>
           )}
@@ -398,11 +390,14 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
       </Dialog>
 
       <Dialog open={showLocationDialog} onOpenChange={setShowLocationDialog}>
-        <DialogContent className="sm:max-w-md bg-[#F9FAFA] border-none shadow-2xl text-center">
-          <DialogHeader><DialogTitle className="uppercase font-black mx-auto">Geo-Verification</DialogTitle></DialogHeader>
-          <div className="py-4 font-medium text-[#121212]/70">Logging site coordinates for engineering compliance.</div>
+        <DialogContent className="sm:max-w-md bg-[#F9FAFA] border-none text-center">
+          <DialogHeader><DialogTitle className="uppercase font-black tracking-tight text-center">Geo-Verification</DialogTitle></DialogHeader>
+          <div className="py-4 space-y-4">
+             <div className="h-16 w-16 bg-[#121212] rounded-full flex items-center justify-center mx-auto shadow-lg"><ShieldCheck className="text-white h-8 w-8" /></div>
+             <p className="text-sm font-medium text-muted-foreground text-center">Logging site coordinates for engineering compliance.</p>
+          </div>
           <DialogFooter className="flex justify-center gap-2 sm:justify-center">
-            <Button variant="outline" className="rounded-xl px-8 border-2" onClick={() => handlePostLogin(null)}>Skip</Button>
+            <Button variant="outline" className="rounded-xl px-8" onClick={() => handlePostLogin(null)}>Skip</Button>
             <Button className="bg-[#121212] rounded-xl px-8" onClick={async () => handlePostLogin(await getLocation())}>Verify</Button>
           </DialogFooter>
         </DialogContent>
@@ -412,13 +407,17 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
         <DialogContent className="bg-[#F9FAFA] border-none shadow-2xl">
           <DialogHeader>
             <DialogTitle className="text-red-600 uppercase font-black text-2xl tracking-tighter">Access Locked</DialogTitle>
-            <DialogDescription className="font-medium">Submit a ticket to the Engineering Support desk.</DialogDescription>
+            <DialogDescription className="font-medium">Manual incident report required. Submit to Engineering Support.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <Input placeholder="Briefly describe the request..." value={remarks} onChange={(e) => setRemarks(e.target.value)} className="h-12 border-2 bg-white rounded-xl" />
-            <Button onClick={submitTicket} disabled={ticketSubmitting || !remarks.trim()} className="w-full h-14 rounded-xl uppercase font-bold bg-red-600 hover:bg-red-700 transition-colors">
-              Submit Incident Ticket
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Incident Remarks</Label>
+              <Input placeholder="Briefly describe the request..." value={remarks} onChange={(e) => setRemarks(e.target.value)} className="h-12 border-2 bg-white rounded-xl" />
+            </div>
+            <Button onClick={submitTicket} disabled={ticketSubmitting || !remarks.trim()} className="w-full h-14 rounded-xl uppercase font-bold tracking-widest bg-red-600 hover:bg-red-700 shadow-lg shadow-red-200">
+              {ticketSubmitting ? "Submitting..." : "Submit Incident Ticket"}
             </Button>
+            <Button variant="ghost" onClick={() => setShowTicketDialog(false)} className="w-full text-[10px] uppercase font-bold text-muted-foreground hover:bg-transparent">Cancel</Button>
           </div>
         </DialogContent>
       </Dialog>
