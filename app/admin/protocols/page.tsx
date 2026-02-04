@@ -9,9 +9,7 @@ import {
   Activity,
   UserCheck,
   X,
-  ChevronDown,
-  ShieldAlert,
-  MoreVertical
+  ShieldAlert
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -47,7 +45,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  DialogDescription,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
@@ -111,25 +108,30 @@ export default function ProtocolRegistryPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-background font-sans antialiased text-foreground pb-24 md:pb-8">
-      <PageHeader title="Registry Control" version="DSI-LOG-v2.6">
-        <Dialog open={isOpen} onOpenChange={(val) => { setIsOpen(val); if(!val) setSelectedProtocol(null); }}>
-          <DialogTrigger asChild>
-            {/* DESKTOP BUTTON */}
-            <Button size="sm" className="hidden md:flex h-8 rounded-none bg-primary text-primary-foreground font-black uppercase italic text-[10px] tracking-widest px-4 border-b-2 border-primary-foreground/20 active:translate-y-[1px] active:border-b-0">
-              <Plus className="size-3 mr-1" /> New_Entry
-            </Button>
-          </DialogTrigger>
-          
-          {/* MOBILE FLOATING ACTION BUTTON */}
-          <DialogTrigger asChild>
-            <Button className="md:hidden fixed bottom-6 right-6 size-14 rounded-none bg-primary shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] z-50 flex items-center justify-center border-2 border-primary-foreground/20">
-              <Plus className="size-6 text-primary-foreground" />
-            </Button>
-          </DialogTrigger>
+      {/* 🔹 FIXED: Dialog is now passed to 'actions' prop */}
+      <PageHeader 
+        title="Registry Control" 
+        version="DSI-LOG-v2.6"
+        actions={
+          <Dialog open={isOpen} onOpenChange={(val) => { setIsOpen(val); if(!val) setSelectedProtocol(null); }}>
+            <DialogTrigger asChild>
+              {/* DESKTOP BUTTON */}
+              <Button size="sm" className="hidden md:flex h-8 rounded-none bg-primary text-primary-foreground font-black uppercase italic text-[10px] tracking-widest px-4 border-b-2 border-primary-foreground/20 active:translate-y-[1px] active:border-b-0">
+                <Plus className="size-3 mr-1" /> New_Entry
+              </Button>
+            </DialogTrigger>
+            
+            {/* MOBILE FLOATING ACTION BUTTON (Inside the same Dialog) */}
+            <DialogTrigger asChild>
+              <Button className="md:hidden fixed bottom-6 right-6 size-14 rounded-none bg-primary shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] z-50 flex items-center justify-center border-2 border-primary-foreground/20">
+                <Plus className="size-6 text-primary-foreground" />
+              </Button>
+            </DialogTrigger>
 
-          <ProtocolModalContent setIsOpen={setIsOpen} initialData={selectedProtocol} onDelete={deleteProtocol} />
-        </Dialog>
-      </PageHeader>
+            <ProtocolModalContent setIsOpen={setIsOpen} initialData={selectedProtocol} onDelete={deleteProtocol} />
+          </Dialog>
+        }
+      />
 
       <main className="flex flex-1 flex-col gap-4 md:gap-6 p-4 md:p-6 max-w-6xl mx-auto w-full relative">
         {/* Statistics Bar */}
