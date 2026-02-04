@@ -12,7 +12,7 @@ export default function ProtectedPageWrapper({ children }: { children: React.Rea
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
-    // Artificial increment to ensure the UI feels "active" during the check
+    // Artificial increment for active UI feedback
     const progressInterval = setInterval(() => {
       setProgress((prev) => (prev >= 90 ? 90 : prev + 5));
     }, 150);
@@ -25,15 +25,18 @@ export default function ProtectedPageWrapper({ children }: { children: React.Rea
         });
 
         if (res.status !== 200) {
-          router.push("auth/login");
+          // PROTOCOL FIX: Use absolute path "/login" to prevent nested redirects
+          // If your login is inside an auth folder, use "/auth/login"
+          router.push("/login"); 
           return;
         }
 
-        // Snap to 100 on success
+        // Success state
         setProgress(100);
         setTimeout(() => setLoading(false), 400);
       } catch (error) {
-        router.push("auth/login");
+        console.error("Auth Protocol Violation:", error);
+        router.push("/login"); // PROTOCOL FIX: Absolute path
       }
     };
 
@@ -43,55 +46,53 @@ export default function ProtectedPageWrapper({ children }: { children: React.Rea
 
   if (loading) {
     return (
-      <div className="min-h-screen w-full bg-background flex flex-col items-center justify-center p-6 transition-all duration-500">
+      <div className="min-h-screen w-full bg-[#F9FAFA] flex flex-col items-center justify-center p-6 transition-all duration-500 font-sans">
         
-        {/* Background Detail: Industrial Grid Pattern */}
+        {/* Industrial Grid Detail */}
         <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
-             style={{ backgroundImage: `radial-gradient(circle, hsl(var(--primary)) 1px, transparent 1px)`, backgroundSize: '30px 30px' }} />
+             style={{ backgroundImage: `radial-gradient(circle, #121212 1px, transparent 1px)`, backgroundSize: '30px 30px' }} />
 
         <div className="w-full max-w-[350px] space-y-10 z-10">
           
           {/* Status Header */}
           <div className="flex flex-col items-center space-y-6">
             <div className="relative">
-              <div className="h-24 w-24 rounded-none border-2 border-primary/30 flex items-center justify-center bg-muted/20 relative">
-                <ShieldCheck className="h-12 w-12 text-primary animate-pulse" />
-                {/* Loader spinning around the shield */}
-                <Loader2 className="absolute h-full w-full text-primary/40 animate-[spin_3s_linear_infinite]" />
+              <div className="h-24 w-24 rounded-none border-2 border-black/10 flex items-center justify-center bg-white shadow-sm relative">
+                <ShieldCheck className="h-10 w-10 text-[#121212] animate-pulse" />
+                <Loader2 className="absolute h-full w-full p-2 text-black/20 animate-[spin_3s_linear_infinite]" />
               </div>
             </div>
             
             <div className="text-center space-y-1">
-              <h2 className="text-2xl font-black uppercase tracking-tighter italic text-foreground">
-                Authenticating
+              <h2 className="text-xl font-black uppercase tracking-tighter text-[#121212]">
+                Validating_Credentials
               </h2>
-              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.4em]">
-                Secure Terminal Link
+              <p className="text-[9px] font-bold text-black/40 uppercase tracking-[0.4em]">
+                Secure Corporate Link
               </p>
             </div>
           </div>
 
-          {/* Solid Industrial Progress Bar */}
+          {/* Industrial Progress Bar */}
           <div className="space-y-3">
             <div className="flex justify-between items-end px-1">
-              <span className="text-[10px] font-black uppercase tracking-widest text-primary"> Clearance Level: Alpha </span>
-              <span className="text-[10px] font-mono font-bold text-primary">{progress}%</span>
+              <span className="text-[9px] font-black uppercase tracking-widest text-[#121212]"> Clearance: ALPHA </span>
+              <span className="text-[9px] font-mono font-bold text-[#121212]">{progress}%</span>
             </div>
             
-            {/* Custom Shadcn Progress wrapper */}
-            <div className="p-1 border-2 border-muted bg-muted/20 rounded-none">
+            <div className="p-1 border border-black/5 bg-white rounded-none shadow-sm">
               <Progress 
                 value={progress} 
-                className="h-3 rounded-none bg-transparent transition-all" 
+                className="h-2 rounded-none bg-black/[0.03] transition-all" 
               />
             </div>
           </div>
 
           {/* Footer Encryption Tag */}
-          <div className="flex items-center justify-center gap-3 py-4 border-t border-muted/30">
-            <Lock className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
-              DSI Encrypted Session
+          <div className="flex items-center justify-center gap-3 py-4 border-t border-black/5">
+            <Lock className="h-3 w-3 text-black/30" />
+            <span className="text-[8px] font-black uppercase tracking-[0.3em] text-black/30">
+              Encrypted Operational Session
             </span>
           </div>
         </div>

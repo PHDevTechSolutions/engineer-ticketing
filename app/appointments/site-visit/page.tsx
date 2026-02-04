@@ -1,323 +1,291 @@
-  "use client"
+"use client"
 
-  import * as React from "react"
-  import { useRouter } from "next/navigation"
-  import { AppSidebar } from "@/components/app-sidebar"
-  import ProtectedPageWrapper from "@/components/protected-page-wrapper"
-  import {
-    SidebarInset,
-    SidebarProvider,
-    SidebarTrigger,
-  } from "@/components/ui/sidebar"
-  import { 
-    Plus, Search, ChevronRight, Activity, RotateCcw,
-    Ticket, Wrench, User2, Loader2, CheckCircle2
-  } from "lucide-react"
+import * as React from "react"
+import { useRouter } from "next/navigation"
+import { AppSidebar } from "@/components/app-sidebar"
+import ProtectedPageWrapper from "@/components/protected-page-wrapper"
+import {
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+} from "@/components/ui/sidebar"
+import { 
+  Plus, Search, ChevronRight, Activity, RotateCcw,
+  Ticket, Wrench, User2, Loader2, CheckCircle2, ShieldCheck
+} from "lucide-react"
 
-  import { Button } from "@/components/ui/button"
-  import { Input } from "@/components/ui/input"
-  import { Badge } from "@/components/ui/badge"
-  import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import { cn } from "@/lib/utils"
 
-  // FIREBASE
-  import { db } from "@/lib/firebase"
-  import { collection, onSnapshot, query, orderBy } from "firebase/firestore"
+// FIREBASE
+import { db } from "@/lib/firebase"
+import { collection, onSnapshot, query, orderBy } from "firebase/firestore"
 
-  // CUSTOM COMPONENTS
-  import { PageHeader } from "@/components/page-header"
+// CUSTOM COMPONENTS
+import { PageHeader } from "@/components/page-header"
 
-  interface VisitRecord {
-    id: string
-    fullId: string
-    site: string
-    date: string
-    status: string
-    tech: string
-    type: string
-  }
+export default function SiteVisitListPage() {
+  const router = useRouter()
+  const [user, setUser] = React.useState<{ id: string | null; dept: string }>({ id: null, dept: "" })
+  const [isUserLoading, setIsUserLoading] = React.useState(true)
+  const [visits, setVisits] = React.useState<any[]>([])
+  const [isDataLoading, setIsDataLoading] = React.useState(true)
+  const [selectedStatus, setSelectedStatus] = React.useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = React.useState("")
 
-  export default function SiteVisitListPage() {
-    const router = useRouter()
-    const [user, setUser] = React.useState<{ id: string | null; dept: string }>({ id: null, dept: "" })
-    const [isUserLoading, setIsUserLoading] = React.useState(true)
-    const [visits, setVisits] = React.useState<VisitRecord[]>([])
-    const [isDataLoading, setIsDataLoading] = React.useState(true)
-    const [selectedStatus, setSelectedStatus] = React.useState<string | null>(null)
-    const [searchQuery, setSearchQuery] = React.useState("")
+  React.useEffect(() => {
+    const storedId = localStorage.getItem("userId")
+    if (!storedId) { setIsUserLoading(false); return; }
 
-    React.useEffect(() => {
-      const storedId = localStorage.getItem("userId")
-      if (!storedId) { setIsUserLoading(false); return; }
+    const fetchUser = async () => {
+      try {
+        const res = await fetch(`/api/user?id=${encodeURIComponent(storedId)}`)
+        const data = await res.json()
+        setUser({ id: storedId, dept: data.Department || "" })
+      } catch (error) { console.error("Profile Retrieval Error:", error) } finally { setIsUserLoading(false) }
+    }
+    fetchUser()
+  }, [])
 
-      const fetchUser = async () => {
-        try {
-          const res = await fetch(`/api/user?id=${encodeURIComponent(storedId)}`)
-          const data = await res.json()
-          setUser({ id: storedId, dept: data.Department || "" })
-        } catch (error) { console.error("Profile Retrieval Error:", error) } finally { setIsUserLoading(false) }
-      }
-      fetchUser()
-    }, [])
-
-    React.useEffect(() => {
-      const q = query(collection(db, "appointments"), orderBy("createdAt", "desc"))
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const liveData = snapshot.docs.map(doc => {
-          const data = doc.data()
-          const rawDate = data.appointmentDate?.toDate ? data.appointmentDate.toDate() : new Date()
-          return {
-            id: doc.id.slice(-6).toUpperCase(),
-            fullId: doc.id,
-            site: data.client || "Client Not Specified",
-            date: rawDate.toLocaleDateString('en-CA'), 
-            status: data.status?.toUpperCase() || "PENDING",
-            tech: data.pic || "UNASSIGNED",
-            type: Array.isArray(data.protocols) ? data.protocols.join(" + ") : (data.protocols || "Standard Engagement")
-          }
-        })
-        setVisits(liveData)
-        setIsDataLoading(false)
+  React.useEffect(() => {
+    const q = query(collection(db, "appointments"), orderBy("createdAt", "desc"))
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const liveData = snapshot.docs.map(doc => {
+        const data = doc.data()
+        const rawDate = data.appointmentDate?.toDate ? data.appointmentDate.toDate() : new Date()
+        return {
+          id: doc.id.slice(-6).toUpperCase(),
+          fullId: doc.id,
+          site: data.client || "Client Not Specified",
+          date: rawDate.toLocaleDateString('en-CA'), 
+          status: data.status?.toUpperCase() || "PENDING",
+          tech: data.pic || "UNASSIGNED",
+          type: Array.isArray(data.protocols) ? data.protocols.join(" + ") : (data.protocols || "Standard Engagement")
+        }
       })
-      return () => unsubscribe()
-    }, [])
-
-    const filteredVisits = visits.filter(v => {
-      const matchesSearch = v.site.toLowerCase().includes(searchQuery.toLowerCase()) || v.id.toLowerCase().includes(searchQuery.toLowerCase())
-      const matchesStatus = selectedStatus ? v.status === selectedStatus : true
-      return matchesSearch && matchesStatus
+      setVisits(liveData)
+      setIsDataLoading(false)
     })
+    return () => unsubscribe()
+  }, [])
 
-    const isSales = user.dept.trim().toLowerCase() === "sales"
-    const handleAddNew = () => router.push('/appointments/site-visit/add')
+  const filteredVisits = visits.filter(v => {
+    const matchesSearch = v.site.toLowerCase().includes(searchQuery.toLowerCase()) || v.id.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesStatus = selectedStatus ? v.status === selectedStatus : true
+    return matchesSearch && matchesStatus
+  })
 
-    return (
-      <ProtectedPageWrapper>
-        <SidebarProvider defaultOpen={false}>
-          <AppSidebar userId={user.id} />
-          <SidebarInset className="bg-background pb-24 md:pb-0 relative">
-            
-            <PageHeader 
-              title="Activity Overview" 
-              version="v2.5.0-SITE-OPS" 
-              showBackButton={true}
-              trigger={
-                <SidebarTrigger className="group relative flex items-center justify-center size-9 bg-muted/5 hover:bg-primary/10 border-2 border-muted/50 hover:border-primary/50 transition-all duration-300 rounded-none overflow-hidden">
-                  <div className="absolute top-0 left-0 size-1 border-t border-l border-primary opacity-0 group-hover:opacity-100 transition-opacity" />
-                  <div className="flex flex-col gap-1 items-end">
-                    <div className="h-[2px] w-5 bg-primary group-hover:w-3 transition-all" />
-                    <div className="h-[2px] w-4 bg-primary group-hover:w-5 transition-all" />
-                  </div>
-                </SidebarTrigger>
-              }
-              actions={
-                !isUserLoading && isSales && (
+  const isSales = user.dept.trim().toLowerCase() === "sales"
+  const handleAddNew = () => router.push('/appointments/site-visit/add')
+
+  return (
+    <ProtectedPageWrapper>
+      <SidebarProvider defaultOpen={false}>
+        <AppSidebar userId={user.id} />
+        <SidebarInset className="bg-[#F9FAFA] pb-24 md:pb-0 relative font-sans">
+          
+          <PageHeader 
+            title="ACTIVITY_OVERVIEW" 
+            version="BUILD: CORP-V2.6" 
+            showBackButton={true}
+            trigger={
+              <SidebarTrigger className="mr-2" />
+            }
+            actions={
+              <div className="flex items-center gap-3">
+                <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-black/5 border border-black/10 rounded-sm">
+                  <ShieldCheck className="size-3 text-black/50" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-black/70">
+                    ENGINEERING
+                  </span>
+                </div>
+                {!isUserLoading && isSales && (
                   <Button 
                     onClick={handleAddNew}
-                    className="hidden md:flex rounded-none bg-primary text-primary-foreground font-black uppercase text-[10px] tracking-widest px-4 h-9 shadow-[3px_3px_0px_0px_rgba(0,0,0,0.3)] hover:translate-x-[1px] hover:translate-y-[1px] transition-all border border-black/10"
+                    className="hidden md:flex rounded-md bg-[#121212] text-white font-bold uppercase text-[10px] tracking-widest px-6 h-10 hover:bg-black transition-all shadow-md"
                   >
-                    <Plus className="mr-2 size-3" /> New Engagement
+                    <Plus className="mr-2 size-4" /> Create Engagement
                   </Button>
-                )
-              }
-            />
+                )}
+              </div>
+            }
+          />
 
-            <main className="flex flex-1 flex-col gap-6 p-4 md:p-8 max-w-7xl mx-auto w-full">
-              
-              {/* MINIMAL INTERACTIVE STAT CARDS */}
-              <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <StatCard 
-                    label="All Records" 
-                    val={visits.length} 
-                    icon={Activity} 
-                    isActive={selectedStatus === null} 
-                    onClick={() => setSelectedStatus(null)} 
-                    type="default" 
-                  />
-                  <StatCard 
-                    label="Pending" 
-                    val={visits.filter(v => v.status === "PENDING").length} 
-                    icon={Ticket} 
-                    isActive={selectedStatus === "PENDING"} 
-                    onClick={() => setSelectedStatus("PENDING")} 
-                    type="pending" 
-                  />
-                  <StatCard 
-                    label="Confirmed" 
-                    val={visits.filter(v => v.status === "CONFIRMED").length} 
-                    icon={Wrench} 
-                    isActive={selectedStatus === "CONFIRMED"} 
-                    onClick={() => setSelectedStatus("CONFIRMED")} 
-                    type="confirmed" 
-                  />
-                  <StatCard 
-                    label="Completed" 
-                    val={visits.filter(v => v.status === "COMPLETED").length} 
-                    icon={CheckCircle2} 
-                    isActive={selectedStatus === "COMPLETED"} 
-                    onClick={() => setSelectedStatus("COMPLETED")} 
-                    type="completed" 
-                  />
-              </section>
+          <main className="flex flex-1 flex-col gap-6 p-4 md:p-10 max-w-7xl mx-auto w-full">
+            
+            {/* CLEAN STAT CARDS */}
+            <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <StatCard 
+                  label="Total Load" 
+                  val={visits.length} 
+                  icon={Activity} 
+                  isActive={selectedStatus === null} 
+                  onClick={() => setSelectedStatus(null)} 
+                  color="#121212"
+                />
+                <StatCard 
+                  label="Pending" 
+                  val={visits.filter(v => v.status === "PENDING").length} 
+                  icon={Ticket} 
+                  isActive={selectedStatus === "PENDING"} 
+                  onClick={() => setSelectedStatus("PENDING")} 
+                  color="#F59E0B"
+                />
+                <StatCard 
+                  label="Confirmed" 
+                  val={visits.filter(v => v.status === "CONFIRMED").length} 
+                  icon={Wrench} 
+                  isActive={selectedStatus === "CONFIRMED"} 
+                  onClick={() => setSelectedStatus("CONFIRMED")} 
+                  color="#3B82F6"
+                />
+                <StatCard 
+                  label="Completed" 
+                  val={visits.filter(v => v.status === "COMPLETED").length} 
+                  icon={CheckCircle2} 
+                  isActive={selectedStatus === "COMPLETED"} 
+                  onClick={() => setSelectedStatus("COMPLETED")} 
+                  color="#10B981"
+                />
+            </section>
 
-              {/* FILTERS */}
-              <div className="flex flex-col md:flex-row gap-3">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-                  <Input 
-                    placeholder="SEARCH_BY_CLIENT_OR_ENTITY..." 
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10 rounded-none border-2 border-muted/50 bg-background font-mono uppercase text-[10px] h-12 focus-visible:ring-0 focus-visible:border-primary"
-                  />
-                </div>
-                <Button 
-                  variant="outline" 
-                  onClick={() => {setSelectedStatus(null); setSearchQuery("")}} 
-                  className="rounded-none border-2 border-muted/50 h-12 px-6 uppercase font-black text-[10px] tracking-widest bg-background"
-                >
-                  <RotateCcw className="mr-2 size-3" /> Reset_Filters
-                </Button>
+            {/* SEARCH & FILTERS */}
+            <div className="flex flex-col md:flex-row gap-4 mt-2">
+              <div className="relative flex-1 group">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-black/30 group-focus-within:text-black transition-colors" />
+                <Input 
+                  placeholder="Filter by Client or Reference ID..." 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-11 rounded-md border-black/10 bg-white h-12 text-sm focus-visible:ring-1 focus-visible:ring-black focus-visible:border-black shadow-sm"
+                />
+              </div>
+              <Button 
+                variant="outline" 
+                onClick={() => {setSelectedStatus(null); setSearchQuery("")}} 
+                className="rounded-md border-black/10 h-12 px-6 uppercase font-bold text-[10px] tracking-widest bg-white hover:bg-black hover:text-white transition-all shadow-sm"
+              >
+                <RotateCcw className="mr-2 size-3" /> Reset Sync
+              </Button>
+            </div>
+
+            {/* LIST CONTAINER */}
+            <section className="bg-white border border-black/5 rounded-lg shadow-sm overflow-hidden">
+              <div className="hidden md:grid grid-cols-5 bg-[#F9FAFA] border-b border-black/5 p-5">
+                  {["Ref_ID", "Client Entity", "Schedule", "Personnel", "Status"].map((h) => (
+                    <span key={h} className="text-[10px] font-bold uppercase tracking-[0.15em] text-black/40">{h}</span>
+                  ))}
               </div>
 
-              {/* LIST SECTION */}
-              <section className="relative flex flex-col border-2 border-muted/50 overflow-hidden bg-background min-h-[400px]">
-                <div className="hidden md:grid grid-cols-5 bg-muted/10 border-b-2 border-muted/50 p-4">
-                    {["Reference", "Client Name", "Appointment Date", "Personnel", "Current Status"].map((h) => (
-                      <span key={h} className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{h}</span>
-                    ))}
-                </div>
-
-                <div className="flex flex-col divide-y-2 divide-muted/20">
-                  {isDataLoading ? <LoadingState /> : filteredVisits.length === 0 ? <EmptyState /> : (
-                    filteredVisits.map((item) => (
-                      <div 
-                        key={item.fullId}
-                        onClick={() => router.push(`/appointments/site-visit/${item.fullId}`)}
-                        className="group relative grid grid-cols-1 md:grid-cols-5 gap-4 p-5 hover:bg-primary/[0.03] cursor-pointer transition-colors border-l-4 border-l-transparent hover:border-l-primary"
-                      >
-                        <div className="flex flex-col justify-center">
-                            <span className="text-[10px] font-mono text-primary font-bold">[{item.id}]</span>
-                            <span className="text-[8px] font-black uppercase text-muted-foreground truncate leading-tight mt-1">{item.type}</span>
-                        </div>
-                        <div className="flex flex-col justify-center">
-                            <span className="text-sm md:text-base font-black uppercase italic tracking-tighter group-hover:text-primary transition-colors">{item.site}</span>
-                            <span className="md:hidden text-[9px] font-mono opacity-50 mt-1">{item.date}</span>
-                        </div>
-                        <div className="hidden md:flex flex-col justify-center font-mono text-[11px] opacity-60 italic">{item.date}</div>
-                        <div className="flex items-center gap-2 text-[10px] font-bold uppercase opacity-80">
-                            <User2 className="size-3 text-primary" /> 
-                            <span className="truncate">{item.tech}</span>
-                        </div>
-                        <div className="flex items-center md:justify-end">
-                            <Badge variant="outline" className={cn("rounded-none font-black text-[9px] uppercase border-2 py-0.5 px-2", getStatusStyles(item.status))}>
-                                {item.status}
-                            </Badge>
-                            <ChevronRight className="md:hidden ml-auto size-5 text-primary" />
-                            <ChevronRight className="hidden md:block ml-4 size-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
-                        </div>
+              <div className="divide-y divide-black/5">
+                {isDataLoading ? <LoadingState /> : filteredVisits.length === 0 ? <EmptyState /> : (
+                  filteredVisits.map((item) => (
+                    <div 
+                      key={item.fullId}
+                      onClick={() => router.push(`/appointments/site-visit/${item.fullId}`)}
+                      className="group grid grid-cols-1 md:grid-cols-5 gap-4 p-5 hover:bg-[#F9FAFA] cursor-pointer transition-all active:scale-[0.995]"
+                    >
+                      <div className="flex flex-col justify-center">
+                          <span className="text-[11px] font-bold text-black font-mono">#{item.id}</span>
+                          <span className="text-[9px] font-medium uppercase text-black/40 truncate mt-1">{item.type}</span>
                       </div>
-                    ))
-                  )}
-                </div>
-              </section>
-            </main>
-
-            {/* SIMPLE CORPORATE TACTICAL FAB */}
-            {!isUserLoading && isSales && (
-              <div className="md:hidden fixed bottom-8 right-8 z-[100]">
-                <Button 
-                  onClick={handleAddNew}
-                  className={cn(
-                    "group relative size-16 rounded-full transition-all duration-300",
-                    "bg-slate-950 text-white border border-white/10",
-                    "shadow-[0_10px_20px_rgba(0,0,0,0.4),0_0_0_1px_rgba(255,255,255,0.05)]",
-                    "hover:bg-primary active:scale-95 flex flex-col items-center justify-center"
-                  )}
-                >
-                  <div className="absolute top-3 left-3 size-1.5 border-t border-l border-white/30 group-hover:border-white/60 transition-colors" />
-                  <div className="absolute bottom-3 right-3 size-1.5 border-b border-r border-white/30 group-hover:border-white/60 transition-colors" />
-                  
-                  <div className="relative z-10 flex flex-col items-center">
-                    <Plus className="size-6 stroke-[3.5px]" />
-                    <span className="text-[7px] font-black tracking-[0.2em] uppercase opacity-70 group-hover:opacity-100">
-                      ADD_NEW
-                    </span>
-                  </div>
-                </Button>
+                      <div className="flex flex-col justify-center">
+                          <span className="text-sm font-bold uppercase tracking-tight text-black group-hover:underline underline-offset-4 decoration-1">{item.site}</span>
+                          <span className="md:hidden text-[10px] text-black/50 font-medium mt-1">{item.date}</span>
+                      </div>
+                      <div className="hidden md:flex flex-col justify-center font-medium text-[12px] text-black/60 italic">{item.date}</div>
+                      <div className="flex items-center gap-2 text-[11px] font-bold uppercase text-black/70">
+                          <div className="size-5 rounded-full bg-black/5 flex items-center justify-center">
+                            <User2 className="size-3" /> 
+                          </div>
+                          <span className="truncate">{item.tech}</span>
+                      </div>
+                      <div className="flex items-center md:justify-end gap-4">
+                          <Badge variant="outline" className={cn("rounded-sm font-bold text-[9px] uppercase border px-2.5 py-0.5", getStatusStyles(item.status))}>
+                              {item.status}
+                          </Badge>
+                          <ChevronRight className="size-4 text-black/20 group-hover:text-black group-hover:translate-x-1 transition-all" />
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
-            )}
-          </SidebarInset>
-        </SidebarProvider>
-      </ProtectedPageWrapper>
-    )
+            </section>
+          </main>
+
+          {/* CIRCULAR FAB WITH BRANDING */}
+          {!isUserLoading && isSales && (
+            <div className="md:hidden fixed bottom-8 right-6 z-50">
+              <Button 
+                onClick={handleAddNew}
+                className="size-16 rounded-full bg-[#121212] text-white shadow-2xl hover:bg-black active:scale-90 transition-all flex flex-col items-center justify-center border border-white/10"
+              >
+                <div className="size-6 bg-white/10 rounded-full flex items-center justify-center mb-1">
+                  <span className="text-[10px] font-black">N</span>
+                </div>
+                <Plus className="size-5 stroke-[3px]" />
+              </Button>
+            </div>
+          )}
+        </SidebarInset>
+      </SidebarProvider>
+    </ProtectedPageWrapper>
+  )
+}
+
+function getStatusStyles(status: string) {
+  switch (status.toUpperCase()) {
+    case "PENDING": return "text-amber-600 border-amber-200 bg-amber-50";
+    case "CONFIRMED": return "text-blue-600 border-blue-200 bg-blue-50";
+    case "COMPLETED": return "text-emerald-600 border-emerald-200 bg-emerald-50";
+    default: return "text-black/40 border-black/10 bg-black/5";
   }
+}
 
-  function getStatusStyles(status: string) {
-    switch (status.toUpperCase()) {
-      case "PENDING": return "text-amber-500 border-amber-500/20 bg-amber-500/5";
-      case "CONFIRMED": return "text-blue-500 border-blue-500/20 bg-blue-500/5";
-      case "COMPLETED": return "text-emerald-500 border-emerald-500/20 bg-emerald-500/5";
-      default: return "text-muted-foreground border-muted bg-muted/5";
-    }
-  }
-
-  function StatCard({ label, val, icon: Icon, isActive, onClick, type }: any) {
-    // Styles applied only when CLICKED (Active)
-    const activeTheme: any = {
-      pending: "border-amber-500 bg-amber-500 text-white shadow-[0_8px_15px_rgba(245,158,11,0.2)]",
-      confirmed: "border-blue-500 bg-blue-500 text-white shadow-[0_8px_15px_rgba(59,130,246,0.2)]",
-      completed: "border-emerald-500 bg-emerald-500 text-white shadow-[0_8px_15px_rgba(16,185,129,0.2)]",
-      default: "border-primary bg-primary text-white shadow-[0_8px_15px_rgba(0,0,0,0.1)]"
-    };
-
-    const currentTheme = activeTheme[type] || activeTheme.default;
-
-    return (
-      <div 
-        onClick={onClick}
-        className={cn(
-          "relative cursor-pointer p-4 flex items-center gap-4 transition-all duration-300 border-2 rounded-none",
-          // Default Minimalist Monochromatic State
-          "bg-background border-muted/20 opacity-60 grayscale hover:opacity-100 hover:grayscale-0 hover:border-muted-foreground/30",
-          // Active Color State
-          isActive && `opacity-100 grayscale-0 translate-y-[-4px] ${currentTheme}`
-        )}
-      >
-        <div className={cn(
-          "p-2 border transition-all duration-300",
-          isActive ? "bg-white/20 border-white/40" : "bg-muted/5 border-muted/20"
-        )}>
-          <Icon className={cn("size-5", !isActive && "text-muted-foreground")} />
+function StatCard({ label, val, icon: Icon, isActive, onClick, color }: any) {
+  return (
+    <div 
+      onClick={onClick}
+      className={cn(
+        "relative cursor-pointer p-5 flex flex-col gap-3 transition-all duration-300 border rounded-lg bg-white shadow-sm",
+        isActive ? "border-black ring-1 ring-black/5 translate-y-[-2px]" : "border-black/5 opacity-80 hover:opacity-100 hover:border-black/20"
+      )}
+    >
+      <div className="flex justify-between items-start">
+        <div 
+          className="p-2 rounded-md" 
+          style={{ backgroundColor: isActive ? `${color}15` : '#F9FAFA' }}
+        >
+          <Icon className="size-5" style={{ color: isActive ? color : '#707070' }} />
         </div>
-        <div className="flex flex-col">
-          <span className={cn(
-            "text-[8px] font-black uppercase tracking-widest leading-none mb-1 transition-colors",
-            isActive ? "text-white/80" : "text-muted-foreground"
-          )}>
-            {label}
-          </span>
-          <span className="text-xl font-black italic tracking-tighter leading-none">
-            {val.toString().padStart(2, '0')}
-          </span>
-        </div>
-        
-        {/* Decorative corner accent for active state */}
-        {isActive && (
-            <div className="absolute top-0 right-0 size-2 border-t-2 border-r-2 border-white/40" />
-        )}
+        <span className="text-2xl font-bold tracking-tighter text-[#121212]">
+          {val.toString().padStart(2, '0')}
+        </span>
       </div>
-    );
-  }
-
-  const LoadingState = () => (
-    <div className="flex flex-col items-center justify-center p-20 gap-3 opacity-20">
-      <Loader2 className="size-8 animate-spin text-primary" />
-      <p className="text-[10px] font-black uppercase tracking-widest italic">Syncing_Data_Stream...</p>
+      <span className={cn(
+        "text-[10px] font-bold uppercase tracking-[0.1em]",
+        isActive ? "text-black" : "text-black/40"
+      )}>
+        {label}
+      </span>
+      {isActive && (
+        <div className="absolute top-2 right-2 size-1.5 rounded-full" style={{ backgroundColor: color }} />
+      )}
     </div>
-  )
+  );
+}
 
-  const EmptyState = () => (
-    <div className="p-20 text-center opacity-30">
-      <p className="text-[10px] font-black uppercase tracking-widest">Null_ResultSet</p>
-    </div>
-  )
+const LoadingState = () => (
+  <div className="flex flex-col items-center justify-center p-20 gap-3">
+    <Loader2 className="size-6 animate-spin text-black/20" />
+    <p className="text-[10px] font-bold uppercase tracking-widest text-black/30">Syncing Protocol...</p>
+  </div>
+)
+
+const EmptyState = () => (
+  <div className="p-20 text-center">
+    <p className="text-[10px] font-bold uppercase tracking-widest text-black/20">System_Null // No Records Found</p>
+  </div>
+)
