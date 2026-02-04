@@ -1,19 +1,18 @@
 "use client"
 
 import * as React from "react"
-// ... (Previous icons)
 import { 
-  Plus, Settings2, Search, Terminal, Activity, Loader2, Trash2, Zap, ShieldCheck, Users 
+  Plus, Settings2, Search, Loader2, Zap, ShieldCheck 
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 // FIREBASE
 import { db } from "@/lib/firebase";
 import { 
-  collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc, where 
+  collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc 
 } from "firebase/firestore";
 
-// SHADCN
+// SHADCN & UI COMPONENTS
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -31,6 +30,7 @@ export default function BookingRulesPage() {
   const [loading, setLoading] = React.useState(true)
   const [selectedRule, setSelectedRule] = React.useState<any>(null)
 
+  // Real-time listener for booking rules
   React.useEffect(() => {
     const q = query(collection(db, "booking_rules"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -58,16 +58,21 @@ export default function BookingRulesPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-background font-sans antialiased text-foreground pb-24 md:pb-0">
-      <PageHeader title="Assignment Logic" version="DSI-AUTH-v1.2">
-        <Dialog open={isOpen} onOpenChange={(val) => { setIsOpen(val); if(!val) setSelectedRule(null); }}>
-          <DialogTrigger asChild>
-            <Button size="sm" className="hidden md:flex h-8 rounded-none bg-primary text-primary-foreground font-black uppercase italic text-[10px] tracking-widest px-4">
-              <Plus className="size-3 mr-1" /> New_Rule
-            </Button>
-          </DialogTrigger>
-          <RuleModalContent setIsOpen={setIsOpen} initialData={selectedRule} onDelete={deleteRule} />
-        </Dialog>
-      </PageHeader>
+      {/* 🔹 FIXED: Dialog is now passed into the 'actions' prop to satisfy TypeScript */}
+      <PageHeader 
+        title="Assignment Logic" 
+        version="DSI-AUTH-v1.2"
+        actions={
+          <Dialog open={isOpen} onOpenChange={(val) => { setIsOpen(val); if(!val) setSelectedRule(null); }}>
+            <DialogTrigger asChild>
+              <Button size="sm" className="h-8 rounded-none bg-primary text-primary-foreground font-black uppercase italic text-[10px] tracking-widest px-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,0.3)]">
+                <Plus className="size-3 mr-1" /> New_Rule
+              </Button>
+            </DialogTrigger>
+            <RuleModalContent setIsOpen={setIsOpen} initialData={selectedRule} onDelete={deleteRule} />
+          </Dialog>
+        }
+      />
 
       <main className="flex flex-1 flex-col gap-4 md:gap-6 p-4 md:p-6 max-w-6xl mx-auto w-full relative">
         {/* Status Bar Section */}
@@ -115,22 +120,28 @@ export default function BookingRulesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredRules.map((r) => (
-                <TableRow key={r.id} className="group border-muted/20 hover:bg-primary/5 transition-colors">
-                  <TableCell>
-                    <Badge className={cn("rounded-none text-[8px] font-black uppercase", r.type === 'specialist' ? "bg-amber-500 text-black" : "bg-primary text-primary-foreground")}>
-                      {r.type}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-sm font-black uppercase italic tracking-tight">{r.condition}</TableCell>
-                  <TableCell className="text-[11px] font-mono font-bold text-primary">→ {r.assignedPIC}</TableCell>
-                  <TableCell className="text-right">
-                    <Button onClick={() => openEditModal(r)} variant="ghost" size="icon" className="size-8 rounded-none text-primary">
-                      <Settings2 className="size-4" />
-                    </Button>
-                  </TableCell>
+              {filteredRules.length === 0 && !loading ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center py-20 font-mono text-[10px] uppercase opacity-30">No_Logic_Found_In_Registry</TableCell>
                 </TableRow>
-              ))}
+              ) : (
+                filteredRules.map((r) => (
+                  <TableRow key={r.id} className="group border-muted/20 hover:bg-primary/5 transition-colors">
+                    <TableCell>
+                      <Badge className={cn("rounded-none text-[8px] font-black uppercase", r.type === 'specialist' ? "bg-amber-500 text-black" : "bg-primary text-primary-foreground")}>
+                        {r.type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm font-black uppercase italic tracking-tight">{r.condition}</TableCell>
+                    <TableCell className="text-[11px] font-mono font-bold text-primary">→ {r.assignedPIC}</TableCell>
+                    <TableCell className="text-right">
+                      <Button onClick={() => openEditModal(r)} variant="ghost" size="icon" className="size-8 rounded-none text-primary">
+                        <Settings2 className="size-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </div>
@@ -139,7 +150,7 @@ export default function BookingRulesPage() {
   )
 }
 
-// --- MODAL COMPONENT WITH PIC DROPDOWN ---
+// --- MODAL COMPONENT ---
 function RuleModalContent({ setIsOpen, initialData, onDelete }: any) {
     const [type, setType] = React.useState("team")
     const [condition, setCondition] = React.useState("")
@@ -147,7 +158,7 @@ function RuleModalContent({ setIsOpen, initialData, onDelete }: any) {
     const [isSubmitting, setIsSubmitting] = React.useState(false)
     const [staff, setStaff] = React.useState<any[]>([])
 
-    // Fetch Staff List (Filter for Engineering/Technical if needed)
+    // Fetch Staff List for the dropdown
     React.useEffect(() => {
       const q = query(collection(db, "staff"), orderBy("Firstname", "asc"));
       const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -161,6 +172,10 @@ function RuleModalContent({ setIsOpen, initialData, onDelete }: any) {
         setType(initialData.type);
         setCondition(initialData.condition);
         setAssignedPIC(initialData.assignedPIC);
+      } else {
+        setType("team");
+        setCondition("");
+        setAssignedPIC("");
       }
     }, [initialData]);
 
@@ -175,7 +190,11 @@ function RuleModalContent({ setIsOpen, initialData, onDelete }: any) {
           await addDoc(collection(db, "booking_rules"), { ...payload, createdAt: new Date() });
         }
         setIsOpen(false);
-      } catch (e) { console.error(e); } finally { setIsSubmitting(false); }
+      } catch (e) { 
+        console.error(e); 
+      } finally { 
+        setIsSubmitting(false); 
+      }
     }
 
     return (
@@ -198,7 +217,6 @@ function RuleModalContent({ setIsOpen, initialData, onDelete }: any) {
             </div>
             
             <div className="p-6 space-y-6">
-                {/* Logic Type Select */}
                 <div className="grid gap-2">
                     <Label className="text-[10px] font-black uppercase opacity-50 ml-1">Logic Priority</Label>
                     <Select value={type} onValueChange={setType}>
@@ -212,13 +230,11 @@ function RuleModalContent({ setIsOpen, initialData, onDelete }: any) {
                     </Select>
                 </div>
                 
-                {/* Condition Input */}
                 <div className="grid gap-2">
                     <Label className="text-[10px] font-black uppercase opacity-50 ml-1">Condition Name</Label>
                     <Input value={condition} onChange={(e) => setCondition(e.target.value)} placeholder="E.G. TEAM CHI OR DIALUX" className="h-11 rounded-none border-2 border-muted/50 uppercase font-mono text-xs" />
                 </div>
 
-                {/* --- UPDATED PIC DROPDOWN --- */}
                 <div className="grid gap-2">
                     <Label className="text-[10px] font-black uppercase opacity-50 ml-1">Assigned PIC (Staff List)</Label>
                     <Select value={assignedPIC} onValueChange={setAssignedPIC}>
