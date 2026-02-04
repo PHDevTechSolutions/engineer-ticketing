@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
-  Mail, Lock, Eye, EyeOff, Fingerprint, Grid3X3, ShieldCheck, AlertTriangle
+  Mail, Lock, Eye, EyeOff, Fingerprint, Grid3X3, ShieldCheck, AlertTriangle, HelpCircle
 } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 
@@ -22,9 +22,9 @@ import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { db, logsDb } from "@/lib/firebase"; 
 import { supabase } from "@/utils/supabase-ticket";
 
-// Force dynamic to prevent Vercel build errors with Supabase/LocalStorage
 export const dynamic = 'force-dynamic';
 
+// Full Type Definition
 type Ticket = {
   ticket_id: string;
   department: string;
@@ -34,6 +34,9 @@ type Ticket = {
   ticket_subject: string;
   date_created: string;
 };
+
+// Narrow Type for the state to fix Build Error
+type TicketSummary = Pick<Ticket, "ticket_id" | "date_created">;
 
 export function LoginForm({ className, ...props }: React.ComponentProps<"div">) {
   const [email, setEmail] = useState("");
@@ -49,7 +52,9 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
   const [showTicketDialog, setShowTicketDialog] = useState(false);
   const [remarks, setRemarks] = useState("");
   const [ticketSubmitting, setTicketSubmitting] = useState(false);
-  const [existingTickets, setExistingTickets] = useState<Ticket[]>([]);
+  
+  // FIX: Use the narrow TicketSummary type here
+  const [existingTickets, setExistingTickets] = useState<TicketSummary[]>([]);
 
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
@@ -80,7 +85,6 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
     }
   };
 
-  // Safe Device ID retrieval for SSR
   const getDeviceId = useCallback(() => {
     if (typeof window === "undefined") return "";
     let deviceId = localStorage.getItem("deviceId");
@@ -105,8 +109,14 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
 
   const fetchTickets = useCallback(async () => {
     try {
-      const { data } = await supabase.from("tickets").select("ticket_id, date_created");
-      if (data) setExistingTickets(data);
+      const { data, error } = await supabase
+        .from("tickets")
+        .select("ticket_id, date_created");
+      
+      // FIX: Cast the data to TicketSummary[] to satisfy TypeScript
+      if (data && !error) {
+        setExistingTickets(data as TicketSummary[]);
+      }
     } catch (e) {
       console.error("Supabase fetch failed", e);
     }
@@ -128,7 +138,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
     try {
       const { error } = await supabase.from("tickets").insert([{
         ticket_id: generateTicketID(),
-        department: "ENGINEERING", // Protocol: Set to Department ENGINEERING
+        department: "ENGINEERING", 
         requestor_name: email || "Engineering Portal User",
         mode: "System Directory",
         status: "Pending",
@@ -139,6 +149,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
       toast.success("Ticket submitted successfully.");
       setRemarks("");
       setShowTicketDialog(false);
+      fetchTickets(); // Refresh sequence
     } catch (err: any) {
       toast.error(err.message || "Failed to submit ticket.");
     } finally {
@@ -224,7 +235,16 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
   };
 
   return (
-    <div className={cn("min-h-screen w-full flex bg-[#F9FAFA]", className)} {...props}>
+    <div className={cn("min-h-screen w-full flex bg-[#F9FAFA] relative", className)} {...props}>
+      
+      {/* ENGINEERING PROTOCOL FAB */}
+      <button 
+        onClick={() => setShowTicketDialog(true)}
+        className="fixed bottom-8 right-8 z-[50] h-14 w-14 rounded-full bg-[#121212] text-white flex items-center justify-center shadow-2xl hover:scale-110 transition-transform active:scale-95 border border-white/10"
+      >
+        <HelpCircle className="h-6 w-6" />
+      </button>
+
       {/* AUTHORIZATION OVERLAY */}
       {showOverlay && (
         <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#121212]/95 backdrop-blur-md">
@@ -436,7 +456,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
           <DialogHeader>
             <DialogTitle className="text-red-600 uppercase font-black text-2xl tracking-tighter">Access Locked</DialogTitle>
             <DialogDescription className="font-medium">
-              Maximum failed attempts reached. Submit a ticket to the Engineering Support desk.
+              Manual incident report required. Submit to Engineering Support.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
