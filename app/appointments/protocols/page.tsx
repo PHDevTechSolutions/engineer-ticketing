@@ -8,7 +8,6 @@ import {
   Terminal,
   Activity,
   Loader2,
-  Trash2,
   UserCheck 
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -87,43 +86,48 @@ export default function ProtocolRegistryPage() {
   )
 
   return (
-    <div className="flex flex-col min-h-screen bg-background font-sans antialiased text-foreground pb-24 md:pb-0">
+    <div className="flex flex-col min-h-screen bg-[#F9FAFA] font-sans antialiased text-foreground pb-24 md:pb-0">
       
-      <PageHeader title="Registry Control" version="DSI-LOG-v2.4">
-        <Dialog 
-          open={isOpen} 
-          onOpenChange={(val) => {
-            setIsOpen(val);
-            if(!val) setSelectedProtocol(null); 
-          }}
-        >
-          <DialogTrigger asChild>
-            <Button size="sm" className="hidden md:flex h-8 rounded-none bg-primary text-primary-foreground font-black uppercase italic text-[10px] tracking-widest px-4">
-              <Plus className="size-3 mr-1" /> New_Entry
-            </Button>
-          </DialogTrigger>
-          <ProtocolModalContent 
-            setIsOpen={setIsOpen} 
-            initialData={selectedProtocol} 
-            onDelete={deleteProtocol} 
-          />
-        </Dialog>
-      </PageHeader>
+      {/* FIXED: Removed children from PageHeader to resolve TypeScript Error */}
+      <PageHeader 
+        title="Registry Control" 
+        version="DSI-LOG-v2.4"
+        actions={
+            <Dialog 
+                open={isOpen} 
+                onOpenChange={(val) => {
+                    setIsOpen(val);
+                    if(!val) setSelectedProtocol(null); 
+                }}
+            >
+                <DialogTrigger asChild>
+                    <Button size="sm" className="hidden md:flex h-10 rounded-none bg-[#121212] text-white font-black uppercase italic text-[10px] tracking-widest px-6 shadow-md hover:bg-black transition-all">
+                        <Plus className="size-4 mr-2" /> New_Entry
+                    </Button>
+                </DialogTrigger>
+                <ProtocolModalContent 
+                    setIsOpen={setIsOpen} 
+                    initialData={selectedProtocol} 
+                    onDelete={deleteProtocol} 
+                />
+            </Dialog>
+        }
+      />
 
       <main className="flex flex-1 flex-col gap-4 md:gap-6 p-4 md:p-6 max-w-6xl mx-auto w-full relative">
         
         {/* --- SYSTEM STATUS BAR --- */}
-        <section className="grid grid-cols-2 md:grid-cols-4 gap-px bg-muted/30 border border-muted/30">
+        <section className="grid grid-cols-2 md:grid-cols-4 gap-px bg-black/5 border border-black/5">
             {[
                 { label: "Manifest", val: protocols.length, icon: Terminal },
                 { label: "Active", val: protocols.filter(p => p.isActive).length, icon: Activity },
             ].map((stat, i) => (
-                <div key={i} className="bg-background p-3 md:p-4 flex flex-col gap-1">
+                <div key={i} className="bg-white p-4 flex flex-col gap-1 border-r border-black/5 last:border-r-0 shadow-sm">
                     <div className="flex items-center gap-2 opacity-40">
                         <stat.icon className="size-3" />
                         <span className="text-[9px] font-black uppercase tracking-widest">{stat.label}</span>
                     </div>
-                    <span className="text-xl md:text-2xl font-black italic tracking-tighter">
+                    <span className="text-xl md:text-2xl font-black italic tracking-tighter text-[#121212]">
                       {loading ? "--" : stat.val.toString().padStart(2, '0')}
                     </span>
                 </div>
@@ -132,18 +136,18 @@ export default function ProtocolRegistryPage() {
 
         {/* --- SEARCH --- */}
         <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-primary opacity-50" />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-black/30" />
           <Input 
             placeholder="FILTER REGISTRY..." 
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-12 h-12 bg-muted/5 border-2 border-muted/50 rounded-none font-mono text-xs tracking-widest uppercase"
+            className="pl-12 h-12 bg-white border border-black/10 rounded-none font-mono text-xs tracking-widest uppercase shadow-sm focus-visible:ring-black"
           />
         </div>
 
-        {/* --- TABLE --- */}
-        <div className="border-2 border-muted/50 bg-muted/5 overflow-hidden min-h-[400px]">
-            <div className="bg-muted/10 border-b-2 border-muted/50 p-2 flex items-center justify-between">
+        {/* --- TABLE / PROTOCOL LIST --- */}
+        <div className="border border-black/10 bg-white overflow-hidden min-h-[400px] shadow-sm">
+            <div className="bg-[#F9FAFA] border-b border-black/10 p-3 flex items-center justify-between">
                 <span className="text-[9px] font-black uppercase tracking-[0.3em] px-2 opacity-50">Master_Index</span>
                 {loading && <Loader2 className="size-3 animate-spin mr-2 opacity-50" />}
             </div>
@@ -151,21 +155,21 @@ export default function ProtocolRegistryPage() {
             <div className="hidden md:block">
                 <Table>
                 <TableHeader>
-                    <TableRow className="border-muted/50 hover:bg-transparent">
-                    <TableHead className="text-[10px] font-black uppercase tracking-widest py-4">UID</TableHead>
-                    <TableHead className="text-[10px] font-black uppercase tracking-widest">Protocol / Lead Engineer</TableHead>
-                    <TableHead className="text-[10px] font-black uppercase tracking-widest">Status</TableHead>
-                    <TableHead className="text-right"></TableHead>
+                    <TableRow className="border-black/5 hover:bg-transparent">
+                        <TableHead className="text-[10px] font-black uppercase tracking-widest py-4">UID</TableHead>
+                        <TableHead className="text-[10px] font-black uppercase tracking-widest">Protocol / Lead Engineer</TableHead>
+                        <TableHead className="text-[10px] font-black uppercase tracking-widest">Status</TableHead>
+                        <TableHead className="text-right"></TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
                     {filteredProtocols.map((p) => (
-                    <TableRow key={p.id} className="group border-muted/20 hover:bg-primary/5 transition-colors">
-                        <TableCell className="font-mono text-[10px] text-primary/60">[ {p.uid} ]</TableCell>
+                    <TableRow key={p.id} className="group border-black/5 hover:bg-[#F9FAFA] transition-colors">
+                        <TableCell className="font-mono text-[10px] text-black/60">[ {p.uid} ]</TableCell>
                         <TableCell>
                           <div className="flex flex-col">
-                              <span className="text-sm font-black uppercase italic tracking-tight">{p.label}</span>
-                              <span className="text-[10px] font-mono font-bold text-primary uppercase">
+                              <span className="text-sm font-black uppercase italic tracking-tight text-[#121212]">{p.label}</span>
+                              <span className="text-[10px] font-mono font-bold text-black/40 uppercase">
                                 <UserCheck className="inline size-2.5 mr-1 mb-0.5" />
                                 {p.pic || "UNASSIGNED"}
                               </span>
@@ -174,15 +178,15 @@ export default function ProtocolRegistryPage() {
                         <TableCell>
                         <button onClick={() => toggleProtocolStatus(p.id, p.isActive)}>
                           <Badge variant="outline" className={cn(
-                              "rounded-none px-2 py-0 text-[9px] font-black uppercase border-2 cursor-pointer transition-all",
-                              p.isActive ? "border-emerald-500/20 text-emerald-500 bg-emerald-500/5 hover:bg-emerald-500/10" : "border-muted text-muted-foreground"
+                              "rounded-none px-2 py-0 text-[9px] font-black uppercase border cursor-pointer transition-all",
+                              p.isActive ? "border-emerald-500/20 text-emerald-600 bg-emerald-50 shadow-sm" : "border-black/10 text-black/30 bg-black/5"
                           )}>
                               {p.isActive ? "● ONLINE" : "○ OFFLINE"}
                           </Badge>
                         </button>
                         </TableCell>
                         <TableCell className="text-right">
-                            <Button onClick={() => openEditModal(p)} variant="ghost" size="icon" className="size-8 rounded-none text-primary">
+                            <Button onClick={() => openEditModal(p)} variant="ghost" size="icon" className="size-8 rounded-none text-black/40 hover:text-black hover:bg-black/5">
                                 <Settings2 className="size-4" />
                             </Button>
                         </TableCell>
@@ -193,6 +197,18 @@ export default function ProtocolRegistryPage() {
             </div>
         </div>
       </main>
+
+      {/* MOBILE FLOATING ACTION BUTTON (FAB) */}
+      <div className="md:hidden fixed bottom-8 right-6 z-50">
+        <Button 
+          onClick={() => { setSelectedProtocol(null); setIsOpen(true) }} 
+          className="size-16 rounded-full bg-[#121212] text-white shadow-2xl hover:bg-black active:scale-95 transition-all flex flex-col items-center justify-center border border-white/10"
+        >
+          <Plus className="size-6 stroke-[3px]" />
+          <span className="text-[8px] font-black uppercase tracking-tighter mt-0.5">Entry</span>
+        </Button>
+      </div>
+
     </div>
   )
 }
@@ -205,12 +221,11 @@ function ProtocolModalContent({ setIsOpen, initialData, onDelete }: any) {
     const [isSubmitting, setIsSubmitting] = React.useState(false)
     const [engineers, setEngineers] = React.useState<any[]>([])
 
-    // FETCH ENGINEERS ONLY
+    // FETCH ENGINEERS ONLY (ENGINEERING DEPT FILTER)
     React.useEffect(() => {
       const q = query(collection(db, "staff"), orderBy("Firstname", "asc"));
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const staffList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        // CRITICAL FILTER: Only department === "Engineering"
         const filtered = staffList.filter((s: any) => s.Department?.toLowerCase() === "engineering");
         setEngineers(filtered);
       });
@@ -219,10 +234,12 @@ function ProtocolModalContent({ setIsOpen, initialData, onDelete }: any) {
 
     React.useEffect(() => {
       if (initialData) {
-        setLabel(initialData.label);
-        setDesc(initialData.desc);
+        setLabel(initialData.label || "");
+        setDesc(initialData.desc || "");
         setPic(initialData.pic || "");
         setIsActive(initialData.isActive);
+      } else {
+        setLabel(""); setDesc(""); setPic(""); setIsActive(true);
       }
     }, [initialData]);
 
@@ -245,14 +262,14 @@ function ProtocolModalContent({ setIsOpen, initialData, onDelete }: any) {
     }
 
     return (
-        <DialogContent className="sm:max-w-[450px] p-0 gap-0 border-2 border-primary/20 bg-background rounded-none shadow-[10px_10px_0px_0px_rgba(0,0,0,0.1)]">
-            <div className="bg-primary/10 border-b-2 border-primary/20 p-6">
+        <DialogContent className="sm:max-w-[450px] p-0 gap-0 border border-black/10 bg-white rounded-none shadow-2xl font-sans">
+            <div className="bg-[#F9FAFA] border-b border-black/10 p-6">
                 <DialogHeader className="text-left">
                     <div className="flex items-center gap-2 mb-2">
-                        <Terminal className="size-3 text-primary" />
-                        <span className="text-[9px] font-black uppercase tracking-[0.3em] text-primary">Protocol_Config</span>
+                        <Terminal className="size-3 text-black/40" />
+                        <span className="text-[9px] font-black uppercase tracking-[0.3em] text-black/40">Protocol_Config</span>
                     </div>
-                    <DialogTitle className="text-2xl font-black uppercase italic tracking-tighter">
+                    <DialogTitle className="text-2xl font-black uppercase italic tracking-tighter text-[#121212]">
                       {initialData ? `Edit: ${initialData.uid}` : "New Protocol"}
                     </DialogTitle>
                 </DialogHeader>
@@ -261,17 +278,16 @@ function ProtocolModalContent({ setIsOpen, initialData, onDelete }: any) {
             <div className="p-6 space-y-5">
                 <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase opacity-50 ml-1">Protocol Designation</Label>
-                    <Input value={label} onChange={(e) => setLabel(e.target.value)} className="h-11 rounded-none border-2 border-muted/50 uppercase font-mono text-xs" />
+                    <Input value={label} onChange={(e) => setLabel(e.target.value)} className="h-11 rounded-none border border-black/10 uppercase font-mono text-xs focus-visible:ring-black" />
                 </div>
                 
-                {/* --- ENGINEERING PIC DROPDOWN --- */}
                 <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase opacity-50 ml-1">Lead Engineer (PIC)</Label>
                     <Select value={pic} onValueChange={setPic}>
-                      <SelectTrigger className="h-11 rounded-none border-2 border-muted/50 font-mono text-xs uppercase">
+                      <SelectTrigger className="h-11 rounded-none border border-black/10 font-mono text-xs uppercase focus:ring-black">
                         <SelectValue placeholder="ASSIGN_ENGINEER..." />
                       </SelectTrigger>
-                      <SelectContent className="rounded-none border-2 border-primary/20">
+                      <SelectContent className="rounded-none border border-black/10">
                         {engineers.map((eng) => (
                           <SelectItem key={eng.id} value={`${eng.Firstname} ${eng.Lastname}`} className="font-mono text-[10px] uppercase">
                             {eng.Firstname} {eng.Lastname}
@@ -281,15 +297,15 @@ function ProtocolModalContent({ setIsOpen, initialData, onDelete }: any) {
                     </Select>
                 </div>
 
-                <div className="flex items-center justify-between p-4 bg-muted/10 border-2 border-muted/50">
-                    <Label className="text-xs font-black uppercase">Registry Status</Label>
-                    <Switch checked={isActive} onCheckedChange={setIsActive} className="data-[state=checked]:bg-primary rounded-none" />
+                <div className="flex items-center justify-between p-4 bg-[#F9FAFA] border border-black/5 shadow-inner">
+                    <Label className="text-xs font-black uppercase text-[#121212]">Registry Status</Label>
+                    <Switch checked={isActive} onCheckedChange={setIsActive} className="data-[state=checked]:bg-[#121212]" />
                 </div>
             </div>
 
             <DialogFooter className="p-6 pt-0 flex flex-row gap-3">
-                <Button variant="ghost" className="flex-1 rounded-none font-black text-[10px] uppercase" onClick={() => setIsOpen(false)}>Discard</Button>
-                <Button disabled={isSubmitting} onClick={handleCommit} className="flex-1 bg-primary text-primary-foreground rounded-none font-black text-[10px] uppercase italic shadow-[4px_4px_0px_0px_rgba(0,0,0,0.3)]">
+                <Button variant="ghost" className="flex-1 rounded-none font-black text-[10px] uppercase border border-black/5" onClick={() => setIsOpen(false)}>Discard</Button>
+                <Button disabled={isSubmitting} onClick={handleCommit} className="flex-1 bg-[#121212] text-white rounded-none font-black text-[10px] uppercase italic shadow-md hover:bg-black">
                   {isSubmitting ? "Syncing..." : "Commit_Protocol"}
                 </Button>
             </DialogFooter>
