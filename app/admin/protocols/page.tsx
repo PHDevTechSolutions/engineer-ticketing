@@ -9,9 +9,9 @@ import {
     SidebarProvider,
     SidebarTrigger,
 } from "@/components/ui/sidebar"
-import { 
+import {
     Plus, Search, Activity, RotateCcw,
-    Settings2, ClipboardCheck, Users, ShieldCheck, 
+    Settings2, ClipboardCheck, Users, ShieldCheck,
     TrendingUp, Loader2, FilterX
 } from "lucide-react"
 
@@ -41,7 +41,7 @@ export default function SiteVisitManagementPage() {
 
     React.useEffect(() => {
         setUserId(localStorage.getItem("userId"))
-        
+
         const q = query(collection(db, "protocols"), orderBy("createdAt", "desc"))
         const unsubscribe = onSnapshot(q, (snapshot) => {
             setServices(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })))
@@ -71,10 +71,10 @@ export default function SiteVisitManagementPage() {
             <SidebarProvider defaultOpen={false}>
                 <AppSidebar userId={userId} />
                 <SidebarInset className="bg-[#F9FAFA] pb-24 md:pb-0 relative font-sans">
-                    
-                    <PageHeader 
-                        title="PROTOCOL_MANAGEMENT" 
-                        version="BUILD: CORP-V2.6" 
+
+                    <PageHeader
+                        title="PROTOCOL_MANAGEMENT"
+                        version="BUILD: CORP-V2.6"
                         showBackButton={true}
                         trigger={<SidebarTrigger className="mr-2" />}
                         actions={
@@ -90,23 +90,23 @@ export default function SiteVisitManagementPage() {
                     />
 
                     <main className="flex flex-1 flex-col gap-6 p-4 md:p-10 max-w-7xl mx-auto w-full">
-                        
+
                         {/* SYNCHRONIZED STAT CARDS */}
                         <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                            <StatCard 
-                                label="Total Matrix" 
-                                val={services.length} 
-                                icon={ClipboardCheck} 
-                                isActive={filterActive === null} 
-                                onClick={() => setFilterActive(null)} 
+                            <StatCard
+                                label="Total Matrix"
+                                val={services.length}
+                                icon={ClipboardCheck}
+                                isActive={filterActive === null}
+                                onClick={() => setFilterActive(null)}
                                 color="#121212"
                             />
-                            <StatCard 
-                                label="Active Ops" 
-                                val={services.filter(s => s.isActive).length} 
-                                icon={Activity} 
-                                isActive={filterActive === true} 
-                                onClick={() => setFilterActive(true)} 
+                            <StatCard
+                                label="Active Ops"
+                                val={services.filter(s => s.isActive).length}
+                                icon={Activity}
+                                isActive={filterActive === true}
+                                onClick={() => setFilterActive(true)}
                                 color="#10B981"
                             />
                             <StatCard label="Efficiency" val="94%" icon={TrendingUp} color="#3B82F6" isStatic />
@@ -117,16 +117,16 @@ export default function SiteVisitManagementPage() {
                         <div className="flex flex-col md:flex-row gap-4 mt-2">
                             <div className="relative flex-1 group">
                                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-black/30 group-focus-within:text-black transition-colors" />
-                                <input 
-                                    placeholder="Filter by UID or Service Label..." 
+                                <input
+                                    placeholder="Filter by UID or Service Label..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                     className="w-full pl-11 pr-4 rounded-md border border-black/10 bg-white h-12 text-sm focus:outline-none focus:ring-1 focus:ring-black focus:border-black shadow-sm transition-all uppercase font-mono"
                                 />
                             </div>
-                            <Button 
-                                variant="outline" 
-                                onClick={() => {setFilterActive(null); setSearchTerm("")}} 
+                            <Button
+                                variant="outline"
+                                onClick={() => { setFilterActive(null); setSearchTerm("") }}
                                 className="rounded-md border-black/10 h-12 px-6 uppercase font-bold text-[10px] tracking-widest bg-white hover:bg-black hover:text-white transition-all shadow-sm"
                             >
                                 <RotateCcw className="mr-2 size-3" /> Reset Matrix
@@ -150,7 +150,7 @@ export default function SiteVisitManagementPage() {
                                     filteredServices.map((s) => (
                                         <div key={s.id} className="grid grid-cols-1 md:grid-cols-5 gap-4 p-5 hover:bg-[#F9FAFA] transition-all items-center">
                                             <span className="text-[11px] font-bold text-black font-mono">[{s.uid}]</span>
-                                            
+
                                             <span className="text-sm font-bold uppercase tracking-tight text-black">{s.label}</span>
 
                                             <div className="flex flex-wrap gap-1">
@@ -161,12 +161,12 @@ export default function SiteVisitManagementPage() {
                                                 ))}
                                             </div>
 
-                                            <div 
-                                                onClick={() => toggleServiceStatus(s.id, s.isActive)} 
+                                            <div
+                                                onClick={() => toggleServiceStatus(s.id, s.isActive)}
                                                 className={cn(
                                                     "w-fit px-3 py-1 border rounded-sm text-[9px] font-bold tracking-widest cursor-pointer transition-all",
-                                                    s.isActive 
-                                                        ? "bg-emerald-50 border-emerald-200 text-emerald-700 shadow-sm" 
+                                                    s.isActive
+                                                        ? "bg-emerald-50 border-emerald-200 text-emerald-700 shadow-sm"
                                                         : "bg-black/[0.03] border-black/10 text-black/30"
                                                 )}
                                             >
@@ -174,9 +174,9 @@ export default function SiteVisitManagementPage() {
                                             </div>
 
                                             <div className="flex justify-end">
-                                                <Button 
-                                                    onClick={() => { setSelectedService(s); setIsOpen(true) }} 
-                                                    variant="ghost" 
+                                                <Button
+                                                    onClick={() => { setSelectedService(s); setIsOpen(true) }}
+                                                    variant="ghost"
                                                     className="rounded-md text-[10px] font-bold uppercase hover:bg-black hover:text-white transition-all h-8"
                                                 >
                                                     <Settings2 className="size-3 mr-2" /> Settings
@@ -191,8 +191,8 @@ export default function SiteVisitManagementPage() {
 
                     {/* MOBILE FAB - CONSISTENT WITH ACTIVITY LIST */}
                     <div className="md:hidden fixed bottom-8 right-6 z-50">
-                        <Button 
-                            onClick={() => { setSelectedService(null); setIsOpen(true) }} 
+                        <Button
+                            onClick={() => { setSelectedService(null); setIsOpen(true) }}
                             className="size-16 rounded-full bg-[#121212] text-white shadow-2xl hover:bg-black active:scale-90 transition-all flex flex-col items-center justify-center border border-white/10"
                         >
                             <div className="size-6 bg-white/10 rounded-full flex items-center justify-center mb-1">
@@ -210,7 +210,7 @@ export default function SiteVisitManagementPage() {
 
 function StatCard({ label, val, icon: Icon, isActive, onClick, color, isStatic }: any) {
     return (
-        <div 
+        <div
             onClick={!isStatic ? onClick : undefined}
             className={cn(
                 "relative p-5 flex flex-col gap-3 transition-all duration-300 border rounded-lg bg-white shadow-sm",
@@ -220,8 +220,8 @@ function StatCard({ label, val, icon: Icon, isActive, onClick, color, isStatic }
             )}
         >
             <div className="flex justify-between items-start">
-                <div 
-                    className="p-2 rounded-md" 
+                <div
+                    className="p-2 rounded-md"
                     style={{ backgroundColor: isActive ? `${color}15` : '#F9FAFA' }}
                 >
                     <Icon className="size-5" style={{ color: isActive ? color : '#707070' }} />
