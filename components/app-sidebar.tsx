@@ -23,6 +23,7 @@ import {
   ExternalLink,
   Users,
   Fingerprint,
+  Layers
 } from "lucide-react"
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
@@ -65,7 +66,7 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
           Department: data.Department || "",
         })
       } catch (error) {
-        console.error("Failed to fetch user details:", error)
+        console.error("SYS_FETCH_ERROR:", error)
       } finally {
         setIsLoading(false)
       }
@@ -91,15 +92,14 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
       ],
     },
     appointments: {
-      title: "Appointment Config",
+      title: "Service Control",
       url: "#",
       icon: CalendarDays,
-      isActive: pathname?.startsWith("/appointments"),
+      isActive: pathname?.includes("/appointments") || pathname?.includes("/admin"),
       items: [
         { title: "Schedules & Slots", url: appendUserId("/appointments/slots") },
-        { title: "Booking Rules", url: appendUserId("/admin/booking_rules") },
-        // ADMIN ONLY: Management of the selectable Assistance Types
         { title: "Protocol Registry", url: appendUserId("/admin/protocols") },
+        { title: "Assignment Matrix", url: appendUserId("/admin/assignment-matrix") },
         { title: "Notification Templates", url: appendUserId("/appointments/notifications") },
       ],
     },
@@ -107,7 +107,7 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
       title: "User Management",
       url: "#",
       icon: Users,
-      isActive: pathname?.startsWith("/admin"),
+      isActive: pathname?.startsWith("/admin") && !pathname?.includes("protocols"),
       items: [
         { title: "Staff Directory", url: appendUserId("/admin/staff") },
         { title: "Permission Sets", url: appendUserId("/admin/permissions") },
@@ -137,16 +137,11 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
   // FILTER LOGIC (Role-Based Access Control)
   // ---------------------------------------------------------
   const department = userDetails.Department?.trim()
-  
-  // Full Access Roles (IT + Engineering Management)
-  const hasFullAccess = [
-    "IT",
-    "Engineering"
-  ].includes(department)
+  const hasFullAccess = ["IT", "Engineering"].includes(department)
 
   const getFilteredData = () => {
     if (isLoading) return { navMain: [], navSecondary: [], projects: [] }
-    
+
     const baseItems = [NAV_ITEMS.personal]
 
     // 1. ADMIN / ENGINEERING MGMT VIEW
@@ -168,29 +163,15 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
           navMain: [
             {
               ...NAV_ITEMS.appointments,
-              // Sales can see logic but cannot modify the Registry Protocols
-              items: NAV_ITEMS.appointments.items.filter(i => i.title !== "Protocol Registry")
+              items: NAV_ITEMS.appointments.items.filter(i => 
+                !["Protocol Registry", "Assignment Matrix"].includes(i.title)
+              )
             },
             ...baseItems
           ],
           navSecondary: [],
-          projects: [PROJECTS[0]], // Only Taskflow
-        }
-
-      case "IT Associate":
-        return {
-          navMain: [NAV_ITEMS.appointments, ...baseItems],
-          navSecondary: [],
-          projects: PROJECTS.filter(p => p.name !== "Acculog Attendance"),
-        }
-
-      case "Asset Supervisor":
-        return {
-          navMain: baseItems,
-          navSecondary: [],
           projects: [PROJECTS[0]],
         }
-
       default:
         return { navMain: baseItems, navSecondary: [], projects: [] }
     }
@@ -199,20 +180,41 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
   const filtered = getFilteredData()
 
   return (
-    <Sidebar variant="inset" {...props}>
-      <SidebarHeader className="border-b border-muted/50">
-        <SidebarMenu>
+    <Sidebar variant="inset" className="bg-[#F9FAFA] border-r border-black/5" {...props}>
+      <SidebarHeader className="p-0 overflow-hidden bg-white border-b border-black/5">
+        <SidebarMenu className="p-4">
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild className="hover:bg-transparent">
-              <button onClick={() => router.push(appendUserId("/dashboard"))} className="flex items-center gap-3">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
-                  <img src="/xchire-logo.png" className="w-5 h-5 invert" alt="Logo" />
+            <SidebarMenuButton size="lg" asChild className="hover:bg-transparent px-0 h-auto">
+              <button 
+                onClick={() => router.push(appendUserId("/dashboard"))} 
+                className="flex flex-col items-start gap-4 w-full group text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="size-10 rounded-xl bg-[#121212] flex items-center justify-center shadow-lg transition-transform group-hover:scale-95">
+                    <img src="/disruptive.png" className="w-5 h-5" alt="Brand Logo" />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-black uppercase tracking-tight text-[#121212]">
+                      Disruptive
+                    </span>
+                    <span className="text-[9px] font-bold text-black/30 uppercase tracking-[0.2em]">
+                      Engineering_Dept
+                    </span>
+                  </div>
                 </div>
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-black uppercase tracking-tight">Engineer Portal</span>
-                  <span className="truncate text-xs opacity-60 font-bold italic tracking-tighter">
-                    {department || "System User"}
-                  </span>
+
+                {/* PROTOCOL INDICATOR CARD */}
+                <div className="w-full px-3 py-2 bg-[#F9FAFA] border border-black/5 rounded-lg flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-[7px] font-black text-black/20 uppercase tracking-widest">Auth_Node</span>
+                    <span className="text-[10px] font-black text-[#121212] uppercase tracking-tight">
+                      {department || "GUEST_ACCESS"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-[8px] font-mono font-bold text-black/40">V2.6</span>
+                  </div>
                 </div>
               </button>
             </SidebarMenuButton>
@@ -220,21 +222,24 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
         </SidebarMenu>
       </SidebarHeader>
 
-      <SidebarContent className="gap-0">
+      <SidebarContent className="gap-0 py-2 scrollbar-hide">
         {!isLoading && (
           <>
             <NavMain items={filtered.navMain} />
+            <div className="px-6 py-4">
+               <div className="h-[1px] bg-black/5 w-full" />
+            </div>
             <NavProjects projects={filtered.projects} />
             <NavSecondary items={filtered.navSecondary} className="mt-auto" />
           </>
         )}
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-muted/50">
+      <SidebarFooter className="border-t border-black/5 bg-white p-2">
         <NavUser
           user={{
             id: userDetails.UserId,
-            name: isLoading ? "Verifying..." : `${userDetails.Firstname} ${userDetails.Lastname}`,
+            name: isLoading ? "AUTHENTICATING..." : `${userDetails.Firstname} ${userDetails.Lastname}`,
             email: userDetails.Email,
             avatar: userDetails.profilePicture,
           }}
