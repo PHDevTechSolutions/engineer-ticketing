@@ -78,10 +78,10 @@ export default function TerminalDashboard() {
 
     const services = [
         { label: "Deployment Scheduling", icon: CalendarCheck, count: notifications.siteVisit, path: "/appointments/site-visit" },
-        { label: "Job Requisition", icon: FileText, count: notifications.jobRequest, path: "/requests/job" },
+        { label: "Job Requisition", icon: FileText, count: notifications.jobRequest, path: "/request/job" },
         { label: "Dialux Simulation", icon: Monitor, count: 0, path: "/requests/dialux" },
         { label: "Product Validation", icon: ThumbsUp, count: 0, path: "/requests/recommendation" },
-        { label: "Technical Shop Drawing", icon: PenTool, count: notifications.shopDrawing, path: "/requests/shop-drawing" },
+        { label: "Technical Shop Drawing", icon: PenTool, count: notifications.shopDrawing, path: "/request/shop-drawing" },
         { label: "Field Testing Monitor", icon: ClipboardCheck, count: 0, path: "/requests/testing" },
         { label: "Miscellaneous Protocol", icon: MoreHorizontal, count: notifications.other, path: "/requests/other" },
         { label: "Enterprise Tracker", icon: Search, count: 0, path: "/tracker" },
