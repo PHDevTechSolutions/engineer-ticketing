@@ -37,7 +37,7 @@ export default function SchedulePage() {
   
   const [assignedPics, setAssignedPics] = React.useState<any[]>([]);
   const [protocolMetadata, setProtocolMetadata] = React.useState<any[]>([]); 
-  const [selectedPic, setSelectedPic] = React.useState<string>(""); // START EMPTY
+  const [selectedPic, setSelectedPic] = React.useState<string>(""); 
   const [isLoadingSync, setIsLoadingSync] = React.useState(true);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [isGeocoding, setIsGeocoding] = React.useState(false);
@@ -55,7 +55,7 @@ export default function SchedulePage() {
     tsm: "NOT_SET"  
   });
 
-  // 2. PROTOCOL & PIC SYNC (REMOVED AUTO-SELECT)
+  // 2. PROTOCOL & PIC SYNC
   React.useEffect(() => {
     if (!isHydrated) return;
 
@@ -74,15 +74,13 @@ export default function SchedulePage() {
       const uniquePics = Array.from(new Set(matched.flatMap(p => p.pic || []))) as any[];
       setAssignedPics(uniquePics.length > 0 ? uniquePics : ["ENGINEERING_STAFF"]);
       
-      // LOGIC: No auto-selection of PIC here.
       setIsLoadingSync(false);
     });
     return () => unsubscribe();
   }, [selectedAssistance, isHydrated]);
 
-  // 3. CALENDAR DATA PERSISTENCE (TRIGGERS ONLY ON SELECTION)
+  // 3. CALENDAR DATA PERSISTENCE
   React.useEffect(() => {
-    // If no PIC is selected, clear appointments and abort query
     if (!isHydrated || !selectedPic) {
       setExistingAppointments([]);
       return;
@@ -157,7 +155,7 @@ export default function SchedulePage() {
 
   const handlePicChange = (name: string) => {
     setSelectedPic(name);
-    setSelectedDate(null); // Clear selected date when switching personnel to check new availability
+    setSelectedDate(null);
   };
 
   const handleVerifyMap = async () => {
@@ -175,6 +173,10 @@ export default function SchedulePage() {
     if (isSubmitting) return;
     setIsSubmitting(true);
     const toastId = toast.loading("SYNCHRONIZING OPERATIONAL DATA...");
+    
+    // FETCH SUBMITTING USER ID
+    const currentUserId = localStorage.getItem("userId");
+
     try {
       let fileUrl = "";
       if (attachedFile) {
@@ -182,7 +184,9 @@ export default function SchedulePage() {
         await uploadBytes(fileRef, attachedFile);
         fileUrl = await getDownloadURL(fileRef);
       }
+      
       const appointmentDateObj = new Date(viewDate.getFullYear(), viewDate.getMonth(), selectedDate as number);
+      
       await addDoc(collection(db, "appointments"), {
         ...formData, 
         pic: selectedPic, 
@@ -192,8 +196,10 @@ export default function SchedulePage() {
         coordinates: coords, 
         status: "PENDING",
         createdAt: serverTimestamp(), 
-        department: "ENGINEERING"
+        department: "ENGINEERING",
+        submittedBy: currentUserId 
       });
+
       toast.success("DEPLOYMENT INITIALIZED", { id: toastId });
       setTimeout(() => router.push("/appointments/site-visit"), 1500); 
     } catch (error: any) {
@@ -256,7 +262,6 @@ export default function SchedulePage() {
         
         {/* RIGHT COLUMN: CALENDAR & OVERVIEW */}
         <div className="lg:col-span-7 order-1 lg:order-2 space-y-6">
-          
           <div className="bg-[#121212] p-6 rounded-lg text-white shadow-xl flex flex-col md:flex-row justify-between items-center gap-6 border border-white/5">
             <div className="flex items-center gap-5">
               <div className="p-3 bg-white/10 rounded-full">
@@ -281,7 +286,6 @@ export default function SchedulePage() {
 
           <div className="bg-white border border-black/5 p-4 md:p-8 rounded-lg shadow-sm lg:sticky lg:top-10 overflow-hidden">
             {!selectedPic ? (
-              // NEUTRAL STATE UI
               <div className="flex flex-col items-center justify-center py-24 space-y-4 text-center">
                 <div className="p-6 bg-[#F9FAFA] rounded-full border border-black/5">
                   <CalendarSearch className="size-12 text-black/10" />
@@ -292,7 +296,6 @@ export default function SchedulePage() {
                 </div>
               </div>
             ) : (
-              // ACTIVE CALENDAR UI
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
                 <div className="flex items-center justify-between mb-6 md:mb-8">
                   <div className="flex flex-col gap-1">
@@ -352,7 +355,6 @@ export default function SchedulePage() {
 
         {/* LEFT COLUMN: FORM DATA */}
         <div className="lg:col-span-5 space-y-6 md:space-y-8 order-2 lg:order-1">
-          
           <div className="space-y-3">
             <p className="text-[10px] font-bold uppercase text-black/40 tracking-widest flex items-center gap-2">
               <Layers className="size-3" /> Engineering Protocol Stack
@@ -375,7 +377,6 @@ export default function SchedulePage() {
               {assignedPics.map((picData, i) => {
                 const name = typeof picData === 'string' ? picData : picData.name;
                 const isSelected = selectedPic === name;
-                
                 return (
                   <button 
                     key={i} onClick={() => handlePicChange(name)} 
@@ -400,24 +401,20 @@ export default function SchedulePage() {
             </div>
           </section>
 
-          {/* Registry, Geospatial, and File Attachment sections remain identical */}
           <section className="space-y-6">
             <div className="p-4 md:p-6 bg-white border border-black/5 rounded-lg shadow-sm space-y-5">
               <div className="flex items-center gap-3 border-b border-black/5 pb-4">
                 <ClipboardList className="size-4 text-black/30" />
                 <span className="text-[10px] font-bold uppercase tracking-widest">Operational Registry</span>
               </div>
-              
               <div className="space-y-1.5">
                 <label className="text-[9px] font-bold uppercase text-black/50 ml-1">Client / Entity Identifier*</label>
                 <Input className="rounded-md border-black/10 text-xs font-bold uppercase h-12 bg-[#F9FAFA]/50 focus:bg-white" placeholder="ID: REGISTERED NAME..." value={formData.client} onChange={e => setFormData({...formData, client: e.target.value})} />
               </div>
-
               <div className="space-y-1.5">
                 <label className="text-[9px] font-bold uppercase text-black/50 ml-1">Operational Objective</label>
                 <Input className="rounded-md border-black/10 text-xs font-bold uppercase h-12 bg-[#F9FAFA]/50 focus:bg-white" placeholder="SPECIFY GOAL..." value={formData.agenda} onChange={e => setFormData({...formData, agenda: e.target.value})} />
               </div>
-
               <div className="space-y-1.5">
                 <label className="text-[9px] font-bold uppercase text-black/50 ml-1">Deployment Briefing</label>
                 <Textarea className="rounded-md border-black/10 text-xs font-bold uppercase min-h-[100px] bg-[#F9FAFA]/50 focus:bg-white" placeholder="SUPPLEMENTAL PROTOCOLS..." value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
@@ -429,13 +426,11 @@ export default function SchedulePage() {
                 <MapPin className="size-4 text-black/30" />
                 <span className="text-[10px] font-bold uppercase tracking-widest">Geospatial Logistics</span>
               </div>
-
               <div className="w-full h-32 bg-[#F9FAFA] border border-black/5 rounded-md flex flex-col items-center justify-center gap-2 overflow-hidden relative group">
                 <Globe className="size-8 text-black/10 group-hover:text-blue-500/20 transition-colors" />
                 <span className="text-[8px] font-bold text-black/20 uppercase tracking-widest">Waiting for Coordinate Lock</span>
                 {coords && <div className="absolute inset-0 bg-blue-500/5 flex items-center justify-center"><CheckCircle2 className="size-6 text-blue-500" /></div>}
               </div>
-
               <div className="space-y-1.5">
                 <div className="flex justify-between items-center mb-1">
                   <label className="text-[9px] font-bold uppercase text-black/50 ml-1">Deployment Address*</label>
@@ -445,7 +440,6 @@ export default function SchedulePage() {
                 </div>
                 <Textarea className="rounded-md border-black/10 text-xs font-bold uppercase h-20 bg-[#F9FAFA]/50" placeholder="LOCATION COORDINATES..." value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
               </div>
-
               <div className="space-y-1.5">
                 <label className="text-[9px] font-bold uppercase text-black/50 ml-1">Site Landmark</label>
                 <Input className="rounded-md border-black/10 text-xs font-bold uppercase h-12 bg-[#F9FAFA]/50" placeholder="VISUAL REFERENCE..." value={formData.landmark} onChange={e => setFormData({...formData, landmark: e.target.value})} />
