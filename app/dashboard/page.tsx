@@ -65,14 +65,24 @@ export default function TerminalDashboard() {
 
     useEffect(() => {
         if (!db) return;
+
+        // 1. SITE VISIT MONITOR
         const qSite = query(collection(db, "appointments"), where("status", "==", "PENDING"));
         const unsubSite = onSnapshot(qSite, (snap) => {
             setNotifications(prev => ({ ...prev, siteVisit: snap.size }));
         });
-        const qShop = query(collection(db, "shop_drawings"), where("status", "==", "REVIEW_REQUIRED"));
+
+        // 2. SHOP DRAWING REGISTRY MONITOR (Updated to match NotificationProvider)
+        const qShop = query(
+            collection(db, "shop_drawing_requests"), 
+            where("department", "==", "ENGINEERING"),
+            where("status", "==", "PENDING_REVIEW")
+        );
+        
         const unsubShop = onSnapshot(qShop, (snap) => {
             setNotifications(prev => ({ ...prev, shopDrawing: snap.size }));
         });
+
         return () => { unsubSite(); unsubShop(); };
     }, []);
 

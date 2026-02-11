@@ -213,6 +213,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
 
     localStorage.setItem("userId", result.userId);
     localStorage.setItem("userName", result.Username);
+    localStorage.setItem("department", result.Department);
 
     let value = 0;
     const interval = setInterval(() => {
