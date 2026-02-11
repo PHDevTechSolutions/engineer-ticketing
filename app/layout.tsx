@@ -7,7 +7,7 @@ import { NotificationProvider } from "@/providers/notification-provider";
 // 2. Import the Toaster (Requirement for Sonner notifications)
 import { Toaster } from "sonner";
 // 3. Import Debug Utility
-import { SystemClock } from "@/components/debug/system-clock";
+import { SystemClock } from "@/components/system-clock";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
