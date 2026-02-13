@@ -81,16 +81,6 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
   // CORE NAVIGATION DEFINITIONS
   // ---------------------------------------------------------
   const NAV_ITEMS = {
-    bridge: {
-      title: "App Ecosystem",
-      url: "#",
-      icon: SquareTerminal,
-      isActive: pathname?.startsWith("/apps"),
-      items: [
-        { title: "Connected Apps", url: appendUserId("/apps/connected") },
-        { title: "API Gateway", url: appendUserId("/apps/gateway") },
-      ],
-    },
     appointments: {
       title: "Service Control",
       url: "#",
@@ -100,7 +90,6 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
         { title: "Schedules & Slots", url: appendUserId("/appointments/slots") },
         { title: "Protocol Registry", url: appendUserId("/admin/protocols") },
         { title: "Assignment Matrix", url: appendUserId("/admin/assignment-matrix") },
-        { title: "Notification Templates", url: appendUserId("/appointments/notifications") },
       ],
     },
     iam: {
@@ -128,9 +117,9 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
   }
 
   const PROJECTS = [
-    { name: "Taskflow SMS", url: appendUserId("/taskflow"), icon: ExternalLink },
-    { name: "Ecodesk Ticketing", url: appendUserId("/ecodesk"), icon: ExternalLink },
-    { name: "Acculog Attendance", url: appendUserId("/acculog"), icon: ExternalLink },
+    // { name: "Taskflow SMS", url: appendUserId("/taskflow"), icon: ExternalLink },
+    // { name: "Ecodesk Ticketing", url: appendUserId("/ecodesk"), icon: ExternalLink },
+    // { name: "Acculog Attendance", url: appendUserId("/acculog"), icon: ExternalLink },
   ]
 
   // ---------------------------------------------------------
@@ -147,12 +136,12 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
     // 1. ADMIN / ENGINEERING MGMT VIEW
     if (hasFullAccess) {
       return {
-        navMain: [NAV_ITEMS.bridge, NAV_ITEMS.appointments, NAV_ITEMS.iam, ...baseItems],
+        navMain: [NAV_ITEMS.appointments, NAV_ITEMS.iam, ...baseItems],
         navSecondary: [
           { title: "Global Settings", url: appendUserId("/settings"), icon: Settings2 },
           { title: "Support Wiki", url: appendUserId("/docs"), icon: BookOpen },
         ],
-        projects: PROJECTS,
+        // projects: PROJECTS,
       }
     }
 
@@ -170,7 +159,7 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
             ...baseItems
           ],
           navSecondary: [],
-          projects: [PROJECTS[0]],
+          // projects: [PROJECTS[0]],
         }
       default:
         return { navMain: baseItems, navSecondary: [], projects: [] }
@@ -229,7 +218,7 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
             <div className="px-6 py-4">
                <div className="h-[1px] bg-black/5 w-full" />
             </div>
-            <NavProjects projects={filtered.projects} />
+            {/* <NavProjects projects={filtered.projects} /> */}
             <NavSecondary items={filtered.navSecondary} className="mt-auto" />
           </>
         )}
