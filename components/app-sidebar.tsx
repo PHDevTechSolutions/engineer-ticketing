@@ -12,18 +12,17 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 import { NavMain } from "../components/nav-main"
-import { NavProjects } from "../components/nav-projects"
 import { NavSecondary } from "../components/nav-secondary"
 import { NavUser } from "../components/nav-user"
 import {
   BookOpen,
   CalendarDays,
-  SquareTerminal,
   Settings2,
-  ExternalLink,
   Users,
-  Fingerprint,
-  Layers
+  ShieldCheck,
+  LayoutDashboard,
+  CircleUser,
+  Activity
 } from "lucide-react"
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
@@ -41,7 +40,6 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
     Lastname: "",
     Email: "",
     profilePicture: "",
-    ReferenceID: "",
     Position: "",
     Department: "",
   })
@@ -61,12 +59,11 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
           Lastname: data.Lastname || "",
           Email: data.Email || "",
           profilePicture: data.profilePicture || "/avatars/default.jpg",
-          ReferenceID: data.ReferenceID || "",
           Position: data.Position || "",
           Department: data.Department || "",
         })
       } catch (error) {
-        console.error("SYS_FETCH_ERROR:", error)
+        console.error("DATA_FETCH_ERROR:", error)
       } finally {
         setIsLoading(false)
       }
@@ -78,99 +75,93 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
     userId ? (url.includes("?") ? `${url}&userId=${userId}` : `${url}?userId=${userId}`) : url
 
   // ---------------------------------------------------------
-  // CORE NAVIGATION DEFINITIONS
+  // UPDATED NAVIGATION: Layman's Terms & Professional Icons
   // ---------------------------------------------------------
   const NAV_ITEMS = {
-    appointments: {
-      title: "Service Control",
+    dashboard: {
+        title: "Home",
+        url: appendUserId("/dashboard"),
+        icon: LayoutDashboard,
+        isActive: pathname === "/dashboard",
+    },
+    services: {
+      title: "Work Management",
       url: "#",
       icon: CalendarDays,
-      isActive: pathname?.includes("/appointments") || pathname?.includes("/admin"),
+      isActive: pathname?.includes("/appointments") || pathname?.includes("/admin/protocols"),
       items: [
-        { title: "Schedules & Slots", url: appendUserId("/appointments/slots") },
-        { title: "Protocol Registry", url: appendUserId("/admin/protocols") },
-        { title: "Assignment Matrix", url: appendUserId("/admin/assignment-matrix") },
+        { title: "Service Schedules", url: appendUserId("/appointments/slots") },
+        { title: "Standard Procedures", url: appendUserId("/admin/protocols") },
+        { title: "Team Assignments", url: appendUserId("/admin/assignment-matrix") },
       ],
     },
-    iam: {
-      title: "User Management",
+    team: {
+      title: "Team Directory",
       url: "#",
       icon: Users,
       isActive: pathname?.startsWith("/admin") && !pathname?.includes("protocols"),
       items: [
-        { title: "Staff Directory", url: appendUserId("/admin/staff") },
-        { title: "Permission Sets", url: appendUserId("/admin/permissions") },
-        { title: "Access Logs", url: appendUserId("/admin/logs") },
+        { title: "Staff List", url: appendUserId("/admin/staff") },
+        { title: "Access Rights", url: appendUserId("/admin/permissions") },
+        { title: "Activity Logs", url: appendUserId("/admin/logs") },
       ],
     },
-    personal: {
-      title: "My Account",
+    account: {
+      title: "My Profile",
       url: "#",
-      icon: Fingerprint,
+      icon: CircleUser,
       isActive: pathname?.startsWith("/account"),
       items: [
-        { title: "Security & 2FA", url: appendUserId("/account/security") },
-        { title: "Personal Info", url: appendUserId("/account/profile") },
-        { title: "Preferences", url: appendUserId("/account/preferences") },
+        { title: "Personal Details", url: appendUserId("/account/profile") },
+        { title: "Security Settings", url: appendUserId("/account/security") },
+        { title: "App Settings", url: appendUserId("/account/preferences") },
       ],
     },
   }
 
-  const PROJECTS = [
-    // { name: "Taskflow SMS", url: appendUserId("/taskflow"), icon: ExternalLink },
-    // { name: "Ecodesk Ticketing", url: appendUserId("/ecodesk"), icon: ExternalLink },
-    // { name: "Acculog Attendance", url: appendUserId("/acculog"), icon: ExternalLink },
-  ]
-
-  // ---------------------------------------------------------
-  // FILTER LOGIC (Role-Based Access Control)
-  // ---------------------------------------------------------
   const department = userDetails.Department?.trim()
   const hasFullAccess = ["IT", "Engineering"].includes(department)
 
   const getFilteredData = () => {
-    if (isLoading) return { navMain: [], navSecondary: [], projects: [] }
+    if (isLoading) return { navMain: [], navSecondary: [] }
 
-    const baseItems = [NAV_ITEMS.personal]
+    const baseItems = [NAV_ITEMS.dashboard, NAV_ITEMS.account]
 
-    // 1. ADMIN / ENGINEERING MGMT VIEW
     if (hasFullAccess) {
       return {
-        navMain: [NAV_ITEMS.appointments, NAV_ITEMS.iam, ...baseItems],
+        navMain: [NAV_ITEMS.dashboard, NAV_ITEMS.services, NAV_ITEMS.team, NAV_ITEMS.account],
         navSecondary: [
-          { title: "Global Settings", url: appendUserId("/settings"), icon: Settings2 },
-          { title: "Support Wiki", url: appendUserId("/docs"), icon: BookOpen },
+          { title: "System Settings", url: appendUserId("/settings"), icon: Settings2 },
+          { title: "Help Center", url: appendUserId("/docs"), icon: BookOpen },
         ],
-        // projects: PROJECTS,
       }
     }
 
-    // 2. ROLE-SPECIFIC VIEWS
     switch (department) {
       case "Sales":
         return {
           navMain: [
+            NAV_ITEMS.dashboard,
             {
-              ...NAV_ITEMS.appointments,
-              items: NAV_ITEMS.appointments.items.filter(i => 
-                !["Protocol Registry", "Assignment Matrix"].includes(i.title)
+              ...NAV_ITEMS.services,
+              items: NAV_ITEMS.services.items.filter(i => 
+                !["Standard Procedures", "Team Assignments"].includes(i.title)
               )
             },
-            ...baseItems
+            NAV_ITEMS.account
           ],
           navSecondary: [],
-          // projects: [PROJECTS[0]],
         }
       default:
-        return { navMain: baseItems, navSecondary: [], projects: [] }
+        return { navMain: baseItems, navSecondary: [] }
     }
   }
 
   const filtered = getFilteredData()
 
   return (
-    <Sidebar variant="inset" className="bg-[#F9FAFA] border-r border-black/5" {...props}>
-      <SidebarHeader className="p-0 overflow-hidden bg-white border-b border-black/5">
+    <Sidebar variant="inset" className="bg-[#F8F9FA] border-r border-gray-100" {...props}>
+      <SidebarHeader className="p-0 overflow-hidden bg-white border-b border-gray-100">
         <SidebarMenu className="p-4">
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild className="hover:bg-transparent px-0 h-auto">
@@ -179,30 +170,30 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
                 className="flex flex-col items-start gap-4 w-full group text-left"
               >
                 <div className="flex items-center gap-3">
-                  <div className="size-10 rounded-xl bg-[#121212] flex items-center justify-center shadow-lg transition-transform group-hover:scale-95">
-                    <img src="/disruptive.png" className="w-5 h-5" alt="Brand Logo" />
+                  <div className="size-10 rounded-xl bg-red-600 flex items-center justify-center shadow-lg shadow-red-100 transition-transform group-hover:scale-95">
+                    <img src="/disruptive.png" className="w-6 h-6 invert" alt="Logo" />
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-sm font-black uppercase tracking-tight text-[#121212]">
-                      Disruptive
+                    <span className="text-sm font-bold uppercase tracking-tight text-gray-900">
+                      engiconnect
                     </span>
-                    <span className="text-[9px] font-bold text-black/30 uppercase tracking-[0.2em]">
-                      Engineering_Dept
+                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">
+                      Dashboard v2.6
                     </span>
                   </div>
                 </div>
 
-                {/* PROTOCOL INDICATOR CARD */}
-                <div className="w-full px-3 py-2 bg-[#F9FAFA] border border-black/5 rounded-lg flex items-center justify-between">
+                {/* STATUS INDICATOR */}
+                <div className="w-full px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between">
                   <div className="flex flex-col">
-                    <span className="text-[7px] font-black text-black/20 uppercase tracking-widest">Auth_Node</span>
-                    <span className="text-[10px] font-black text-[#121212] uppercase tracking-tight">
-                      {department || "GUEST_ACCESS"}
+                    <span className="text-[7px] font-bold text-gray-400 uppercase tracking-widest">Department</span>
+                    <span className="text-[10px] font-bold text-gray-900 uppercase">
+                      {department || "Guest"}
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-[8px] font-mono font-bold text-black/40">V2.6</span>
+                    <div className="size-1.5 rounded-full bg-emerald-500" />
+                    <span className="text-[8px] font-bold text-emerald-600 uppercase">System Active</span>
                   </div>
                 </div>
               </button>
@@ -211,24 +202,23 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
         </SidebarMenu>
       </SidebarHeader>
 
-      <SidebarContent className="gap-0 py-2 scrollbar-hide">
+      <SidebarContent className="gap-0 py-4 scrollbar-hide">
         {!isLoading && (
           <>
             <NavMain items={filtered.navMain} />
             <div className="px-6 py-4">
-               <div className="h-[1px] bg-black/5 w-full" />
+               <div className="h-px bg-gray-100 w-full" />
             </div>
-            {/* <NavProjects projects={filtered.projects} /> */}
             <NavSecondary items={filtered.navSecondary} className="mt-auto" />
           </>
         )}
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-black/5 bg-white p-2">
+      <SidebarFooter className="border-t border-gray-100 bg-white p-4">
         <NavUser
           user={{
             id: userDetails.UserId,
-            name: isLoading ? "AUTHENTICATING..." : `${userDetails.Firstname} ${userDetails.Lastname}`,
+            name: isLoading ? "Loading..." : `${userDetails.Firstname} ${userDetails.Lastname}`,
             email: userDetails.Email,
             avatar: userDetails.profilePicture,
           }}

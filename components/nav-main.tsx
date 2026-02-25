@@ -5,10 +5,6 @@ import {
   ChevronRight, 
   LayoutGrid, 
   Settings2, 
-  ClipboardList, 
-  ShieldAlert,
-  Users2,
-  Database,
   type LucideIcon 
 } from "lucide-react"
 
@@ -29,32 +25,8 @@ import {
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar"
 
-// This is the data structure you would pass to the component
-const sidebarItems = [
-  {
-    title: "Operations",
-    url: "/appointments",
-    icon: LayoutGrid,
-    isActive: true,
-    items: [
-      { title: "Site Visit Registry", url: "/appointments/site-visit" },
-      { title: "Active Missions", url: "/appointments/active" },
-    ],
-  },
-  {
-    title: "System Config",
-    url: "#",
-    icon: Settings2,
-    items: [
-      { title: "Protocol Registry", url: "/admin/protocols" }, // The dynamic list we built
-      { title: "Booking Rules", url: "/admin/booking-rules" }, // The PIC assignment logic
-      { title: "Team Management", url: "/admin/teams" },
-    ],
-  },
-]
-
 export function NavMain({
-  items = sidebarItems, // Defaulting to the structure above
+  items,
 }: {
   items: {
     title: string
@@ -70,10 +42,10 @@ export function NavMain({
 }) {
   return (
     <SidebarGroup>
-      <SidebarGroupLabel className="text-[10px] font-black uppercase tracking-[0.2em] opacity-50">
-        Control_Center
+      <SidebarGroupLabel className="px-3 text-[10px] font-bold uppercase tracking-[0.15em] text-gray-400">
+        Main Navigation
       </SidebarGroupLabel>
-      <SidebarMenu>
+      <SidebarMenu className="gap-1 px-2">
         {items.map((item) => (
           <Collapsible
             key={item.title}
@@ -82,14 +54,18 @@ export function NavMain({
             className="group/collapsible"
           >
             <SidebarMenuItem>
-              <SidebarMenuButton asChild tooltip={item.title}>
+              <SidebarMenuButton 
+                asChild 
+                tooltip={item.title}
+                className="hover:bg-gray-100 transition-colors"
+              >
                 <div 
                   role="button" 
                   onClick={item.onClick} 
-                  className="cursor-pointer flex items-center gap-3 px-3 py-2"
+                  className="flex items-center gap-3 px-3 py-2"
                 >
-                  {item.icon && <item.icon className="size-4 text-primary" />}
-                  <span className="text-[11px] font-black uppercase tracking-tight italic">
+                  {item.icon && <item.icon className="size-4 text-gray-500 group-hover/collapsible:text-red-600 transition-colors" />}
+                  <span className="text-sm font-semibold tracking-tight text-gray-700">
                     {item.title}
                   </span>
                 </div>
@@ -99,21 +75,21 @@ export function NavMain({
                 <>
                   <CollapsibleTrigger asChild>
                     <SidebarMenuAction className="transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90">
-                      <ChevronRight className="size-3" />
+                      <ChevronRight className="size-3 text-gray-400" />
                       <span className="sr-only">Toggle</span>
                     </SidebarMenuAction>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
-                    <SidebarMenuSub className="border-l-2 border-primary/20 ml-4 px-2 space-y-1">
+                    <SidebarMenuSub className="ml-4 mr-2 mt-1 border-l border-gray-100 px-2 space-y-0.5">
                       {item.items?.map((subItem) => (
                         <SidebarMenuSubItem key={subItem.title}>
                           <SidebarMenuSubButton asChild>
                             <a 
                               href={subItem.url} 
-                              className="group flex items-center gap-2 py-1.5"
+                              className="group flex items-center gap-2 py-2 px-3 rounded-lg hover:bg-gray-50 transition-all"
                             >
-                              <div className="size-1 bg-muted-foreground/30 group-hover:bg-primary transition-colors" />
-                              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground group-hover:text-foreground">
+                              <div className="size-1 rounded-full bg-gray-300 group-hover:bg-red-500 transition-colors" />
+                              <span className="text-xs font-medium text-gray-500 group-hover:text-gray-900 transition-colors">
                                 {subItem.title}
                               </span>
                             </a>
