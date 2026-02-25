@@ -35,7 +35,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#F9FAFA]`}
       >
         {/* Debug: Real-time System Clock for Form Submission Alignment */}
-        <SystemClock />
+        {/* <SystemClock /> */}
 
         <NotificationProvider>
           {children}
