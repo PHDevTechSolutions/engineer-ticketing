@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
 import { Label } from "@/components/ui/label";
 import { 
   Dialog, DialogContent, DialogHeader, DialogTitle, 
@@ -18,25 +17,20 @@ import {
 } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 
+// Logic Imports
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { db, logsDb } from "@/lib/firebase"; 
 import { supabase } from "@/utils/supabase-ticket";
 
 export const dynamic = 'force-dynamic';
 
-type Ticket = {
+type TicketSummary = {
   ticket_id: string;
-  department: string;
-  requestor_name: string;
-  mode: string;
-  status: string;
-  ticket_subject: string;
   date_created: string;
 };
 
-type TicketSummary = Pick<Ticket, "ticket_id" | "date_created">;
-
-export function LoginForm({ className, ...props }: React.ComponentProps<"div">) {
+export default function LoginForm({ className, ...props }: React.ComponentProps<"div">) {
+  // --- STATE ---
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -59,28 +53,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
 
   const router = useRouter();
 
-  const handleRequestReset = async () => {
-    if (!resetEmail) {
-      toast.error("Please enter your email.");
-      return;
-    }
-    setResetLoading(true);
-    try {
-      const res = await fetch("/api/request-reset-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: resetEmail }),
-      });
-      const data = await res.json();
-      toast.success(data.message || "Reset link sent if account exists.");
-      setResetSent(true);
-    } catch {
-      toast.error("Failed to send reset link.");
-    } finally {
-      setResetLoading(false);
-    }
-  };
-
+  // --- LOGIC: HELPERS ---
   const getDeviceId = useCallback(() => {
     if (typeof window === "undefined") return "";
     let deviceId = localStorage.getItem("deviceId");
@@ -98,20 +71,14 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
         navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
       );
       return { latitude: position.coords.latitude, longitude: position.coords.longitude };
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   };
 
   const fetchTickets = useCallback(async () => {
     try {
       const { data, error } = await supabase.from("tickets").select("ticket_id, date_created");
-      if (data && !error) {
-        setExistingTickets(data as TicketSummary[]);
-      }
-    } catch (e) {
-      console.error("Supabase fetch failed", e);
-    }
+      if (data && !error) setExistingTickets(data as TicketSummary[]);
+    } catch (e) { console.error("Ticket load error", e); }
   }, []);
 
   useEffect(() => { fetchTickets(); }, [fetchTickets]);
@@ -122,6 +89,23 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
     const todayIds = existingTickets.filter(t => t.ticket_id.startsWith(`${prefix}-${datePart}`));
     const nextSeq = String(todayIds.length + 1).padStart(3, "0");
     return `${prefix}-${datePart}-${nextSeq}`;
+  };
+
+  // --- LOGIC: ACTIONS ---
+  const handleRequestReset = async () => {
+    if (!resetEmail) { toast.error("Please enter your email."); return; }
+    setResetLoading(true);
+    try {
+      const res = await fetch("/api/request-reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: resetEmail }),
+      });
+      const data = await res.json();
+      toast.success(data.message || "Reset link sent if account exists.");
+      setResetSent(true);
+    } catch { toast.error("Failed to send reset link."); } 
+    finally { setResetLoading(false); }
   };
 
   const submitTicket = async () => {
@@ -138,15 +122,12 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
         date_created: new Date().toISOString(),
       }]);
       if (error) throw error;
-      toast.success("Ticket submitted successfully.");
-      setRemarks("");
+      toast.success("Incident ticket submitted.");
       setShowTicketDialog(false);
+      setRemarks("");
       fetchTickets();
-    } catch (err: any) {
-      toast.error(err.message || "Failed to submit ticket.");
-    } finally {
-      setTicketSubmitting(false);
-    }
+    } catch (err: any) { toast.error("Submission failed."); } 
+    finally { setTicketSubmitting(false); }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -166,27 +147,19 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ Email: email, Password: password, deviceId }),
       });
-
       const result = await response.json();
 
       if (!response.ok) {
-        if (result.locked) {
-          setShowTicketDialog(true);
-        } else {
-          setErrorMessage(result.message || "Login failed.");
-          toast.error(result.message || "Login failed");
-        }
+        if (result.locked) setShowTicketDialog(true);
+        else setErrorMessage(result.message || "Login failed.");
         setLoading(false);
         return;
       }
 
       setPendingLoginData({ email, deviceId, result });
       setShowLocationDialog(true);
-    } catch (error) {
-      setErrorMessage("System Connection Error.");
-    } finally {
-      setLoading(false);
-    }
+    } catch { setErrorMessage("System Connection Error."); } 
+    finally { setLoading(false); }
   };
 
   const handlePostLogin = async (location: any) => {
@@ -198,18 +171,11 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
 
     try {
       await addDoc(collection(logsDb, "activity_logs"), {
-        email,
-        status: "login",
-        deviceId,
-        location,
-        browser: typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
-        os: typeof navigator !== "undefined" ? navigator.platform : "unknown",
-        userId: result.userId,
-        date_created: serverTimestamp(),
+        email, status: "login", deviceId, location,
+        browser: navigator.userAgent, os: navigator.platform,
+        userId: result.userId, date_created: serverTimestamp(),
       });
-    } catch (err) {
-      console.error("Logging failure", err);
-    }
+    } catch (err) { console.error("Log error", err); }
 
     localStorage.setItem("userId", result.userId);
     localStorage.setItem("userName", result.Username);
@@ -222,21 +188,23 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
       if (value >= 100) {
         clearInterval(interval);
         toast.success("Identity Verified");
-        setTimeout(() => router.push(`/dashboard?id=${result.userId}`), 300);
+        router.push(`/dashboard?id=${result.userId}`);
       }
     }, 60);
   };
 
   return (
-    <div className={cn("min-h-screen w-full flex bg-[#F9FAFA] relative", className)} {...props}>
+    <div className="min-h-screen w-full flex bg-[#F9FAFA] relative">
       
-      {/* LEFT SIDE: LOGIN FORM */}
+      {/* LEFT SIDE: WHITE FORM PANEL */}
       <div className="flex-[1] flex flex-col justify-center items-center px-6 md:px-12 lg:px-20 z-10 bg-white relative shadow-2xl">
         <div className="w-full max-w-[400px] space-y-8">
+          
+          {/* Logo & Header */}
           <div className="space-y-4">
             <div className="flex items-center gap-3">
-              <div className="bg-[#121212] p-2 rounded-full shadow-lg">
-                <img src="/disruptive.png" alt="Engineering Logo" className="h-10 w-10 object-contain" />
+              <div className="bg-[#121212] p-2 rounded-xl shadow-lg rotate-[-2deg]">
+                <img src="/disruptive.png" alt="Logo" className="h-10 w-10 object-contain" />
               </div>
               <div>
                 <h1 className="text-xl font-black uppercase tracking-tighter leading-none text-[#121212]">Disruptive</h1>
@@ -245,109 +213,93 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
             </div>
             <div className="space-y-1">
               <h2 className="text-3xl font-bold tracking-tight text-[#121212]">Portal Access</h2>
-              <p className="text-muted-foreground text-sm font-medium">Internal Engineering Protocol.</p>
+              <p className="text-muted-foreground text-sm font-medium border-l-2 border-red-600 pl-3">Internal Engineering Protocol.</p>
             </div>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-4">
-              {errorMessage && (
-                <div className="flex items-center gap-3 p-4 bg-red-50 border-l-4 border-red-600 rounded-r-xl">
-                  <AlertTriangle className="h-5 w-5 text-red-600" />
-                  <div>
-                    <p className="text-[10px] font-black uppercase text-red-600 tracking-widest leading-none">Access Denied</p>
-                    <p className="text-xs font-bold text-red-800/80 mt-1">{errorMessage}</p>
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="email" className="text-xs font-bold uppercase text-muted-foreground/70 tracking-widest">Work Email</Label>
-                <div className="relative group">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-[#121212] transition-colors" />
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="name@disruptivesolutionsinc.com"
-                    disabled={isAuthorizing}
-                    className="pl-10 h-14 rounded-xl border-2 border-muted bg-[#F9FAFA] focus-visible:ring-0 focus-visible:border-[#121212] transition-all font-medium"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
+            {errorMessage && (
+              <div className="flex items-center gap-3 p-4 bg-red-50 border-l-4 border-red-600 rounded-r-xl">
+                <AlertTriangle className="h-5 w-5 text-red-600" />
+                <div>
+                  <p className="text-[10px] font-black uppercase text-red-600 tracking-widest leading-none">Access Denied</p>
+                  <p className="text-xs font-bold text-red-800/80 mt-1">{errorMessage}</p>
                 </div>
               </div>
+            )}
 
-              <div className="space-y-2">
-                <Label htmlFor="password" className="text-xs font-bold uppercase text-muted-foreground/70 tracking-widest">Password</Label>
-                <div className="relative group">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-[#121212] transition-colors" />
-                  <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="••••••••"
-                    disabled={isAuthorizing}
-                    className="pl-10 pr-12 h-14 rounded-xl border-2 border-muted bg-[#F9FAFA] focus-visible:ring-0 focus-visible:border-[#121212] transition-all font-medium"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-[#121212]">
-                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                  </button>
-                </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase text-muted-foreground/70 tracking-widest">Work Email</Label>
+              <div className="relative group">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-[#121212] transition-colors" />
+                <Input
+                  type="email"
+                  placeholder="name@disruptivesolutionsinc.com"
+                  className="pl-10 h-14 rounded-xl border-2 border-muted bg-[#F9FAFA] focus-visible:ring-0 focus-visible:border-[#121212] transition-all font-medium"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase text-muted-foreground/70 tracking-widest">Password</Label>
+              <div className="relative group">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-[#121212] transition-colors" />
+                <Input
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  className="pl-10 pr-12 h-14 rounded-xl border-2 border-muted bg-[#F9FAFA] focus-visible:ring-0 focus-visible:border-[#121212] transition-all font-medium"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-[#121212]">
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
               </div>
             </div>
 
             <Button
-              type="submit"
-              className={cn(
-                "w-full h-14 rounded-xl text-md font-bold uppercase tracking-widest transition-all relative overflow-hidden",
-                isAuthorizing ? "bg-[#121212]" : "bg-[#121212] hover:bg-black active:scale-[0.98] shadow-xl shadow-black/10"
-              )}
               disabled={loading || isAuthorizing}
+              className="w-full h-14 bg-[#121212] hover:bg-black text-white rounded-xl text-md font-bold uppercase tracking-widest relative overflow-hidden transition-all active:scale-[0.98] shadow-xl shadow-black/10"
             >
-              {isAuthorizing && (
-                <div className="absolute left-0 top-0 h-full bg-white/20 transition-all duration-300" style={{ width: `${progress}%` }} />
-              )}
               <div className="relative z-10 flex items-center justify-center gap-2">
                 {loading && <Loader2 className="h-5 w-5 animate-spin" />}
                 {isAuthorizing && <ShieldCheck className="h-5 w-5 animate-pulse" />}
-                <span>
-                  {isAuthorizing ? `Authorizing ${progress}%` : loading ? "Verifying..." : "Secure Login"}
-                </span>
+                <span>{isAuthorizing ? `Authorizing ${progress}%` : "Secure Login"}</span>
               </div>
+              {isAuthorizing && (
+                <div className="absolute left-0 top-0 h-full bg-white/20 transition-all duration-300" style={{ width: `${progress}%` }} />
+              )}
             </Button>
 
-            <div className="relative py-2 flex items-center gap-4">
-               <div className="h-[1px] flex-1 bg-muted" />
-               <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Biometric Protocol</span>
-               <div className="h-[1px] flex-1 bg-muted" />
-            </div>
-
             <div className="grid grid-cols-2 gap-3">
-              <Button variant="outline" disabled={isAuthorizing} className="h-14 rounded-xl border-2 border-muted hover:border-[#121212] flex flex-col gap-1" type="button">
-                <Grid3X3 className="h-4 w-4 text-[#121212]" />
-                <span className="text-[9px] font-black uppercase tracking-tighter">Pin Pad</span>
-              </Button>
-              <Button variant="outline" disabled={isAuthorizing} className="h-14 rounded-xl border-2 border-muted hover:border-[#121212] flex flex-col gap-1" type="button">
-                <Fingerprint className="h-4 w-4 text-[#121212]" />
-                <span className="text-[9px] font-black uppercase tracking-tighter">Biometric</span>
-              </Button>
+               <Button variant="outline" className="h-14 rounded-xl border-2 border-muted hover:border-[#121212] flex flex-col gap-1" type="button">
+                  <Grid3X3 className="h-4 w-4 text-[#121212]" />
+                  <span className="text-[9px] font-black uppercase tracking-tighter">Pin Pad</span>
+               </Button>
+               <Button variant="outline" className="h-14 rounded-xl border-2 border-muted hover:border-[#121212] flex flex-col gap-1" type="button">
+                  <Fingerprint className="h-4 w-4 text-[#121212]" />
+                  <span className="text-[9px] font-black uppercase tracking-tighter">Biometric</span>
+               </Button>
             </div>
           </form>
 
           <div className="flex flex-col items-center gap-4 text-xs font-bold uppercase tracking-widest text-muted-foreground/60">
              <button onClick={() => { setResetSent(false); setShowResetDialog(true); }} className="hover:text-[#121212] transition-colors underline decoration-dotted">
                 Request Recovery
-              </button>
+             </button>
              <p>© 2026 Disruptive Solutions Inc.</p>
           </div>
         </div>
       </div>
 
-      {/* RIGHT SIDE: IMAGE */}
+      {/* RIGHT SIDE: ENGINEER WALLPAPER */}
       <div className="hidden lg:block flex-[1.2] relative bg-slate-900 overflow-hidden">
-        <img src="/engineer_wallpaper.png" alt="Engineering Background" className="h-full w-full object-cover opacity-80" />
+        <img src="/engineer_wallpaper.png" alt="Wallpaper" className="h-full w-full object-cover opacity-80" />
+        {/* Gradient Overlay to blend with the white form */}
         <div className="absolute inset-0 bg-gradient-to-r from-white via-transparent to-transparent w-full" />
+        
         <div className="absolute bottom-12 right-12 p-8 bg-[#121212]/80 backdrop-blur-xl rounded-2xl border border-white/20 text-white max-w-sm shadow-2xl">
             <h3 className="text-xl font-black uppercase tracking-tighter">ENGINEERING DEPARTMENT</h3>
             <p className="text-xs text-white/60 mt-2 leading-relaxed">
@@ -357,41 +309,8 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
       </div>
 
       {/* DIALOGS */}
-      <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
-        <DialogContent className="sm:max-w-md bg-[#F9FAFA] border-none shadow-2xl">
-          {resetSent ? (
-            <div className="space-y-6 py-4">
-               <Alert className="flex items-center p-4 gap-4 border-none bg-white shadow-sm">
-                <div className="flex-1">
-                  <AlertTitle className="text-lg font-bold text-[#121212]">Link Sent</AlertTitle>
-                  <AlertDescription className="text-xs text-muted-foreground font-medium">Check your work email. A recovery sequence has been initiated.</AlertDescription>
-                </div>
-                <ShieldCheck className="w-12 h-12 text-green-600" />
-              </Alert>
-              <Button onClick={() => setShowResetDialog(false)} className="w-full h-12 rounded-xl uppercase font-bold text-xs tracking-widest bg-[#121212]">Dismiss</Button>
-            </div>
-          ) : (
-            <>
-              <DialogHeader>
-                <DialogTitle className="uppercase font-black text-xl tracking-tight text-[#121212]">Recovery Request</DialogTitle>
-                <DialogDescription className="text-xs font-medium">Enter your email to receive recovery instructions.</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-2">
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-bold uppercase text-muted-foreground">Work Email</Label>
-                  <Input placeholder="name@disruptivesolutionsinc.com" value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} className="h-12 rounded-xl border-2 border-muted bg-white" />
-                </div>
-                <Button onClick={handleRequestReset} disabled={resetLoading || !resetEmail} className="w-full h-12 rounded-xl uppercase font-bold tracking-widest text-xs bg-[#121212]">
-                  {resetLoading ? "Processing..." : "Initiate Recovery"}
-                </Button>
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={showLocationDialog} onOpenChange={setShowLocationDialog}>
-        <DialogContent className="sm:max-w-md bg-[#F9FAFA] border-none text-center">
+        <DialogContent className="sm:max-w-md bg-[#F9FAFA] border-none text-center rounded-[20px]">
           <DialogHeader><DialogTitle className="uppercase font-black tracking-tight text-center">Geo-Verification</DialogTitle></DialogHeader>
           <div className="py-4 space-y-4">
              <div className="h-16 w-16 bg-[#121212] rounded-full flex items-center justify-center mx-auto shadow-lg"><ShieldCheck className="text-white h-8 w-8" /></div>
@@ -405,20 +324,36 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
       </Dialog>
 
       <Dialog open={showTicketDialog} onOpenChange={setShowTicketDialog}>
-        <DialogContent className="bg-[#F9FAFA] border-none shadow-2xl">
+        <DialogContent className="bg-[#F9FAFA] border-none shadow-2xl rounded-[20px]">
           <DialogHeader>
             <DialogTitle className="text-red-600 uppercase font-black text-2xl tracking-tighter">Access Locked</DialogTitle>
-            <DialogDescription className="font-medium">Manual incident report required. Submit to Engineering Support.</DialogDescription>
+            <DialogDescription className="font-medium">Manual incident report required.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Incident Remarks</Label>
-              <Input placeholder="Briefly describe the request..." value={remarks} onChange={(e) => setRemarks(e.target.value)} className="h-12 border-2 bg-white rounded-xl" />
+              <Input placeholder="Describe the request..." value={remarks} onChange={(e) => setRemarks(e.target.value)} className="h-12 border-2 bg-white rounded-xl" />
             </div>
-            <Button onClick={submitTicket} disabled={ticketSubmitting || !remarks.trim()} className="w-full h-14 rounded-xl uppercase font-bold tracking-widest bg-red-600 hover:bg-red-700 shadow-lg shadow-red-200">
+            <Button onClick={submitTicket} disabled={ticketSubmitting || !remarks.trim()} className="w-full h-14 bg-red-600 hover:bg-red-700 text-white rounded-xl uppercase font-bold tracking-widest shadow-lg shadow-red-200">
               {ticketSubmitting ? "Submitting..." : "Submit Incident Ticket"}
             </Button>
-            <Button variant="ghost" onClick={() => setShowTicketDialog(false)} className="w-full text-[10px] uppercase font-bold text-muted-foreground hover:bg-transparent">Cancel</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
+        <DialogContent className="sm:max-w-md bg-[#F9FAFA] border-none shadow-2xl rounded-[20px]">
+          <DialogHeader>
+            <DialogTitle className="uppercase font-black text-xl tracking-tight text-[#121212]">Recovery Request</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label className="text-[10px] font-bold uppercase text-muted-foreground">Work Email</Label>
+              <Input placeholder="name@disruptivesolutionsinc.com" value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} className="h-12 rounded-xl border-2 border-muted bg-white" />
+            </div>
+            <Button onClick={handleRequestReset} disabled={resetLoading || !resetEmail} className="w-full h-12 bg-[#121212] text-white rounded-xl uppercase font-bold tracking-widest text-xs">
+              {resetLoading ? "Processing..." : "Initiate Recovery"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
