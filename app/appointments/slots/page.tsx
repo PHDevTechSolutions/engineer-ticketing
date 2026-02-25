@@ -6,11 +6,11 @@ import { db } from "@/lib/firebase"
 import { collection, addDoc, query, onSnapshot, deleteDoc, doc, serverTimestamp, orderBy } from "firebase/firestore"
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/app-sidebar"
-import { PageHeader } from "@/components/page-header" 
+import { PageHeader } from "@/components/page-header"
 import { Calendar } from "@/components/ui/calendar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { 
+import {
     X, AlertTriangle, Activity,
     CalendarDays, HelpCircle, Plus, ChevronRight, ChevronLeft, Clock, Info
 } from "lucide-react"
@@ -52,7 +52,7 @@ export default function AvailabilitySlotsPage() {
     const [userId, setUserId] = useState<string | null>(null)
     const [isPendingCommit, setIsPendingCommit] = useState(false)
     const [tourStep, setTourStep] = useState<number | null>(null)
-    
+
     const stepRefs = {
         1: useRef<HTMLDivElement>(null),
         2: useRef<HTMLDivElement>(null),
@@ -152,16 +152,16 @@ export default function AvailabilitySlotsPage() {
             <SidebarProvider defaultOpen={false}>
                 <AppSidebar userId={userId} />
                 <SidebarInset className={cn(COLORS.pageBg, "min-h-screen relative flex flex-col")}>
-                    
-                    <PageHeader 
+
+                    <PageHeader
                         title="Availability Slots"
                         version="SYS-v2.6"
                         trigger={<SidebarTrigger className="size-9 rounded-lg bg-white border border-slate-200 text-slate-600 shadow-sm" />}
                         showBackButton={true}
                         actions={
-                            <Button 
-                                variant="ghost" 
-                                size="sm" 
+                            <Button
+                                variant="ghost"
+                                size="sm"
                                 onClick={() => setTourStep(1)}
                                 className={cn(
                                     "rounded-lg h-9 px-4 transition-all text-[11px] font-bold uppercase",
@@ -176,7 +176,7 @@ export default function AvailabilitySlotsPage() {
 
                     <main className="p-4 md:p-8 max-w-[1600px] mx-auto w-full space-y-6 flex-1">
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                            
+
                             {/* STEP 1: CALENDAR */}
                             <div ref={stepRefs[1]} className={cn("lg:col-span-4 transition-all duration-500", tourStep === 1 ? "relative z-[1001] scale-[1.01]" : "relative z-0")}>
                                 <div className={cn("bg-white rounded-xl border border-slate-200/60 p-5 shadow-sm", tourStep === 1 && "ring-4 ring-blue-500/20 border-blue-400")}>
@@ -192,8 +192,14 @@ export default function AvailabilitySlotsPage() {
                                         selected={selectedDate}
                                         onSelect={setSelectedDate}
                                         className="w-full"
-                                        modifiers={{ blocked: (date) => blockedDateStrings.has(date.toDateString()) }}
-                                        modifiersClassNames={{ blocked: "bg-red-50 text-red-600 font-bold rounded-lg after:content-[''] after:absolute after:bottom-1 after:size-1 after:bg-red-400 after:rounded-full" }}
+                                        // This part identifies which days in the calendar should have the "blocked" styling
+                                        modifiers={{
+                                            blocked: (date) => blockedDateStrings.has(date.toDateString())
+                                        }}
+                                        // This part applies the red dot and styling to those identified days
+                                        modifiersClassNames={{
+                                            blocked: "relative text-red-600 font-bold hover:bg-red-50 focus:bg-red-100 after:content-[''] after:absolute after:bottom-2 after:left-1/2 after:-translate-x-1/2 after:size-1 after:bg-red-500 after:rounded-full"
+                                        }}
                                     />
                                 </div>
                             </div>
@@ -230,9 +236,9 @@ export default function AvailabilitySlotsPage() {
                                             <div className="space-y-2">
                                                 <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Hours</label>
                                                 <div className="flex items-center gap-2 bg-slate-50 p-3 rounded-lg border border-slate-100">
-                                                    <input type="time" value={startTime} onChange={(e) => {setStartTime(e.target.value); setTimeScope("CUSTOM")}} className="bg-transparent text-sm font-bold text-slate-700 outline-none w-full" />
+                                                    <input type="time" value={startTime} onChange={(e) => { setStartTime(e.target.value); setTimeScope("CUSTOM") }} className="bg-transparent text-sm font-bold text-slate-700 outline-none w-full" />
                                                     <span className="text-slate-300 text-xs">to</span>
-                                                    <input type="time" value={endTime} onChange={(e) => {setEndTime(e.target.value); setTimeScope("CUSTOM")}} className="bg-transparent text-sm font-bold text-slate-700 outline-none w-full" />
+                                                    <input type="time" value={endTime} onChange={(e) => { setEndTime(e.target.value); setTimeScope("CUSTOM") }} className="bg-transparent text-sm font-bold text-slate-700 outline-none w-full" />
                                                 </div>
                                             </div>
                                             <div className="space-y-2">
@@ -261,7 +267,7 @@ export default function AvailabilitySlotsPage() {
                                         </div>
                                         <div className="size-9 bg-white/10 rounded-lg flex items-center justify-center"><Activity size={16} className="text-blue-400 animate-pulse" /></div>
                                     </div>
-                                    
+
                                     <div className="space-y-3 flex-1 overflow-y-auto max-h-[400px] pr-1">
                                         {filteredSlots.length === 0 ? (
                                             <div className="flex flex-col items-center justify-center h-32 border border-white/10 border-dashed rounded-lg">
@@ -294,7 +300,7 @@ export default function AvailabilitySlotsPage() {
                                 "absolute bg-white/98 backdrop-blur-2xl rounded-xl p-6 shadow-2xl w-[92%] md:max-w-[320px] animate-in zoom-in-95 duration-300 border border-slate-200 pointer-events-auto",
                                 "md:bottom-auto",
                                 tourStep === 1 && "md:right-12 md:top-1/3 md:translate-x-0",
-                                tourStep === 2 && "md:left-12 md:bottom-12 md:translate-x-0",                
+                                tourStep === 2 && "md:left-12 md:bottom-12 md:translate-x-0",
                                 tourStep === 3 && "md:left-12 md:bottom-12 md:translate-x-0 md:top-auto",
                                 "bottom-4 left-1/2 -translate-x-1/2 md:translate-y-0"
                             )}>
