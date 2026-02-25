@@ -21,20 +21,20 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     title: "engiconnect",
-    statusBarStyle: "default", // 'default' usually works better for visibility
+    statusBarStyle: "default", 
   },
   icons: {
-    // This tells iOS which image to use for the "Add to Home Screen" icon
+    // This provides the metadata link
     apple: "/icons/disruptive.png", 
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0F172A", // Your Navy Brand Color
+  themeColor: "#0F172A",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1, 
-  userScalable: false, // Prevents accidental zooming on mobile
+  userScalable: false, 
 };
 
 export default function RootLayout({
@@ -45,17 +45,19 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        {/* iOS ICON FIX: Adding the explicit apple-touch-icon link */}
+        {/* iOS ICON FIX: The explicit link tag Safari looks for first */}
         <link rel="apple-touch-icon" href="/icons/disruptive.png" />
-        {/* This makes the app feel like a real iPhone app (hides browser bars) */}
+        <link rel="apple-touch-icon" sizes="180x180" href="/icons/disruptive.png" />
+        
+        {/* Forces the app to hide browser bars when opened from Home Screen */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-title" content="engiconnect" />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#F8FAFC]`}
       >
         <NotificationProvider>
           {children}
-          {/* Updated Toaster to match your new rounded, clean design */}
           <Toaster 
             position="top-right" 
             expand={false} 
@@ -66,7 +68,7 @@ export default function RootLayout({
                 background: '#FFFFFF',
                 border: '1px solid #F1F5F9',
                 color: '#0F172A',
-                borderRadius: '1rem', // Match your new rounded UI
+                borderRadius: '1rem', 
                 boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
               }
             }}
