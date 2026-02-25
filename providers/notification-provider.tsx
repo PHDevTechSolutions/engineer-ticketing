@@ -3,7 +3,7 @@
 import React, { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { db, messaging } from "@/lib/firebase"; 
-import { collection, query, where, onSnapshot, limit, doc, updateDoc, arrayUnion } from "firebase/firestore"; // Added Firestore tools
+import { collection, query, where, onSnapshot, limit, doc, updateDoc, arrayUnion } from "firebase/firestore";
 import { getToken, onMessage } from "firebase/messaging";
 import { toast } from "sonner";
 import { X, ExternalLink, BellRing } from "lucide-react";
@@ -15,48 +15,65 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     const rawDept = localStorage.getItem("department");
-    const userId = localStorage.getItem("userId"); // Needed to identify the user in the database
+    const userId = localStorage.getItem("userId");
     const dept = rawDept?.toUpperCase();
 
     if (dept !== "ENGINEERING") return;
 
-    // --- PWA PUSH NOTIFICATION SETUP ---
+    // --- 1. SERVICE WORKER REGISTRATION (The "Waker") ---
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker
+          .register("/firebase-messaging-sw.js")
+          .then((reg) => console.log("Night Watchman (SW) Ready:", reg.scope))
+          .catch((err) => console.error("SW Registration failed:", err));
+      });
+    }
+
+    // --- 2. PUSH NOTIFICATION SETUP ---
     const setupPushNotifications = async () => {
       try {
-        // Ask for permission to show alerts on the phone
         const permission = await Notification.requestPermission();
         
         if (permission === "granted" && messaging) {
-          // Get the unique address (token) for this specific phone/device
           const token = await getToken(messaging, {
-            vapidKey: "YOUR_PUBLIC_VAPID_KEY_HERE", // Replace with your key from Firebase Console
+            vapidKey: "YOUR_PUBLIC_VAPID_KEY_HERE", // Replace this with your actual key
           });
 
           if (token && userId) {
             console.log("Device Token found:", token);
-            
-            // SAVE THE TOKEN: This tells engiconnect where to send the "Mail"
             const userRef = doc(db, "users", userId);
             await updateDoc(userRef, {
-              notificationTokens: arrayUnion(token), // Adds the token without deleting old ones
-              notificationsEnabled: true
+              notificationTokens: arrayUnion(token),
+              notificationsEnabled: true,
+              lastPushSync: new Date().toISOString()
             });
           }
         }
       } catch (err) {
-        console.error("Push notification setup failed:", err);
+        console.error("Push setup issue:", err);
       }
     };
 
     setupPushNotifications();
 
-    // Listener for when the user is actually using the app (Foreground)
+    // Foreground listener
     if (messaging) {
-      onMessage(messaging, (payload) => {
-        console.log("Foreground message:", payload);
+      const unsubscribeOnMessage = onMessage(messaging, (payload) => {
+        console.log("Message received in foreground:", payload);
+        // If you want a toast for background-style pushes while app is open:
+        toast.info(payload.notification?.title || "New Update", {
+          description: payload.notification?.body
+        });
       });
+      return () => unsubscribeOnMessage();
     }
-    // ----------------------------------------
+  }, []); // Only run once on mount
+
+  // Separate effect for Firestore Ledger listener
+  useEffect(() => {
+    const rawDept = localStorage.getItem("department");
+    if (rawDept?.toUpperCase() !== "ENGINEERING") return;
 
     if (!audioRef.current) {
       audioRef.current = new Audio("/sounds/ticket-endorsed.mp3");
@@ -82,15 +99,16 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
           }
         }
       });
-    }, (error) => {
-      console.error("Notification issue:", error.message);
     });
 
     return () => unsubscribe();
   }, [pathname]);
 
   const showNewDrawingAlert = (id: string, data: any) => {
-    audioRef.current?.play().catch(() => {});
+    // Attempt to play sound
+    audioRef.current?.play().catch(() => {
+      console.log("Audio play blocked by browser. User must interact first.");
+    });
 
     if (pathname === "/dashboard") {
       toast("New Project Update", {
@@ -103,7 +121,6 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
     toast.custom((t) => (
       <div className="bg-white border border-gray-100 p-5 rounded-[1.5rem] shadow-[0_20px_50px_rgba(15,23,42,0.1)] flex flex-col gap-5 min-w-[360px] animate-in fade-in slide-in-from-right-4 duration-500">
-        
         <div className="flex justify-between items-start">
           <div className="flex items-center gap-3">
             <div className="bg-[#E33636] p-2 rounded-2xl shadow-lg shadow-red-200">
