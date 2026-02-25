@@ -2,8 +2,9 @@
 
 import React, { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
-import { db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot, limit } from "firebase/firestore";
+import { db, messaging } from "@/lib/firebase"; 
+import { collection, query, where, onSnapshot, limit, doc, updateDoc, arrayUnion } from "firebase/firestore"; // Added Firestore tools
+import { getToken, onMessage } from "firebase/messaging";
 import { toast } from "sonner";
 import { X, ExternalLink, BellRing } from "lucide-react";
 
@@ -14,10 +15,48 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     const rawDept = localStorage.getItem("department");
+    const userId = localStorage.getItem("userId"); // Needed to identify the user in the database
     const dept = rawDept?.toUpperCase();
 
-    // Only Engineering users get these alerts
     if (dept !== "ENGINEERING") return;
+
+    // --- PWA PUSH NOTIFICATION SETUP ---
+    const setupPushNotifications = async () => {
+      try {
+        // Ask for permission to show alerts on the phone
+        const permission = await Notification.requestPermission();
+        
+        if (permission === "granted" && messaging) {
+          // Get the unique address (token) for this specific phone/device
+          const token = await getToken(messaging, {
+            vapidKey: "YOUR_PUBLIC_VAPID_KEY_HERE", // Replace with your key from Firebase Console
+          });
+
+          if (token && userId) {
+            console.log("Device Token found:", token);
+            
+            // SAVE THE TOKEN: This tells engiconnect where to send the "Mail"
+            const userRef = doc(db, "users", userId);
+            await updateDoc(userRef, {
+              notificationTokens: arrayUnion(token), // Adds the token without deleting old ones
+              notificationsEnabled: true
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Push notification setup failed:", err);
+      }
+    };
+
+    setupPushNotifications();
+
+    // Listener for when the user is actually using the app (Foreground)
+    if (messaging) {
+      onMessage(messaging, (payload) => {
+        console.log("Foreground message:", payload);
+      });
+    }
+    // ----------------------------------------
 
     if (!audioRef.current) {
       audioRef.current = new Audio("/sounds/ticket-endorsed.mp3");
@@ -44,7 +83,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         }
       });
     }, (error) => {
-      console.error("Notification service issue:", error.message);
+      console.error("Notification issue:", error.message);
     });
 
     return () => unsubscribe();
@@ -53,21 +92,18 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const showNewDrawingAlert = (id: string, data: any) => {
     audioRef.current?.play().catch(() => {});
 
-    // If already on dashboard, show a simple toast
     if (pathname === "/dashboard") {
       toast("New Project Update", {
         description: `${data.projectName} is ready for review.`,
-        className: "bg-white border-gray-100 text-[#0F172A] font-sans rounded-xl",
+        className: "bg-white border-gray-100 text-[#0F172A] font-sans rounded-xl shadow-lg",
         duration: 4000,
       });
       return;
     }
 
-    // Modern "Impact" Pop-up
     toast.custom((t) => (
       <div className="bg-white border border-gray-100 p-5 rounded-[1.5rem] shadow-[0_20px_50px_rgba(15,23,42,0.1)] flex flex-col gap-5 min-w-[360px] animate-in fade-in slide-in-from-right-4 duration-500">
         
-        {/* Header: Friendly & Clean */}
         <div className="flex justify-between items-start">
           <div className="flex items-center gap-3">
             <div className="bg-[#E33636] p-2 rounded-2xl shadow-lg shadow-red-200">
@@ -82,15 +118,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
               </span>
             </div>
           </div>
-          <button 
-            onClick={() => toast.dismiss(t)} 
-            className="p-1 hover:bg-gray-50 rounded-full transition-colors"
-          >
+          <button onClick={() => toast.dismiss(t)} className="p-1 hover:bg-gray-50 rounded-full">
             <X size={18} className="text-gray-300" />
           </button>
         </div>
 
-        {/* Content: Clear & Simple */}
         <div className="bg-[#F8FAFC] p-4 rounded-2xl border border-gray-50">
           <div className="flex flex-col gap-1">
             <span className="text-gray-400 text-[9px] font-bold uppercase tracking-widest">Project Name</span>
@@ -107,20 +139,19 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
             <div className="h-6 w-[1px] bg-gray-200" />
             <div className="flex flex-col">
               <span className="text-gray-400 text-[8px] font-bold uppercase">Status</span>
-              <span className="text-[#E33636] text-[10px] font-bold uppercase">Waiting for you</span>
+              <span className="text-[#E33636] text-[10px] font-bold uppercase">Urgent Review</span>
             </div>
           </div>
         </div>
 
-        {/* Action Button */}
         <button 
           onClick={() => { 
             toast.dismiss(t);
             window.location.href = `/dashboard?id=${localStorage.getItem("userId")}`; 
           }}
-          className="w-full bg-[#0F172A] hover:bg-[#1e293b] text-white text-[12px] font-bold py-4 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-navy-100 active:scale-[0.98]"
+          className="w-full bg-[#0F172A] hover:bg-[#1e293b] text-white text-[12px] font-bold py-4 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg active:scale-[0.98]"
         >
-          Review Drawing
+          Open Ledger
           <ExternalLink size={14} />
         </button>
       </div>

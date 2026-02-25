@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
+import { getMessaging, isSupported } from "firebase/messaging"; // Added these
 
 // --- MAIN PROJECT CONFIG ---
 const mainConfig = {
@@ -35,6 +36,12 @@ const logsApp = !getApps().find(app => app.name === "logsApp")
 // Main Exports
 export const db = getFirestore(mainApp);
 export const storage = getStorage(mainApp);
+
+// Messaging Export (Browser Only)
+// We check if we are in the browser and if the browser supports messaging
+export const messaging = typeof window !== "undefined" 
+  ? getMessaging(mainApp) 
+  : null;
 
 // Logs Exports
 export const logsDb = getFirestore(logsApp);
