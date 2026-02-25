@@ -1,16 +1,17 @@
 {
-  "name": "Disruptive Engineering Portal",
-  "short_name": "Disruptive",
+  "name": "engiconnect Portal",
+  "short_name": "engiconnect",
   "description": "Engineering Ticketing and Site Visit Management",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#000000",
+  "background_color": "#F8FAFC",
+  "theme_color": "#0F172A",
   "icons": [
     {
       "src": "/icons/disruptive.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "/icons/disruptive.png",

@@ -1,13 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next"; // Added Viewport import
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-
-// 1. Import your New Notification Provider
 import { NotificationProvider } from "@/providers/notification-provider";
-// 2. Import the Toaster (Requirement for Sonner notifications)
 import { Toaster } from "sonner";
-// 3. Import Debug Utility
-import { SystemClock } from "@/components/system-clock";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -19,9 +14,27 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// 1. Setup metadata for PWA/App mode
 export const metadata: Metadata = {
-  title: "Engineering Ticketing System",
-  description: "Corporate Shop Drawing & Protocol Portal",
+  title: "engiconnect Portal",
+  description: "Engineering Ticketing and Site Visit Management",
+  manifest: "/manifest.json", // Links to your manifest file
+  appleWebApp: {
+    capable: true,
+    title: "engiconnect",
+    statusBarStyle: "black-translucent",
+  },
+  icons: {
+    apple: "/icons/disruptive.png", // The icon for your iOS home screen
+  },
+};
+
+// 2. Setup the theme color for the mobile browser address bar
+export const viewport: Viewport = {
+  themeColor: "#0F172A",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1, // Prevents auto-zoom on input fields in iOS
 };
 
 export default function RootLayout({
@@ -31,12 +44,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        {/* Force the app to open in full screen when saved to home screen */}
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#F9FAFA]`}
       >
-        {/* Debug: Real-time System Clock for Form Submission Alignment */}
-        {/* <SystemClock /> */}
-
         <NotificationProvider>
           {children}
           <Toaster 
@@ -49,7 +63,7 @@ export default function RootLayout({
                 background: '#FFFFFF',
                 border: '1px solid rgba(0,0,0,0.05)',
                 color: '#121212',
-                borderRadius: '0px', // Corporate rigid edge
+                borderRadius: '0px', 
               }
             }}
           />

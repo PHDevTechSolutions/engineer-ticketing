@@ -13,13 +13,6 @@ interface PageHeaderProps {
   actions?: React.ReactNode; 
   showBackButton?: boolean;
   className?: string;
-  // Matching your Sidebar user object structure
-  user?: {
-    id: string | null;
-    name: string;
-    email: string;
-    avatar?: string;
-  };
 }
 
 export function PageHeader({ 
@@ -29,20 +22,8 @@ export function PageHeader({
   actions, 
   showBackButton = true,
   className,
-  user
 }: PageHeaderProps) {
   const router = useRouter()
-
-  // Helper to get initials if the profile picture is missing
-  const getInitials = (name: string) => {
-    if (!name || name === "Loading...") return "EC";
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  };
 
   return (
     <header className={cn(
@@ -73,10 +54,10 @@ export function PageHeader({
           )}
         </div>
 
-        {/* Title Stack - Sharper border and spacing */}
+        {/* Title Stack */}
         <div className="flex flex-col border-l border-slate-200 pl-3 md:pl-4 ml-0.5 md:ml-1">
           <div className="flex items-center gap-2">
-            <h1 className="text-[11px] md:text-[12px] font-bold uppercase tracking-wider md:tracking-[0.15em] text-[#0F172A] leading-none truncate max-w-[120px] md:max-w-none">
+            <h1 className="text-[11px] md:text-[12px] font-bold uppercase tracking-wider md:tracking-[0.15em] text-[#0F172A] leading-none truncate max-w-[150px] md:max-w-none">
               {title}
             </h1>
             <div className="size-1 rounded-full bg-blue-500 animate-pulse hidden sm:block" />
@@ -87,43 +68,13 @@ export function PageHeader({
         </div>
       </div>
 
-      {/* RIGHT SECTION: Actions & Profile */}
+      {/* RIGHT SECTION: Actions Only */}
       <div className="flex items-center gap-3">
         {actions && (
           <div className="flex items-center">
             {actions}
           </div>
         )}
-        
-        {/* Profile Group: Matching your SidebarFooter data */}
-        <div className="flex items-center gap-3 pl-3 border-l border-slate-100">
-          <div className="hidden lg:flex flex-col items-end">
-            <span className="text-[10px] font-bold text-[#0F172A] leading-none">
-              {user?.name || "Guest User"}
-            </span>
-            <span className="text-[9px] text-slate-400 mt-1 truncate max-w-[120px]">
-              {user?.email || "No email provided"}
-            </span>
-          </div>
-
-          <div className="size-8 md:size-9 rounded-lg bg-[#0F172A] flex items-center justify-center overflow-hidden shadow-sm border border-slate-200 shrink-0">
-            {user?.avatar ? (
-              <img 
-                src={user.avatar} 
-                alt={user.name} 
-                className="size-full object-cover"
-                onError={(e) => {
-                  // Fallback if image fails to load
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
-            ) : (
-              <span className="text-[10px] font-bold text-white uppercase">
-                {getInitials(user?.name || "EC")}
-              </span>
-            )}
-          </div>
-        </div>
       </div>
 
     </header>
