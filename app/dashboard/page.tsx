@@ -229,11 +229,12 @@ export default function EngiconnectDashboard() {
                                 </div>
                                 <div className="w-px bg-gray-100 my-4" />
                                 <div className="flex-1 flex flex-col items-center justify-center">
-                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter leading-none mb-1">
-                                        {currentTime.toLocaleDateString([], { month: 'short', day: '2-digit' })}
-                                    </p>
-                                    <p className="text-xs font-black text-gray-800 leading-none">{currentTime.getFullYear()}</p>
-                                    <p className="text-[10px] font-bold text-red-500 mt-1">{weather.temp}</p>
+                                    <p className="text-[9px] font-bold text-gray-300 uppercase mb-1">{weather.condition}</p>
+                                    <div className="flex items-center justify-end gap-1">
+                                        <span className="text-xl font-black text-gray-800 leading-none">{weather.temp}</span>
+                                        <div className="size-2 bg-orange-400 rounded-full" />
+                                    </div>
+                                    <p className="text-[8px] font-bold text-gray-400 uppercase mt-1">{formattedDate.split(',')[0]}</p>
                                 </div>
                             </div>
                         </div>
