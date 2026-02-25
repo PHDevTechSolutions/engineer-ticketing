@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { db } from "@/lib/firebase";
 import { collection, query, where, onSnapshot, limit } from "firebase/firestore";
 import { toast } from "sonner";
-import { X, ExternalLink, ShieldCheck } from "lucide-react";
+import { X, ExternalLink, BellRing } from "lucide-react";
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -16,6 +16,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     const rawDept = localStorage.getItem("department");
     const dept = rawDept?.toUpperCase();
 
+    // Only Engineering users get these alerts
     if (dept !== "ENGINEERING") return;
 
     if (!audioRef.current) {
@@ -37,90 +38,93 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
           const data = change.doc.data();
 
           if (!playedIdsRef.current.includes(docId)) {
-            executeNotificationProtocol(docId, data, "SHOP DRAWING LEDGER");
+            showNewDrawingAlert(docId, data);
             playedIdsRef.current.push(docId);
           }
         }
       });
     }, (error) => {
-      console.error("[SYSTEM]: Service interruption.", error.message);
+      console.error("Notification service issue:", error.message);
     });
 
     return () => unsubscribe();
   }, [pathname]);
 
-  const executeNotificationProtocol = (id: string, data: any, ledgerSource: string) => {
+  const showNewDrawingAlert = (id: string, data: any) => {
     audioRef.current?.play().catch(() => {});
 
+    // If already on dashboard, show a simple toast
     if (pathname === "/dashboard") {
-      toast("LEDGER UPDATED", {
-        description: `Project Record: ${data.projectName}`,
-        className: "bg-[#F9FAFA] border border-gray-200 text-[#121212] font-sans",
-        duration: 3000,
+      toast("New Project Update", {
+        description: `${data.projectName} is ready for review.`,
+        className: "bg-white border-gray-100 text-[#0F172A] font-sans rounded-xl",
+        duration: 4000,
       });
       return;
     }
 
+    // Modern "Impact" Pop-up
     toast.custom((t) => (
-      <div className="bg-white border border-gray-200 p-6 rounded-none shadow-[0_10px_30px_rgba(0,0,0,0.08)] flex flex-col gap-6 min-w-[380px] animate-in fade-in slide-in-from-bottom-2 duration-400">
+      <div className="bg-white border border-gray-100 p-5 rounded-[1.5rem] shadow-[0_20px_50px_rgba(15,23,42,0.1)] flex flex-col gap-5 min-w-[360px] animate-in fade-in slide-in-from-right-4 duration-500">
         
-        {/* Header: Corporate Branding & Source */}
-        <div className="flex justify-between items-center border-b border-gray-100 pb-4">
+        {/* Header: Friendly & Clean */}
+        <div className="flex justify-between items-start">
           <div className="flex items-center gap-3">
-            <div className="bg-[#121212] p-1.5 rounded-full">
-               <ShieldCheck size={12} className="text-white" />
+            <div className="bg-[#E33636] p-2 rounded-2xl shadow-lg shadow-red-200">
+               <BellRing size={18} className="text-white" />
             </div>
             <div className="flex flex-col">
-              <span className="text-[#121212] text-[10px] font-bold uppercase tracking-widest">
-                Engineering Department
+              <span className="text-[#0F172A] text-xs font-black uppercase tracking-tight">
+                New Drawing Request
               </span>
-              <span className="text-gray-400 text-[9px] font-medium uppercase tracking-tight">
-                Official Notification
+              <span className="text-gray-400 text-[10px] font-medium">
+                Engineering Department
               </span>
             </div>
           </div>
           <button 
             onClick={() => toast.dismiss(t)} 
-            className="text-gray-300 hover:text-[#121212] transition-colors"
+            className="p-1 hover:bg-gray-50 rounded-full transition-colors"
           >
-            <X size={16} />
+            <X size={18} className="text-gray-300" />
           </button>
         </div>
 
-        {/* Content: Technical Record Summary */}
-        <div className="space-y-3">
+        {/* Content: Clear & Simple */}
+        <div className="bg-[#F8FAFC] p-4 rounded-2xl border border-gray-50">
           <div className="flex flex-col gap-1">
-            <span className="text-gray-400 text-[8px] font-bold uppercase tracking-widest">Project Assignment</span>
-            <h4 className="text-[#121212] text-[15px] font-semibold tracking-tight leading-none">
-              {data.projectName || "Pending Categorization"}
+            <span className="text-gray-400 text-[9px] font-bold uppercase tracking-widest">Project Name</span>
+            <h4 className="text-[#0F172A] text-[16px] font-black tracking-tight leading-tight">
+              {data.projectName || "Unnamed Project"}
             </h4>
           </div>
           
-          <div className="grid grid-cols-2 gap-4 pt-2">
-            <div className="flex flex-col border-l border-gray-100 pl-3">
-              <span className="text-gray-400 text-[8px] font-bold uppercase">Source Ledger</span>
-              <span className="text-[#121212] text-[10px] font-medium uppercase">{ledgerSource}</span>
+          <div className="flex items-center gap-4 mt-4 pt-3 border-t border-gray-200/50">
+            <div className="flex flex-col">
+              <span className="text-gray-400 text-[8px] font-bold uppercase">Requested By</span>
+              <span className="text-[#0F172A] text-[10px] font-bold italic">Field Team</span>
             </div>
-            <div className="flex flex-col border-l border-gray-100 pl-3">
-              <span className="text-gray-400 text-[8px] font-bold uppercase">Asset ID</span>
-              <span className="text-[#121212] text-[10px] font-mono uppercase">{id.slice(0, 8)}</span>
+            <div className="h-6 w-[1px] bg-gray-200" />
+            <div className="flex flex-col">
+              <span className="text-gray-400 text-[8px] font-bold uppercase">Status</span>
+              <span className="text-[#E33636] text-[10px] font-bold uppercase">Waiting for you</span>
             </div>
           </div>
         </div>
 
-        {/* Action: Standard Corporate Button */}
+        {/* Action Button */}
         <button 
           onClick={() => { 
             toast.dismiss(t);
             window.location.href = `/dashboard?id=${localStorage.getItem("userId")}`; 
           }}
-          className="w-full bg-[#121212] hover:bg-gray-800 text-[#F9FAFA] text-[11px] font-bold py-3.5 rounded-none flex items-center justify-center gap-3 transition-all duration-200 active:bg-black"
+          className="w-full bg-[#0F172A] hover:bg-[#1e293b] text-white text-[12px] font-bold py-4 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-navy-100 active:scale-[0.98]"
         >
-          VIEW DOCUMENTATION
-          <ExternalLink size={14} strokeWidth={2.5} />
+          Review Drawing
+          <ExternalLink size={14} />
         </button>
       </div>
-    ), { duration: 10000, position: 'bottom-right' });
+    ), { duration: 8000, position: 'bottom-right' });
   };
 
   return <>{children}</>;
