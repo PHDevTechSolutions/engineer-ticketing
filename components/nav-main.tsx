@@ -1,13 +1,7 @@
 "use client"
 
-import * as React from "react"
-import { 
-  ChevronRight, 
-  LayoutGrid, 
-  Settings2, 
-  type LucideIcon 
-} from "lucide-react"
-
+import Link from "next/link"
+import { ChevronRight, type LucideIcon } from "lucide-react"
 import {
   Collapsible,
   CollapsibleContent,
@@ -15,9 +9,7 @@ import {
 } from "@/components/ui/collapsible"
 import {
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarMenu,
-  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -31,9 +23,8 @@ export function NavMain({
   items: {
     title: string
     url: string
-    icon: LucideIcon
+    icon?: LucideIcon
     isActive?: boolean
-    onClick?: () => void
     items?: {
       title: string
       url: string
@@ -42,67 +33,60 @@ export function NavMain({
 }) {
   return (
     <SidebarGroup>
-      <SidebarGroupLabel className="px-3 text-[10px] font-bold uppercase tracking-[0.15em] text-gray-400">
-        Main Navigation
-      </SidebarGroupLabel>
-      <SidebarMenu className="gap-1 px-2">
-        {items.map((item) => (
-          <Collapsible
-            key={item.title}
-            asChild
-            defaultOpen={item.isActive}
-            className="group/collapsible"
-          >
-            <SidebarMenuItem>
-              <SidebarMenuButton 
-                asChild 
-                tooltip={item.title}
-                className="hover:bg-gray-100 transition-colors"
+      <SidebarMenu>
+        {items.map((item) => {
+          // If the item has sub-items (like "Work Management")
+          if (item.items && item.items.length > 0) {
+            return (
+              <Collapsible
+                key={item.title}
+                asChild
+                defaultOpen={item.isActive}
+                className="group/collapsible"
               >
-                <div 
-                  role="button" 
-                  onClick={item.onClick} 
-                  className="flex items-center gap-3 px-3 py-2"
-                >
-                  {item.icon && <item.icon className="size-4 text-gray-500 group-hover/collapsible:text-red-600 transition-colors" />}
-                  <span className="text-sm font-semibold tracking-tight text-gray-700">
-                    {item.title}
-                  </span>
-                </div>
-              </SidebarMenuButton>
-
-              {item.items?.length ? (
-                <>
+                <SidebarMenuItem>
+                  {/* The Trigger now wraps the ENTIRE button */}
                   <CollapsibleTrigger asChild>
-                    <SidebarMenuAction className="transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90">
-                      <ChevronRight className="size-3 text-gray-400" />
-                      <span className="sr-only">Toggle</span>
-                    </SidebarMenuAction>
+                    <SidebarMenuButton 
+                      tooltip={item.title} 
+                      className="cursor-pointer w-full"
+                    >
+                      {item.icon && <item.icon />}
+                      <span className="flex-1 text-left">{item.title}</span>
+                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                    </SidebarMenuButton>
                   </CollapsibleTrigger>
+                  
                   <CollapsibleContent>
-                    <SidebarMenuSub className="ml-4 mr-2 mt-1 border-l border-gray-100 px-2 space-y-0.5">
+                    <SidebarMenuSub>
                       {item.items?.map((subItem) => (
                         <SidebarMenuSubItem key={subItem.title}>
                           <SidebarMenuSubButton asChild>
-                            <a 
-                              href={subItem.url} 
-                              className="group flex items-center gap-2 py-2 px-3 rounded-lg hover:bg-gray-50 transition-all"
-                            >
-                              <div className="size-1 rounded-full bg-gray-300 group-hover:bg-red-500 transition-colors" />
-                              <span className="text-xs font-medium text-gray-500 group-hover:text-gray-900 transition-colors">
-                                {subItem.title}
-                              </span>
-                            </a>
+                            <Link href={subItem.url}>
+                              <span>{subItem.title}</span>
+                            </Link>
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       ))}
                     </SidebarMenuSub>
                   </CollapsibleContent>
-                </>
-              ) : null}
+                </SidebarMenuItem>
+              </Collapsible>
+            )
+          }
+
+          // Simple links (like "Home")
+          return (
+            <SidebarMenuItem key={item.title}>
+              <SidebarMenuButton asChild isActive={item.isActive} tooltip={item.title}>
+                <Link href={item.url}>
+                  {item.icon && <item.icon />}
+                  <span>{item.title}</span>
+                </Link>
+              </SidebarMenuButton>
             </SidebarMenuItem>
-          </Collapsible>
-        ))}
+          )
+        })}
       </SidebarMenu>
     </SidebarGroup>
   )

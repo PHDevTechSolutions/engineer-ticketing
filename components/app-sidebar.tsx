@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { usePathname, useRouter } from "next/navigation"
+import Link from "next/link" // Added Link import
 import {
   Sidebar,
   SidebarContent,
@@ -11,18 +12,16 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
-import { NavMain } from "../components/nav-main"
-import { NavSecondary } from "../components/nav-secondary"
-import { NavUser } from "../components/nav-user"
+import { NavMain } from "./nav-main"
+import { NavSecondary } from "./nav-secondary"
+import { NavUser } from "./nav-user"
 import {
   BookOpen,
   CalendarDays,
   Settings2,
   Users,
-  ShieldCheck,
   LayoutDashboard,
   CircleUser,
-  Activity
 } from "lucide-react"
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
@@ -30,7 +29,6 @@ interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
 }
 
 export function AppSidebar({ userId, ...props }: AppSidebarProps) {
-  const router = useRouter()
   const pathname = usePathname()
   const [isLoading, setIsLoading] = React.useState(true)
 
@@ -74,15 +72,12 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
   const appendUserId = (url: string) =>
     userId ? (url.includes("?") ? `${url}&userId=${userId}` : `${url}?userId=${userId}`) : url
 
-  // ---------------------------------------------------------
-  // UPDATED NAVIGATION: Layman's Terms & Professional Icons
-  // ---------------------------------------------------------
   const NAV_ITEMS = {
     dashboard: {
         title: "Home",
         url: appendUserId("/dashboard"),
         icon: LayoutDashboard,
-        isActive: pathname === "/dashboard",
+        isActive: pathname?.startsWith("/dashboard"),
     },
     services: {
       title: "Work Management",
@@ -124,7 +119,6 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
 
   const getFilteredData = () => {
     if (isLoading) return { navMain: [], navSecondary: [] }
-
     const baseItems = [NAV_ITEMS.dashboard, NAV_ITEMS.account]
 
     if (hasFullAccess) {
@@ -137,14 +131,13 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
       }
     }
 
-    switch (department) {
-      case "Sales":
+    if (department === "Sales") {
         return {
           navMain: [
             NAV_ITEMS.dashboard,
             {
               ...NAV_ITEMS.services,
-              items: NAV_ITEMS.services.items.filter(i => 
+              items: NAV_ITEMS.services.items?.filter(i => 
                 !["Standard Procedures", "Team Assignments"].includes(i.title)
               )
             },
@@ -152,9 +145,8 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
           ],
           navSecondary: [],
         }
-      default:
-        return { navMain: baseItems, navSecondary: [] }
     }
+    return { navMain: baseItems, navSecondary: [] }
   }
 
   const filtered = getFilteredData()
@@ -164,11 +156,13 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
       <SidebarHeader className="p-0 overflow-hidden bg-white border-b border-gray-100">
         <SidebarMenu className="p-4">
           <SidebarMenuItem>
+            {/* asChild allows the Link to behave like the SidebarMenuButton */}
             <SidebarMenuButton size="lg" asChild className="hover:bg-transparent px-0 h-auto">
-              <button 
-                onClick={() => router.push(appendUserId("/dashboard"))} 
-                className="flex flex-col items-start gap-4 w-full group text-left"
+              <Link 
+                href={appendUserId("/dashboard")} 
+                className="flex flex-col items-start gap-4 w-full group text-left no-underline"
               >
+                {/* Brand Logo & Name Section */}
                 <div className="flex items-center gap-3">
                   <div className="size-10 rounded-xl bg-red-600 flex items-center justify-center shadow-lg shadow-red-100 transition-transform group-hover:scale-95">
                     <img src="/disruptive.png" className="w-6 h-6 invert" alt="Logo" />
@@ -183,8 +177,8 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
                   </div>
                 </div>
 
-                {/* STATUS INDICATOR */}
-                <div className="w-full px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between">
+                {/* Status/Department Section - Now part of the same Link */}
+                <div className="w-full px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between group-hover:bg-gray-100 transition-colors">
                   <div className="flex flex-col">
                     <span className="text-[7px] font-bold text-gray-400 uppercase tracking-widest">Department</span>
                     <span className="text-[10px] font-bold text-gray-900 uppercase">
@@ -196,7 +190,7 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
                     <span className="text-[8px] font-bold text-emerald-600 uppercase">System Active</span>
                   </div>
                 </div>
-              </button>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
