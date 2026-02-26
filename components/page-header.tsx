@@ -27,7 +27,7 @@ export function PageHeader({
 
   return (
     <header className={cn(
-      "sticky top-0 z-[100] flex h-16 shrink-0 items-center px-3 md:px-8",
+      "sticky top-0 z-[50] flex h-16 shrink-0 items-center px-3 md:px-8",
       "border-b border-slate-200 bg-white/80 backdrop-blur-xl",
       "justify-between transition-all",
       className

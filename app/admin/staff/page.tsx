@@ -1,325 +1,318 @@
 "use client"
 
 import * as React from "react"
+import { AppSidebar } from "@/components/app-sidebar"
+import ProtectedPageWrapper from "@/components/protected-page-wrapper"
+import {
+    SidebarInset,
+    SidebarProvider,
+    SidebarTrigger,
+} from "@/components/ui/sidebar"
 import { 
-  Users, Search, Terminal, ShieldCheck, Briefcase, 
-  ChevronRight, ChevronLeft, Fingerprint, Activity,
-  MoreHorizontal, Loader2, UserCheck, RotateCcw
+    Users, Search, ShieldCheck, Briefcase, 
+    ChevronRight, ChevronLeft, Loader2, RefreshCw,
+    Cpu, Mail, X, Fingerprint, ShieldAlert, Globe,
+    ArrowRight, CheckCircle2
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 
 // SHADCN + CUSTOM
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { PageHeader } from "@/components/page-header"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
 } from "@/components/ui/select"
+import {
+    Sheet,
+    SheetContent,
+} from "@/components/ui/sheet"
 
 export default function StaffDirectoryPage() {
-  const [searchTerm, setSearchTerm] = React.useState("")
-  const [activeDept, setActiveDept] = React.useState<string>("ENGINEERING")
-  const [staff, setStaff] = React.useState<any[]>([])
-  const [isFetching, setIsFetching] = React.useState(true)
+    // APP STATE
+    const [userId, setUserId] = React.useState<string | null>(null)
+    const [searchTerm, setSearchTerm] = React.useState("")
+    const [activeDept, setActiveDept] = React.useState<string>("ALL")
+    const [staff, setStaff] = React.useState<any[]>([])
+    const [selectedStaff, setSelectedStaff] = React.useState<any | null>(null)
+    const [isFetching, setIsFetching] = React.useState(true)
 
-  // PAGINATION & DENSITY STATE
-  const [currentPage, setCurrentPage] = React.useState(1)
-  const [itemsPerPage, setItemsPerPage] = React.useState("10")
+    // PAGINATION
+    const [currentPage, setCurrentPage] = React.useState(1)
+    const [itemsPerPage, setItemsPerPage] = React.useState("10")
 
-  const ALLOWED_DEPTS = ["IT", "ENGINEERING", "SALES"]
+    const updateStaffList = React.useCallback(async () => {
+        setIsFetching(true)
+        const toastId = toast.loading("Updating staff list...")
+        try {
+            const res = await fetch("/api/UserManagement/Fetch")
+            if (!res.ok) throw new Error("Connection failed")
+            const data = await res.json()
+            setStaff(data || [])
+            toast.success("Staff list updated.", { id: toastId })
+        } catch (err) {
+            toast.error("Could not update staff.", { id: toastId })
+        } finally {
+            setIsFetching(false)
+        }
+    }, [])
 
-  const fetchAccounts = React.useCallback(async () => {
-    setIsFetching(true)
-    const toastId = toast.loading("Uplinking to Personnel Registry...")
-    try {
-      const res = await fetch("/api/UserManagement/Fetch")
-      if (!res.ok) throw new Error("Registry Uplink Failed")
-      const data = await res.json()
-      setStaff(data || [])
-      toast.success("Manifest Synchronized.", { id: toastId })
-    } catch (err) {
-      console.error("REGISTRY_FETCH_ERROR:", err)
-      toast.error("Failed to synchronize personnel records.", { id: toastId })
-    } finally {
-      setIsFetching(false)
-    }
-  }, [])
+    React.useEffect(() => { 
+        setUserId(localStorage.getItem("userId"))
+        updateStaffList() 
+    }, [updateStaffList])
 
-  React.useEffect(() => {
-    fetchAccounts()
-  }, [fetchAccounts])
+    const filteredStaff = React.useMemo(() => {
+        return staff.filter(person => {
+            const dept = person.Department?.toUpperCase() || ""
+            const search = searchTerm.toLowerCase()
+            const fullName = `${person.Firstname} ${person.Lastname}`.toLowerCase()
+            const matchesSearch = fullName.includes(search) || person.ReferenceID?.toLowerCase().includes(search)
+            const matchesDept = activeDept === "ALL" ? true : dept === activeDept
+            return matchesSearch && matchesDept
+        })
+    }, [staff, searchTerm, activeDept])
 
-  // Reset pagination on filter or density change
-  React.useEffect(() => {
-    setCurrentPage(1)
-  }, [searchTerm, activeDept, itemsPerPage])
+    const limit = parseInt(itemsPerPage)
+    const totalPages = Math.ceil(filteredStaff.length / limit)
+    const paginatedStaff = filteredStaff.slice((currentPage - 1) * limit, currentPage * limit)
 
-  const normalize = (str: string) => str?.trim().toUpperCase() || ""
+    return (
+        <ProtectedPageWrapper>
+            <SidebarProvider defaultOpen={false}>
+                <AppSidebar userId={userId} />
 
-  const filteredStaff = React.useMemo(() => {
-    return staff.filter(person => {
-      const staffDept = normalize(person.Department)
-      const targetDept = normalize(activeDept)
-      const fullName = `${person.Firstname || ''} ${person.Lastname || ''}`.toLowerCase()
-      const matchesSearch = fullName.includes(searchTerm.toLowerCase()) || 
-                            person.ReferenceID?.toLowerCase().includes(searchTerm.toLowerCase())
-      
-      let matchesDept = targetDept === "ALL" ? ALLOWED_DEPTS.includes(staffDept) : staffDept === targetDept
-      return matchesSearch && matchesDept
-    })
-  }, [staff, searchTerm, activeDept])
+                <SidebarInset className="relative bg-[#F4F7F7] pb-24 md:pb-0 font-sans">
+                    <PageHeader 
+                        title="STAFF DIRECTORY" 
+                        version="V2.8" 
+                        showBackButton={true}
+                        trigger={<SidebarTrigger className="mr-2" />}
+                        actions={
+                            <Button 
+                                onClick={updateStaffList} 
+                                variant="ghost" 
+                                size="icon" 
+                                className={cn("rounded-full h-10 w-10", isFetching && "bg-blue-50 text-blue-600")}
+                            >
+                                <RefreshCw className={cn("size-5", isFetching && "animate-spin")} />
+                            </Button>
+                        }
+                    />
 
-  // PAGINATION LOGIC
-  const limit = parseInt(itemsPerPage)
-  const totalPages = Math.ceil(filteredStaff.length / limit)
-  const paginatedStaff = filteredStaff.slice(
-    (currentPage - 1) * limit,
-    currentPage * limit
-  )
+                    <main className="p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6">
+                        
+                        {/* SUMMARY CARDS */}
+                        <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                            <StatCard label="ALL STAFF" val={staff.length} icon={Users} isActive={activeDept === "ALL"} onClick={() => setActiveDept("ALL")} />
+                            <StatCard label="ENGINEERING" val={staff.filter(s => s.Department?.toUpperCase() === "ENGINEERING").length} icon={Cpu} isActive={activeDept === "ENGINEERING"} onClick={() => setActiveDept("ENGINEERING")} />
+                            <StatCard label="IT SUPPORT" val={staff.filter(s => s.Department?.toUpperCase() === "IT").length} icon={ShieldCheck} isActive={activeDept === "IT"} onClick={() => setActiveDept("IT")} />
+                            <StatCard label="SALES TEAM" val={staff.filter(s => s.Department?.toUpperCase() === "SALES").length} icon={Briefcase} isActive={activeDept === "SALES"} onClick={() => setActiveDept("SALES")} />
+                        </section>
 
-  const getDeptCount = (dept: string) => staff.filter(s => normalize(s.Department) === dept).length
+                        {/* SEARCH BAR */}
+                        <div className="flex flex-col md:flex-row gap-3">
+                            <div className="relative flex-1">
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-zinc-400" />
+                                <input
+                                    placeholder="Search by ID or name..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="w-full pl-11 h-12 rounded-2xl border-none bg-white shadow-sm ring-1 ring-zinc-200 focus:ring-2 focus:ring-black outline-none transition-all text-sm"
+                                />
+                            </div>
+                            <Button variant="outline" onClick={() => { setActiveDept("ALL"); setSearchTerm("") }} className="h-12 rounded-2xl bg-white border-zinc-200 font-bold text-[10px] tracking-widest uppercase px-6">
+                                <RefreshCw className="mr-2 size-3" /> RESET
+                            </Button>
+                        </div>
 
-  return (
-    <div className="flex flex-col min-h-screen bg-[#F9FAFA] font-sans antialiased text-[#121212] pb-24 md:pb-10">
-      <PageHeader title="PERSONNEL_REGISTRY" version="BUILD: IAM-V4.2.ENGINEERING" />
+                        {/* MAIN DATA LIST */}
+                        <div className="bg-white rounded-[24px] shadow-sm border border-zinc-200/60 overflow-hidden">
+                            <div className="hidden md:grid grid-cols-6 bg-zinc-50/50 p-6 border-b border-zinc-100 text-[10px] font-bold uppercase tracking-widest text-zinc-400">
+                                <span className="col-span-2">Member Details</span>
+                                <span>Reference ID</span>
+                                <span>Department</span>
+                                <span>Status</span>
+                                <span className="text-right">Actions</span>
+                            </div>
 
-      <main className="flex flex-1 flex-col gap-6 p-4 md:p-10 max-w-7xl mx-auto w-full">
-        
-        {/* UNIFIED STAT HUD */}
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard 
-            label="Total Personnel" 
-            val={staff.filter(s => ALLOWED_DEPTS.includes(normalize(s.Department))).length} 
-            icon={Users} 
-            isActive={activeDept === "ALL"} 
-            onClick={() => setActiveDept("ALL")} 
-            color="#121212"
-            desc="Global headcount"
-          />
-          <StatCard 
-            label="Engineering" 
-            val={getDeptCount("ENGINEERING")} 
-            icon={Terminal} 
-            isActive={activeDept === "ENGINEERING"} 
-            onClick={() => setActiveDept("ENGINEERING")} 
-            color="#121212"
-            desc="System Architects"
-          />
-          <StatCard 
-            label="IT Security" 
-            val={getDeptCount("IT")} 
-            icon={ShieldCheck} 
-            isActive={activeDept === "IT"} 
-            onClick={() => setActiveDept("IT")} 
-            color="#3B82F6"
-            desc="Network Defense"
-          />
-          <StatCard 
-            label="Sales Force" 
-            val={getDeptCount("SALES")} 
-            icon={Briefcase} 
-            isActive={activeDept === "SALES"} 
-            onClick={() => setActiveDept("SALES")} 
-            color="#F59E0B"
-            desc="Client Operations"
-          />
-        </section>
+                            <div className="divide-y divide-zinc-50">
+                                {isFetching && staff.length === 0 ? (
+                                    <div className="p-20 text-center flex flex-col items-center gap-3">
+                                        <Loader2 className="animate-spin text-zinc-200 size-10" />
+                                        <p className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Updating engiconnect...</p>
+                                    </div>
+                                ) : paginatedStaff.map((person) => (
+                                    <div key={person._id} className="grid grid-cols-1 md:grid-cols-6 gap-4 p-6 items-center hover:bg-zinc-50/40 transition-colors">
+                                        <div className="col-span-2 flex items-center gap-4">
+                                            <Avatar className="size-10 rounded-xl border border-zinc-100 shadow-sm">
+                                                <AvatarImage src={person.profilePicture} className="object-cover" />
+                                                <AvatarFallback className="bg-black text-white text-[10px] font-bold">{person.Firstname?.[0]}{person.Lastname?.[0]}</AvatarFallback>
+                                            </Avatar>
+                                            <div className="flex flex-col">
+                                                <span className="text-sm font-bold text-zinc-900 uppercase">{person.Firstname} {person.Lastname}</span>
+                                                <span className="text-[10px] text-zinc-400 font-medium">{person.Email}</span>
+                                            </div>
+                                        </div>
+                                        <span className="text-[10px] font-mono font-bold text-zinc-500 bg-zinc-100 px-2 py-1 rounded w-fit">#{person.ReferenceID || "UNASSIGNED"}</span>
+                                        <div>
+                                            <Badge variant="outline" className={cn("px-2.5 py-1 rounded-lg text-[10px] font-bold border-zinc-200", person.Department?.toUpperCase() === "ENGINEERING" ? "bg-blue-50 text-blue-600" : "bg-zinc-50 text-zinc-600")}>
+                                                {person.Department}
+                                            </Badge>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                            <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-tight">Verified</span>
+                                        </div>
+                                        <div className="flex justify-end">
+                                            <Button onClick={() => setSelectedStaff(person)} variant="ghost" className="h-8 rounded-xl text-[11px] font-bold hover:bg-black hover:text-white transition-all group">
+                                                View Profile <ArrowRight className="size-3 ml-2 group-hover:translate-x-1" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
 
-        {/* SEARCH HUD */}
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="relative flex-1 group">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-black/30 group-focus-within:text-black transition-colors" />
-            <Input 
-              placeholder="Query name or Reference ID..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-11 rounded-md border-black/10 bg-white h-12 text-sm focus-visible:ring-1 focus-visible:ring-black shadow-sm"
-            />
-          </div>
-          <Button 
-            variant="outline" 
-            onClick={() => {setActiveDept("ENGINEERING"); setSearchTerm("")}} 
-            className="rounded-md border-black/10 h-12 px-6 uppercase font-bold text-[10px] tracking-widest bg-white hover:bg-[#121212] hover:text-white transition-all shadow-sm"
-          >
-            <RotateCcw className="mr-2 size-3" />
-            Reset Manifest
-          </Button>
-        </div>
+                            {/* PAGINATION */}
+                            <div className="p-5 bg-zinc-50/50 border-t border-zinc-100 flex justify-between items-center">
+                                <div className="flex items-center gap-4">
+                                    <span className="text-[10px] font-bold text-zinc-400 uppercase">Show:</span>
+                                    <Select value={itemsPerPage} onValueChange={setItemsPerPage}>
+                                        <SelectTrigger className="w-16 h-8 bg-white border-zinc-200 rounded-lg text-xs font-bold"><SelectValue /></SelectTrigger>
+                                        <SelectContent>
+                                            {["5", "10", "20"].map(v => <SelectItem key={v} value={v} className="text-xs font-bold">{v}</SelectItem>)}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} variant="outline" size="icon" className="size-9 rounded-xl bg-white"><ChevronLeft className="size-4" /></Button>
+                                    <div className="px-5 py-2 bg-white rounded-xl border border-zinc-200 text-xs font-bold">{currentPage} / {totalPages || 1}</div>
+                                    <Button disabled={currentPage === totalPages || totalPages === 0} onClick={() => setCurrentPage(p => p + 1)} variant="outline" size="icon" className="size-9 rounded-xl bg-white"><ChevronRight className="size-4" /></Button>
+                                </div>
+                            </div>
+                        </div>
+                    </main>
 
-        {/* DATA TABLE CONTAINER */}
-        <section className="bg-white border border-black/5 rounded-lg shadow-sm overflow-hidden flex flex-col">
-          <div className="hidden md:grid grid-cols-5 bg-[#F9FAFA] border-b border-black/5 p-5">
-            {["Identity", "Reference_ID", "Department", "Verification", "Actions"].map((h) => (
-              <span key={h} className="text-[10px] font-bold uppercase tracking-[0.15em] text-black/40">{h}</span>
-            ))}
-          </div>
+                    {/* USER PROFILE SLIDER (DRAWER) */}
+                    <Sheet open={!!selectedStaff} onOpenChange={() => setSelectedStaff(null)}>
+                        <SheetContent side="right" className="sm:max-w-md w-full p-0 border-l border-zinc-100 overflow-hidden">
+                            {selectedStaff && (
+                                <div className="flex flex-col h-full bg-white relative">
+                                    {/* Cover / Header Section */}
+                                    <div className="h-40 bg-zinc-950 w-full relative">
+                                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-zinc-700/20 via-transparent to-transparent" />
+                                        <Button 
+                                            onClick={() => setSelectedStaff(null)} 
+                                            variant="ghost" 
+                                            className="absolute top-4 right-4 text-white/70 hover:text-white hover:bg-white/10 rounded-full h-10 w-10 p-0 z-20"
+                                        >
+                                            <X className="size-5" />
+                                        </Button>
+                                        
+                                        {/* Profile Avatar Overlap */}
+                                        <div className="absolute -bottom-10 left-8">
+                                            <Avatar className="size-24 rounded-[28px] border-[6px] border-white shadow-xl">
+                                                <AvatarImage src={selectedStaff.profilePicture} className="object-cover" />
+                                                <AvatarFallback className="bg-zinc-800 text-white text-2xl font-black uppercase">
+                                                    {selectedStaff.Firstname?.[0]}{selectedStaff.Lastname?.[0]}
+                                                </AvatarFallback>
+                                            </Avatar>
+                                        </div>
+                                    </div>
 
-          <div className="divide-y divide-black/5 flex-1 min-h-[400px]">
-            {isFetching && staff.length === 0 ? (
-              <div className="flex flex-col items-center justify-center p-20 gap-3">
-                <Loader2 className="size-6 animate-spin text-black/20" />
-                <p className="text-[10px] font-bold uppercase tracking-widest text-black/30">Accessing Records...</p>
-              </div>
-            ) : paginatedStaff.length === 0 ? (
-              <div className="p-20 text-center opacity-20">
-                <Fingerprint className="size-10 mx-auto mb-4" />
-                <p className="text-[10px] font-bold uppercase tracking-widest">System_Null // No Matches</p>
-              </div>
-            ) : (
-              paginatedStaff.map((person) => (
-                <div 
-                  key={person._id} 
-                  className="group grid grid-cols-1 md:grid-cols-5 gap-4 p-5 hover:bg-[#F9FAFA] transition-all cursor-pointer"
-                >
-                  <div className="flex items-center gap-3">
-                    <Avatar className="size-10 rounded-lg border border-black/5 grayscale group-hover:grayscale-0 transition-all shadow-sm">
-                      <AvatarImage src={person.profilePicture} className="object-cover" />
-                      <AvatarFallback className="bg-[#121212] text-white text-[10px] font-black">{person.Firstname?.[0]}</AvatarFallback>
-                    </Avatar>
-                    <div className="flex flex-col">
-                      <span className="text-sm font-bold text-[#121212] uppercase tracking-tighter leading-none mb-1">
-                        {person.Firstname} {person.Lastname}
-                      </span>
-                      <span className="text-[9px] font-medium text-black/40 truncate">{person.Email}</span>
-                    </div>
-                  </div>
+                                    {/* Content Section */}
+                                    <div className="mt-14 px-8 flex flex-col flex-1 overflow-hidden">
+                                        <div className="mb-8">
+                                            <h2 className="text-2xl font-black tracking-tighter text-zinc-900 uppercase leading-tight">
+                                                {selectedStaff.Firstname} <br /> {selectedStaff.Lastname}
+                                            </h2>
+                                            <div className="flex items-center gap-2 mt-2">
+                                                <Badge className="bg-zinc-100 text-zinc-600 border-none hover:bg-zinc-100 font-bold text-[9px] px-2 py-0.5 uppercase tracking-widest">
+                                                    {selectedStaff.Department}
+                                                </Badge>
+                                                <div className="flex items-center gap-1.5 ml-2">
+                                                    <div className="size-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                                                    <span className="text-[10px] font-black text-zinc-400 uppercase tracking-tighter">System Verified</span>
+                                                </div>
+                                            </div>
+                                        </div>
 
-                  <div className="flex flex-col justify-center">
-                    <span className="text-[11px] font-bold text-black font-mono tracking-tight">
-                      {person.ReferenceID || "SYS-NULL"}
-                    </span>
-                    <span className="text-[9px] text-black/40 italic">ID_Verified</span>
-                  </div>
+                                        {/* Scrollable Info Area */}
+                                        <div className="space-y-3 overflow-y-auto pr-2 pb-6 flex-1 custom-scrollbar">
+                                            <p className="text-[10px] font-black text-zinc-300 uppercase tracking-[0.25em] mb-4">Identification Details</p>
+                                            
+                                            <InfoRow icon={Mail} label="Professional Email" value={selectedStaff.Email} />
+                                            <InfoRow icon={Fingerprint} label="Reference ID" value={selectedStaff.ReferenceID || "Not Assigned"} />
+                                            <InfoRow icon={ShieldAlert} label="Unit Clearance" value={selectedStaff.Department} />
+                                            <InfoRow icon={Globe} label="Region Access" value="Global / HQ" />
 
-                  <div className="flex items-center">
-                    <Badge variant="outline" className={cn(
-                      "rounded-sm font-bold text-[9px] uppercase border px-2.5 py-0.5",
-                      normalize(person.Department) === "ENGINEERING" ? "bg-black text-white border-black" : "bg-black/5 text-black/60 border-black/10"
-                    )}>
-                      {person.Department}
-                    </Badge>
-                  </div>
+                                            <div className="mt-6 p-5 rounded-[20px] bg-zinc-50 border border-zinc-100 space-y-3">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Trust Score</span>
+                                                    <span className="text-[10px] font-black text-emerald-600 uppercase">98% Secure</span>
+                                                </div>
+                                                <div className="h-1.5 w-full bg-zinc-200 rounded-full overflow-hidden">
+                                                    <div className="h-full bg-emerald-500 w-[98%]" />
+                                                </div>
+                                            </div>
+                                        </div>
 
-                  <div className="flex items-center gap-2">
-                    <UserCheck className="size-3 text-emerald-500" />
-                    <span className="text-[10px] font-bold uppercase text-black/40 tracking-tight">Verified_Internal</span>
-                  </div>
-
-                  <div className="flex items-center md:justify-end gap-4">
-                    <Button variant="ghost" size="icon" className="size-8 text-black/20 hover:text-black hover:bg-black/5">
-                      <MoreHorizontal className="size-4" />
-                    </Button>
-                    <ChevronRight className="size-4 text-black/20 group-hover:text-black group-hover:translate-x-1 transition-all" />
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-
-          {/* PAGINATION FOOTER */}
-          <div className="flex flex-col md:flex-row items-center justify-between px-6 py-4 bg-[#F9FAFA] border-t border-black/5 gap-4">
-            <div className="flex items-center gap-4">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-black/40">
-                Displaying {paginatedStaff.length} of {filteredStaff.length} results
-              </span>
-              <div className="flex items-center gap-2 border-l border-black/10 pl-4">
-                <span className="text-[9px] font-black uppercase text-black/30">Density:</span>
-                <Select value={itemsPerPage} onValueChange={setItemsPerPage}>
-                  <SelectTrigger className="h-7 w-[70px] bg-white border-black/10 text-[10px] font-bold rounded-sm">
-                    <SelectValue placeholder="10" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white border-black/10">
-                    {["10", "20", "50", "100"].map(v => (
-                      <SelectItem key={v} value={v} className="text-[10px] font-bold uppercase">{v}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-black/40">
-                Page {currentPage} / {totalPages || 1}
-              </span>
-              <div className="flex items-center gap-1">
-                <Button 
-                  variant="outline" 
-                  size="icon" 
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
-                  disabled={currentPage === 1} 
-                  className="size-8 rounded-sm border-black/10 bg-white hover:bg-[#121212] hover:text-white transition-all shadow-sm"
-                >
-                  <ChevronLeft className="size-4" />
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="icon" 
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
-                  disabled={currentPage === totalPages || totalPages === 0} 
-                  className="size-8 rounded-sm border-black/10 bg-white hover:bg-[#121212] hover:text-white transition-all shadow-sm"
-                >
-                  <ChevronRight className="size-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-        </section>
-      </main>
-
-      {/* FAB */}
-      <div className="fixed bottom-8 right-6 z-50">
-        <Button 
-          className="size-16 rounded-full bg-[#121212] text-white shadow-2xl hover:scale-105 active:scale-95 transition-all flex flex-col items-center justify-center border border-white/10 group"
-          onClick={() => fetchAccounts()}
-        >
-          <div className="size-6 bg-white/10 rounded-full flex items-center justify-center mb-1 group-hover:bg-white/20">
-            <span className="text-[10px] font-black italic">E</span>
-          </div>
-          <Activity className="size-5 stroke-[2.5px]" />
-        </Button>
-      </div>
-    </div>
-  )
+                                        {/* Bottom Action Area */}
+                                        <div className="py-8 bg-white border-t border-zinc-50">
+                                            <Button 
+                                                onClick={() => setSelectedStaff(null)} 
+                                                className="w-full h-14 rounded-2xl bg-black hover:bg-zinc-800 text-white font-bold uppercase text-[11px] tracking-[0.2em] shadow-lg shadow-black/10 transition-all active:scale-[0.98]"
+                                            >
+                                                Return to Directory
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </SheetContent>
+                    </Sheet>
+                </SidebarInset>
+            </SidebarProvider>
+        </ProtectedPageWrapper>
+    )
 }
 
-function StatCard({ label, val, icon: Icon, isActive, onClick, color, desc }: any) {
-  return (
-    <div 
-      onClick={onClick}
-      className={cn(
-        "relative cursor-pointer p-5 flex flex-col gap-1 transition-all duration-300 border rounded-lg bg-white shadow-sm",
-        isActive ? "border-black ring-1 ring-black/5 translate-y-[-2px]" : "border-black/5 opacity-80 hover:opacity-100 hover:border-black/20"
-      )}
-    >
-      <div className="flex justify-between items-start mb-2">
-        <div className="p-2 rounded-md bg-[#F9FAFA] border border-black/5">
-          <Icon className="size-4" style={{ color: isActive ? color : '#A0A0A0' }} />
+function StatCard({ label, val, icon: Icon, isActive, onClick }: any) {
+    return (
+        <div
+            onClick={onClick}
+            className={cn(
+                "p-5 md:p-6 flex flex-col gap-3 rounded-[24px] bg-white transition-all shadow-sm border-2 cursor-pointer active:scale-95",
+                isActive ? "border-black shadow-md" : "border-transparent"
+            )}
+        >
+            <div className="flex justify-between items-start">
+                <div className={cn("p-2.5 rounded-xl", isActive ? "bg-black text-white" : "bg-zinc-50 text-zinc-400")}>
+                    <Icon className="size-4 md:size-5" />
+                </div>
+                <span className="text-2xl md:text-3xl font-black text-zinc-900">{val.toString().padStart(2, '0')}</span>
+            </div>
+            <p className="text-[9px] md:text-[10px] font-bold uppercase text-zinc-400 tracking-[0.15em]">{label}</p>
         </div>
-        <span className="text-2xl font-bold tracking-tighter text-[#121212]">
-          {val.toString().padStart(2, '0')}
-        </span>
-      </div>
-      <div className="flex flex-col">
-        <span className={cn(
-          "text-[10px] font-black uppercase tracking-[0.1em]",
-          isActive ? "text-black" : "text-black/40"
-        )}>
-          {label}
-        </span>
-        <span className="text-[9px] text-black/30 font-medium leading-tight">
-          {desc}
-        </span>
-      </div>
-      {isActive && (
-        <div className="absolute top-3 right-3 size-1.5 rounded-full bg-black animate-pulse" />
-      )}
-    </div>
-  );
+    )
+}
+
+function InfoRow({ icon: Icon, label, value }: any) {
+    return (
+        <div className="flex items-center gap-4 p-4 rounded-2xl bg-zinc-50/50 border border-zinc-100 hover:bg-white hover:border-zinc-200 transition-all group">
+            <div className="size-10 rounded-xl bg-white border border-zinc-100 flex items-center justify-center text-zinc-400 shadow-sm group-hover:text-black transition-colors">
+                <Icon className="size-4" />
+            </div>
+            <div className="flex flex-col overflow-hidden">
+                <span className="text-[9px] font-black uppercase text-zinc-400 tracking-widest">{label}</span>
+                <span className="text-sm font-bold text-zinc-900 truncate">{value}</span>
+            </div>
+        </div>
+    )
 }

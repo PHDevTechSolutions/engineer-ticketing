@@ -1,10 +1,10 @@
 "use client"
 
 import * as React from "react"
+import dynamic from "next/dynamic"
 import { 
-  History, Search, Activity, Fingerprint, ChevronRight, ChevronLeft,
-  RotateCcw, Loader2, ShieldCheck, MapPin, Globe, MoreHorizontal, 
-  Users, Radio, Cpu, UserCheck
+  Search, ChevronRight, ChevronLeft, Loader2, Radio, RotateCcw, 
+  MapPin, Monitor, Smartphone, Activity, ArrowRight, X, LogIn, LogOut, Globe
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -13,19 +13,24 @@ import { toast } from "sonner"
 import { logsDb } from "@/lib/firebase" 
 import { collection, getDocs, query, orderBy, Timestamp } from "firebase/firestore"
 
-// SHADCN + CUSTOM
+// UI COMPONENTS
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { PageHeader } from "@/components/page-header"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { AppSidebar } from "@/components/app-sidebar"
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
+import ProtectedPageWrapper from "@/components/protected-page-wrapper"
+import { Dialog, DialogContent } from "@/components/ui/dialog"
+
+// Leaflet
+import "leaflet/dist/leaflet.css"
+
+// DYNAMIC MAP COMPONENTS
+const MapContainer = dynamic(() => import("react-leaflet").then((mod) => mod.MapContainer), { ssr: false }) as any;
+const TileLayer = dynamic(() => import("react-leaflet").then((mod) => mod.TileLayer), { ssr: false }) as any;
+const Marker = dynamic(() => import("react-leaflet").then((mod) => mod.Marker), { ssr: false }) as any;
 
 interface AccessLog {
   id: string
@@ -38,30 +43,40 @@ interface AccessLog {
     email: string
     avatar?: string
   }
-  browser?: string
-  os?: string
   ipAddress: string 
   resource: string 
   details: string
+  deviceType: "mobile" | "desktop"
+  coords?: [number, number]
 }
 
 export default function AccessLogsPage() {
+  const [userId, setUserId] = React.useState<string | null>(null)
   const [searchTerm, setSearchTerm] = React.useState("")
   const [activeFilter, setActiveFilter] = React.useState<string>("ALL")
   const [logs, setLogs] = React.useState<AccessLog[]>([])
   const [isFetching, setIsFetching] = React.useState(true)
   
+  // PAGINATION STATE
   const [currentPage, setCurrentPage] = React.useState(1)
   const [itemsPerPage, setItemsPerPage] = React.useState("10")
+  
+  // MAP & ADDRESS STATE
+  const [selectedLog, setSelectedLog] = React.useState<AccessLog | null>(null)
+  const [readableAddress, setReadableAddress] = React.useState<string>("Locating...")
+  const [L, setL] = React.useState<any>(null);
 
-  const fetchPersonnelRecords = React.useCallback(async () => {
+  React.useEffect(() => {
+    import("leaflet").then((leaflet) => setL(leaflet));
+    setUserId(localStorage.getItem("userId"))
+  }, []);
+
+  const fetchLogs = React.useCallback(async () => {
     setIsFetching(true);
-    const toastId = toast.loading("Uplinking to LogsDB Archive...");
-    
+    const toastId = toast.loading("Syncing activity logs...");
     try {
       const registryRes = await fetch("/api/UserManagement/Fetch");
       const registryData = await registryRes.json();
-      
       const photoMap = new Map();
       registryData.forEach((person: any) => {
         if (person.Email && person.profilePicture) {
@@ -74,232 +89,268 @@ export default function AccessLogsPage() {
 
       const logData: AccessLog[] = querySnapshot.docs.map((docSnap) => {
         const d = docSnap.data();
-        const email = d.email?.toLowerCase() || "";
-        const dateCreatedStr = d.date_created instanceof Timestamp
-          ? d.date_created.toDate().toLocaleString()
-          : d.date_created || "N/A";
-
-        let displayLocation = "INTERNAL_NODE";
-        if (typeof d.location === 'string') displayLocation = d.location;
-        else if (d.location?.latitude) displayLocation = `${d.location.latitude.toFixed(4)}, ${d.location.longitude.toFixed(4)}`;
-
-        const userName = d.email?.split('@')[0] || "Personnel_Unknown";
+        const dateCreatedStr = d.date_created instanceof Timestamp ? d.date_created.toDate().toLocaleString() : d.date_created || "N/A";
 
         return {
           id: docSnap.id,
           date_created: dateCreatedStr,
           timestamp: d.date_created,
           action: (d.status || "Activity").toUpperCase(),
-          status: d.status?.toLowerCase() === "login" ? "SUCCESS" : 
-                  d.status?.toLowerCase() === "logout" ? "WARNING" : "SUCCESS",
+          status: d.status?.toLowerCase() === "login" ? "SUCCESS" : "WARNING",
           user: {
-            name: userName,
+            name: d.email?.split('@')[0] || "Unknown",
             email: d.email || "N/A",
-            avatar: photoMap.get(email) || `https://ui-avatars.com/api/?name=${userName}&background=121212&color=fff`,
+            avatar: photoMap.get(d.email?.toLowerCase()),
           },
-          browser: d.browser,
-          os: d.os,
-          ipAddress: displayLocation, 
-          resource: `${d.os || 'N/A'} / ${d.browser || 'N/A'}`,
-          details: `Ref_ID: ${d.deviceId || 'Unregistered'}`
+          // Showing IP/Device info as requested
+          ipAddress: d.ipAddress || "INTERNAL", 
+          resource: d.os || 'System',
+          details: d.deviceId?.slice(-6) || 'N/A',
+          deviceType: d.os?.toLowerCase().includes('android') || d.os?.toLowerCase().includes('ios') ? "mobile" : "desktop",
+          coords: d.location?.latitude ? [d.location.latitude, d.location.longitude] : undefined
         };
       });
 
       setLogs(logData);
-      toast.success("Manifest Synchronized.", { id: toastId });
+      toast.success("Logs synchronized.", { id: toastId });
     } catch (err) {
-      toast.error("Protocol Error: LogsDB unreachable.", { id: toastId });
+      toast.error("Sync failed.");
     } finally {
       setIsFetching(false);
     }
   }, []);
 
-  React.useEffect(() => { fetchPersonnelRecords() }, [fetchPersonnelRecords]);
+  // REVERSE GEOCODING
+  const getAddress = async (lat: number, lon: number) => {
+    setReadableAddress("Fetching address...");
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+      const data = await res.json();
+      setReadableAddress(data.display_name || "Address not found");
+    } catch {
+      setReadableAddress("Error fetching address");
+    }
+  };
 
-  React.useEffect(() => { setCurrentPage(1) }, [searchTerm, activeFilter, itemsPerPage]);
+  React.useEffect(() => { fetchLogs() }, [fetchLogs]);
 
   const filteredLogs = React.useMemo(() => {
     return logs.filter(log => {
-      const searchTarget = `${log.user.name} ${log.user.email} ${log.action}`.toLowerCase();
+      const searchTarget = `${log.user.name} ${log.user.email} ${log.action} ${log.ipAddress}`.toLowerCase();
       const matchesSearch = searchTarget.includes(searchTerm.toLowerCase());
-      const matchesFilter = activeFilter === "ALL" || log.status === activeFilter;
+      const matchesFilter = activeFilter === "ALL" ? true : log.action === activeFilter;
       return matchesSearch && matchesFilter;
     });
   }, [logs, searchTerm, activeFilter]);
 
-  const uniqueUsersCount = React.useMemo(() => new Set(logs.map(l => l.user.email)).size, [logs]);
-  const integrityRate = React.useMemo(() => {
-    if (logs.length === 0) return "0%";
-    const success = logs.filter(l => l.status === "SUCCESS").length;
-    return `${Math.round((success / logs.length) * 100)}%`;
-  }, [logs]);
-
+  // PAGINATION LOGIC
   const limit = parseInt(itemsPerPage);
   const totalPages = Math.ceil(filteredLogs.length / limit);
   const paginatedLogs = filteredLogs.slice((currentPage - 1) * limit, currentPage * limit);
 
+  const createCustomIcon = (url: string) => {
+    if (!L) return null;
+    return new L.DivIcon({
+      className: 'custom-div-icon',
+      html: `<div style="background-color: black; border: 3px solid white; border-radius: 50%; overflow: hidden; width: 45px; height: 45px; box-shadow: 0 4px 12px rgba(0,0,0,0.4);">
+               <img src="${url || 'https://github.com/shadcn.png'}" style="width: 100%; height: 100%; object-fit: cover;" />
+             </div>`,
+      iconSize: [45, 45],
+      iconAnchor: [22, 45],
+    });
+  };
+
   return (
-    <div className="flex flex-col min-h-screen bg-[#F9FAFA] font-sans antialiased text-[#121212] pb-24 md:pb-10">
-      <PageHeader title="OPERATIONAL_ACTIVITY_LOG" version="BUILD: IAM-V4.2.ENGINEERING" />
+    <ProtectedPageWrapper>
+      <SidebarProvider defaultOpen={false}>
+        <AppSidebar userId={userId} />
+        <SidebarInset className="bg-[#F4F7F7] font-sans pb-24 md:pb-0">
+          
+          <PageHeader 
+            title="ACTIVITY LOGS" 
+            version="V3.2" 
+            showBackButton={true}
+            trigger={<SidebarTrigger className="mr-2" />}
+            actions={
+              <Button onClick={fetchLogs} variant="ghost" size="icon" className={cn("rounded-full h-10 w-10", isFetching && "bg-blue-50 text-blue-600")}>
+                <RotateCcw className={cn("size-5", isFetching && "animate-spin")} />
+              </Button>
+            }
+          />
 
-      <main className="flex flex-1 flex-col gap-6 p-4 md:p-10 max-w-7xl mx-auto w-full">
-        
-        {/* STAT HUD */}
-        <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard label="Transmissions" val={logs.length} icon={Radio} isActive={activeFilter === "ALL"} onClick={() => setActiveFilter("ALL")} color="#121212" desc="Cumulative stream" />
-          <StatCard label="Active Personnel" val={uniqueUsersCount} icon={Users} isActive={false} color="#121212" desc="Unique Auth IDs" />
-          <StatCard label="Security Integrity" val={integrityRate} icon={ShieldCheck} isActive={activeFilter === "SUCCESS"} onClick={() => setActiveFilter("SUCCESS")} color="#121212" desc="Verified access rate" />
-          <StatCard label="System Latency" val="24ms" icon={Cpu} isActive={false} color="#3B82F6" desc="Node: Firebase_Global" />
-        </section>
+          <main className="p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6">
+            {/* STAT CARDS */}
+            <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+               <StatCard label="ALL EVENTS" val={logs.length} icon={Activity} isActive={activeFilter === "ALL"} onClick={() => setActiveFilter("ALL")} />
+               <StatCard label="LOGINS" val={logs.filter(l => l.action === "LOGIN").length} icon={LogIn} isActive={activeFilter === "LOGIN"} onClick={() => setActiveFilter("LOGIN")} />
+               <StatCard label="LOGOUTS" val={logs.filter(l => l.action === "LOGOUT").length} icon={LogOut} isActive={activeFilter === "LOGOUT"} onClick={() => setActiveFilter("LOGOUT")} />
+               <StatCard label="NODES" val="ON" icon={Radio} isActive={false} />
+            </section>
 
-        {/* SEARCH HUD */}
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="relative flex-1 group">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-black/30 group-focus-within:text-black transition-colors" />
-            <Input 
-              placeholder="Query name, Email, or Reference ID..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-11 rounded-md border-black/10 bg-white h-12 text-sm focus-visible:ring-1 focus-visible:ring-black shadow-sm"
-            />
-          </div>
-          <Button 
-            variant="outline" 
-            onClick={fetchPersonnelRecords} 
-            className="rounded-md border-black/10 h-12 px-6 uppercase font-bold text-[10px] tracking-widest bg-white hover:bg-[#121212] hover:text-white transition-all shadow-sm"
-          >
-            <RotateCcw className="mr-2 size-3" />
-            Reset Manifest
-          </Button>
-        </div>
-
-        {/* DATA TABLE CONTAINER */}
-        <section className="bg-white border border-black/5 rounded-lg shadow-sm overflow-hidden flex flex-col">
-          <div className="hidden md:grid grid-cols-5 bg-[#F9FAFA] border-b border-black/5 p-5">
-            {["Identity", "Timestamp", "Context", "Access_Point", "Verification"].map((h) => (
-              <span key={h} className="text-[10px] font-bold uppercase tracking-[0.15em] text-black/40">{h}</span>
-            ))}
-          </div>
-
-          <div className="divide-y divide-black/5 flex-1 min-h-[400px]">
-            {isFetching && logs.length === 0 ? (
-              <div className="flex flex-col items-center justify-center p-20 gap-3">
-                <Loader2 className="size-6 animate-spin text-black/20" />
-                <p className="text-[10px] font-bold uppercase tracking-widest text-black/30">Syncing Records...</p>
+            <div className="flex flex-col md:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-zinc-400" />
+                <input
+                  placeholder="Search activity..."
+                  value={searchTerm}
+                  onChange={(e) => {setSearchTerm(e.target.value); setCurrentPage(1);}}
+                  className="w-full pl-11 h-12 rounded-2xl border-none bg-white shadow-sm ring-1 ring-zinc-200 focus:ring-2 focus:ring-black outline-none text-sm"
+                />
               </div>
-            ) : paginatedLogs.length === 0 ? (
-              <div className="p-20 text-center opacity-20">
-                <Fingerprint className="size-10 mx-auto mb-4" />
-                <p className="text-[10px] font-bold uppercase tracking-widest">System_Null // No Matches</p>
+            </div>
+
+            <div className="bg-white rounded-[24px] shadow-sm border border-zinc-200/60 overflow-hidden">
+              <div className="hidden md:grid grid-cols-12 bg-zinc-50/50 p-6 border-b border-zinc-100 text-[10px] font-bold uppercase tracking-widest text-zinc-400">
+                <span className="col-span-4">User Details</span>
+                <span className="col-span-2">Timestamp</span>
+                <span className="col-span-2">Action</span>
+                <span className="col-span-2">Network Info</span>
+                <span className="text-right col-span-2">Ref ID</span>
               </div>
-            ) : paginatedLogs.map((log) => (
-              <div key={log.id} className="group grid grid-cols-1 md:grid-cols-5 gap-4 p-5 hover:bg-[#F9FAFA] transition-all cursor-pointer">
-                <div className="flex items-center gap-3 min-w-0">
-                  <Avatar className="size-10 rounded-lg border border-black/5 grayscale group-hover:grayscale-0 transition-all shadow-sm">
-                    <AvatarImage src={log.user.avatar} className="object-cover" />
-                    <AvatarFallback className="bg-[#121212] text-white text-[10px] font-black">{log.user.name?.[0]}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-sm font-bold text-[#121212] uppercase tracking-tighter leading-none mb-1">{log.user.name.replace('_', ' ')}</span>
-                    <span className="text-[9px] font-medium text-black/40 truncate">{log.user.email}</span>
+
+              <div className="divide-y divide-zinc-50">
+                {paginatedLogs.map((log) => (
+                  <div key={log.id} className="grid grid-cols-1 md:grid-cols-12 gap-4 p-6 items-center hover:bg-zinc-50/40 transition-colors">
+                    <div className="col-span-4 flex items-center gap-4">
+                      <Avatar className="size-10 rounded-xl border border-zinc-100">
+                        <AvatarImage src={log.user.avatar} className="object-cover" />
+                        <AvatarFallback className="bg-black text-white text-[10px] font-bold">{log.user.name?.[0]}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold text-zinc-900 uppercase tracking-tight">{log.user.name.replace('_', ' ')}</span>
+                        <span className="text-[10px] text-zinc-400 font-medium">{log.user.email}</span>
+                      </div>
+                    </div>
+
+                    <div className="col-span-2 flex flex-col">
+                      <span className="text-xs font-bold text-zinc-700">{log.date_created.split(',')[0]}</span>
+                      <span className="text-[10px] text-zinc-400 font-bold uppercase italic">{log.date_created.split(',')[1]}</span>
+                    </div>
+
+                    <div className="col-span-2">
+                      <Badge className={cn("px-2.5 py-1 rounded-lg text-[9px] font-bold border-none", log.action === "LOGIN" ? "bg-emerald-50 text-emerald-600" : "bg-orange-50 text-orange-600")}>
+                        {log.action}
+                      </Badge>
+                    </div>
+
+                    <div className="col-span-2 flex items-center gap-3">
+                      <div className="p-2 bg-zinc-50 rounded-lg text-zinc-400 border border-zinc-100">
+                        {log.deviceType === 'mobile' ? <Smartphone className="size-3.5" /> : <Monitor className="size-3.5" />}
+                      </div>
+                      <div className="flex flex-col overflow-hidden">
+                        <span className="text-[10px] font-bold text-zinc-600 uppercase truncate">{log.resource}</span>
+                        <span className="text-[9px] text-zinc-400 flex items-center gap-1 font-medium"><Globe className="size-2.5" /> {log.ipAddress}</span>
+                      </div>
+                    </div>
+
+                    <div className="col-span-2 flex items-center justify-between md:justify-end gap-3">
+                      {log.coords ? (
+                        <Button 
+                          onClick={() => { setSelectedLog(log); getAddress(log.coords![0], log.coords![1]); }}
+                          variant="outline" 
+                          className="h-8 rounded-xl text-[10px] font-bold bg-black text-white hover:bg-zinc-800 gap-2 px-3"
+                        >
+                          <MapPin className="size-3" /> MAP
+                        </Button>
+                      ) : (
+                        <span className="text-[10px] font-mono font-bold text-zinc-500 bg-zinc-100 px-2 py-1 rounded w-fit">#{log.details}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* RESTORED PAGINATION CONTROLS */}
+              <div className="p-4 bg-zinc-50/50 border-t border-zinc-100 flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Rows per page:</span>
+                  <Select value={itemsPerPage} onValueChange={(val) => {setItemsPerPage(val); setCurrentPage(1);}}>
+                    <SelectTrigger className="h-8 w-[70px] rounded-lg border-zinc-200 text-[10px] font-bold bg-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="20">20</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                    Page {currentPage} of {totalPages || 1}
+                  </span>
+                  <div className="flex gap-1">
+                    <Button 
+                      variant="outline" size="icon" className="size-8 rounded-lg" 
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="size-4" />
+                    </Button>
+                    <Button 
+                      variant="outline" size="icon" className="size-8 rounded-lg"
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage >= totalPages}
+                    >
+                      <ChevronRight className="size-4" />
+                    </Button>
                   </div>
                 </div>
+              </div>
+            </div>
+          </main>
 
-                <div className="flex flex-col justify-center">
-                  <span className="text-[11px] font-bold text-black font-mono tracking-tight">{log.date_created.split(',')[0]}</span>
-                  <span className="text-[9px] text-black/40 italic">{log.date_created.split(',')[1] || "—"}</span>
-                </div>
-
-                <div className="flex flex-col justify-center">
-                  <Badge variant="outline" className="w-fit rounded-sm font-bold text-[9px] uppercase border-black/10 bg-black/5 text-black/60 mb-1">{log.action}</Badge>
-                  <span className="text-[9px] text-black/40 truncate italic leading-none">{log.resource}</span>
-                </div>
-
+          {/* MAP DIALOG */}
+          <Dialog open={!!selectedLog} onOpenChange={() => setSelectedLog(null)}>
+            <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden rounded-[32px] border-none">
+              <div className="h-[400px] w-full relative">
+                {selectedLog?.coords && L && (
+                  <MapContainer center={selectedLog.coords} zoom={16} style={{ height: '100%', width: '100%' }}>
+                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                    <Marker position={selectedLog.coords} icon={createCustomIcon(selectedLog.user.avatar || '')} />
+                  </MapContainer>
+                )}
+                <Button onClick={() => setSelectedLog(null)} variant="secondary" size="icon" className="absolute top-4 right-4 z-[1000] rounded-full bg-white/90">
+                  <X className="size-4" />
+                </Button>
+              </div>
+              <div className="p-8 bg-white flex flex-col gap-2">
                 <div className="flex items-center gap-2">
-                  <MapPin className="size-3 text-black/20" />
-                  <span className="text-[10px] font-mono text-black/60 truncate uppercase tracking-tighter">{log.ipAddress}</span>
+                    <div className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Verified Address</h3>
                 </div>
-
-                <div className="flex items-center md:justify-end gap-4">
-                  <Badge variant="outline" className={cn(
-                    "rounded-sm font-bold text-[9px] uppercase border px-2.5 py-0.5",
-                    log.status === "SUCCESS" ? "bg-black text-white border-black" : 
-                    log.status === "WARNING" ? "bg-amber-500 text-white border-amber-500" : "bg-red-600 text-white border-red-600"
-                  )}>
-                    {log.status === "SUCCESS" ? "Verified" : log.status === "WARNING" ? "Flagged" : "Denied"}
-                  </Badge>
-                  <ChevronRight className="size-4 text-black/20 group-hover:text-black group-hover:translate-x-1 transition-all" />
+                <p className="text-[13px] text-zinc-900 font-bold leading-relaxed">{readableAddress}</p>
+                <div className="mt-2 pt-4 border-t border-zinc-50 flex items-center gap-3 text-left">
+                    <Avatar className="size-8 rounded-lg">
+                        <AvatarImage src={selectedLog?.user.avatar} />
+                        <AvatarFallback>{selectedLog?.user.name[0]}</AvatarFallback>
+                    </Avatar>
+                    <div className="flex flex-col">
+                        <span className="text-[11px] font-black uppercase">{selectedLog?.user.name.replace('_', ' ')}</span>
+                        <span className="text-[9px] text-zinc-400 font-mono">IP: {selectedLog?.ipAddress}</span>
+                    </div>
                 </div>
               </div>
-            ))}
-          </div>
+            </DialogContent>
+          </Dialog>
 
-          {/* PAGINATION FOOTER */}
-          <div className="flex flex-col md:flex-row items-center justify-between px-6 py-4 bg-[#F9FAFA] border-t border-black/5 gap-4">
-            <div className="flex items-center gap-4">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-black/40">
-                Displaying {paginatedLogs.length} of {filteredLogs.length} results
-              </span>
-              <div className="flex items-center gap-2 border-l border-black/10 pl-4">
-                <span className="text-[9px] font-black uppercase text-black/30">Density:</span>
-                <Select value={itemsPerPage} onValueChange={setItemsPerPage}>
-                  <SelectTrigger className="h-7 w-[70px] bg-white border-black/10 text-[10px] font-bold rounded-sm">
-                    <SelectValue placeholder="10" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white border-black/10">
-                    {["10", "20", "50", "100"].map(v => (
-                      <SelectItem key={v} value={v} className="text-[10px] font-bold uppercase">{v}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-black/40">Page {currentPage} / {totalPages || 1}</span>
-              <div className="flex items-center gap-1">
-                <Button variant="outline" size="icon" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="size-8 rounded-sm border-black/10 bg-white hover:bg-[#121212] hover:text-white transition-all shadow-sm">
-                  <ChevronLeft className="size-4" />
-                </Button>
-                <Button variant="outline" size="icon" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages || totalPages === 0} className="size-8 rounded-sm border-black/10 bg-white hover:bg-[#121212] hover:text-white transition-all shadow-sm">
-                  <ChevronRight className="size-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-        </section>
-      </main>
-
-      {/* FAB */}
-      <div className="fixed bottom-8 right-6 z-50">
-        <Button 
-          className="size-16 rounded-full bg-[#121212] text-white shadow-2xl hover:scale-105 active:scale-95 transition-all flex flex-col items-center justify-center border border-white/10 group"
-          onClick={() => fetchPersonnelRecords()}
-        >
-          <div className="size-6 bg-white/10 rounded-full flex items-center justify-center mb-1 group-hover:bg-white/20">
-            <span className="text-[10px] font-black italic">E</span>
-          </div>
-          <Activity className="size-5 stroke-[2.5px]" />
-        </Button>
-      </div>
-    </div>
+        </SidebarInset>
+      </SidebarProvider>
+    </ProtectedPageWrapper>
   )
 }
 
-function StatCard({ label, val, icon: Icon, isActive, onClick, color, desc }: any) {
+function StatCard({ label, val, icon: Icon, isActive, onClick }: any) {
   return (
-    <div onClick={onClick} className={cn("relative cursor-pointer p-5 flex flex-col gap-1 transition-all duration-300 border rounded-lg bg-white shadow-sm", isActive ? "border-black ring-1 ring-black/5 translate-y-[-2px]" : "border-black/5 opacity-80 hover:opacity-100 hover:border-black/20")}>
-      <div className="flex justify-between items-start mb-2">
-        <div className="p-2 rounded-md bg-[#F9FAFA] border border-black/5">
-          <Icon className="size-4" style={{ color: isActive ? color : '#A0A0A0' }} />
+    <div onClick={onClick} className={cn("p-6 flex flex-col gap-4 rounded-[24px] bg-white transition-all shadow-sm border-2 cursor-pointer", isActive ? "border-black shadow-md" : "border-transparent")}>
+      <div className="flex justify-between items-start">
+        <div className={cn("p-2.5 rounded-xl", isActive ? "bg-black text-white" : "bg-zinc-50 text-zinc-400")}>
+          <Icon className="size-4 md:size-5" />
         </div>
-        <span className="text-2xl font-bold tracking-tighter text-[#121212]">{typeof val === 'number' ? val.toString().padStart(2, '0') : val}</span>
+        <span className="text-2xl font-black text-zinc-900">{typeof val === 'number' ? val.toString().padStart(2, '0') : val}</span>
       </div>
-      <div className="flex flex-col">
-        <span className={cn("text-[10px] font-black uppercase tracking-[0.1em]", isActive ? "text-black" : "text-black/40")}>{label}</span>
-        <span className="text-[9px] text-black/30 font-medium leading-tight">{desc}</span>
-      </div>
-      {isActive && <div className="absolute top-3 right-3 size-1.5 rounded-full bg-black animate-pulse" />}
+      <p className="text-[9px] font-bold uppercase text-zinc-400 tracking-widest">{label}</p>
     </div>
-  );
+  )
 }
