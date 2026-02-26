@@ -1,8 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { usePathname, useRouter } from "next/navigation"
-import Link from "next/link" // Added Link import
+import { usePathname } from "next/navigation"
+import Link from "next/link"
 import {
   Sidebar,
   SidebarContent,
@@ -24,8 +24,12 @@ import {
   CircleUser,
 } from "lucide-react"
 
+/**
+ * FIX: userId is now 'string | undefined' to stay in sync with 
+ * how the Security page sets its initial state.
+ */
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
-  userId: string | null
+  userId: string | null | undefined
 }
 
 export function AppSidebar({ userId, ...props }: AppSidebarProps) {
@@ -43,10 +47,12 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
   })
 
   React.useEffect(() => {
+    // If we don't have a user ID, stop loading and wait
     if (!userId) {
       setIsLoading(false)
       return
     }
+    
     const fetchData = async () => {
       try {
         const res = await fetch(`/api/user?id=${encodeURIComponent(userId)}`)
@@ -69,6 +75,7 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
     fetchData()
   }, [userId])
 
+  // Helper to keep the user ID in the link when moving between pages
   const appendUserId = (url: string) =>
     userId ? (url.includes("?") ? `${url}&userId=${userId}` : `${url}?userId=${userId}`) : url
 
@@ -156,13 +163,11 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
       <SidebarHeader className="p-0 overflow-hidden bg-white border-b border-gray-100">
         <SidebarMenu className="p-4">
           <SidebarMenuItem>
-            {/* asChild allows the Link to behave like the SidebarMenuButton */}
             <SidebarMenuButton size="lg" asChild className="hover:bg-transparent px-0 h-auto">
               <Link 
                 href={appendUserId("/dashboard")} 
                 className="flex flex-col items-start gap-4 w-full group text-left no-underline"
               >
-                {/* Brand Logo & Name Section */}
                 <div className="flex items-center gap-3">
                   <div className="size-10 rounded-xl bg-red-600 flex items-center justify-center shadow-lg shadow-red-100 transition-transform group-hover:scale-95">
                     <img src="/disruptive.png" className="w-6 h-6 invert" alt="Logo" />
@@ -177,7 +182,6 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
                   </div>
                 </div>
 
-                {/* Status/Department Section - Now part of the same Link */}
                 <div className="w-full px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between group-hover:bg-gray-100 transition-colors">
                   <div className="flex flex-col">
                     <span className="text-[7px] font-bold text-gray-400 uppercase tracking-widest">Department</span>

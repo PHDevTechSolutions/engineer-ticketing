@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -9,11 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { 
   Dialog, DialogContent, DialogHeader, DialogTitle, 
-  DialogDescription, DialogFooter 
+  DialogDescription, DialogFooter, DialogTrigger 
 } from "@/components/ui/dialog";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  Mail, Lock, Eye, EyeOff, Fingerprint, Grid3X3, ShieldCheck, AlertTriangle, Loader2
+import { 
+  Mail, Lock, Eye, EyeOff, Fingerprint, Grid3X3, ShieldCheck, AlertTriangle, Loader2 
 } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 
@@ -30,7 +29,7 @@ type TicketSummary = {
 };
 
 export default function LoginForm({ className, ...props }: React.ComponentProps<"div">) {
-  // --- STATE ---
+  // --- STATE MANAGEMENT ---
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -49,11 +48,16 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
-  const [resetSent, setResetSent] = useState(false);
+
+  // --- PIN PAD STATE ---
+  const [showPinDialog, setShowPinDialog] = useState(false);
+  const [pinValue, setPinValue] = useState("");
+  const [pinLoading, setPinLoading] = useState(false);
+  const pinInputRef = useRef<HTMLInputElement>(null);
 
   const router = useRouter();
 
-  // --- LOGIC: HELPERS ---
+  // --- HELPERS ---
   const getDeviceId = useCallback(() => {
     if (typeof window === "undefined") return "";
     let deviceId = localStorage.getItem("deviceId");
@@ -91,43 +95,43 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
     return `${prefix}-${datePart}-${nextSeq}`;
   };
 
-  // --- LOGIC: ACTIONS ---
-  const handleRequestReset = async () => {
-    if (!resetEmail) { toast.error("Please enter your email."); return; }
-    setResetLoading(true);
-    try {
-      const res = await fetch("/api/request-reset-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: resetEmail }),
-      });
-      const data = await res.json();
-      toast.success(data.message || "Reset link sent if account exists.");
-      setResetSent(true);
-    } catch { toast.error("Failed to send reset link."); } 
-    finally { setResetLoading(false); }
-  };
+  // --- ACTIONS: LOGIN FLOWS ---
 
-  const submitTicket = async () => {
-    if (!remarks.trim()) return;
-    setTicketSubmitting(true);
+  const handlePostLogin = async (location: any) => {
+    if (!pendingLoginData) return;
+    setShowLocationDialog(false);
+    setIsAuthorizing(true);
+
+    const { email, deviceId, result } = pendingLoginData;
+
     try {
-      const { error } = await supabase.from("tickets").insert([{
-        ticket_id: generateTicketID(),
-        department: "ENGINEERING", 
-        requestor_name: email || "Engineering Portal User",
-        mode: "System Directory",
-        status: "Pending",
-        ticket_subject: `Account Locked - ${email}`,
-        date_created: new Date().toISOString(),
-      }]);
-      if (error) throw error;
-      toast.success("Incident ticket submitted.");
-      setShowTicketDialog(false);
-      setRemarks("");
-      fetchTickets();
-    } catch (err: any) { toast.error("Submission failed."); } 
-    finally { setTicketSubmitting(false); }
+      await addDoc(collection(logsDb, "activity_logs"), {
+        email: email || result.Email || "System User",
+        status: "login",
+        deviceId,
+        location,
+        browser: navigator.userAgent,
+        os: navigator.platform,
+        userId: result.userId,
+        project: "engiconnect",
+        date_created: serverTimestamp(),
+      });
+    } catch (err) { console.error("Log error", err); }
+
+    localStorage.setItem("userId", result.userId);
+    localStorage.setItem("userName", result.Username);
+    localStorage.setItem("department", result.Department);
+
+    let value = 0;
+    const interval = setInterval(() => {
+      value += 20;
+      setProgress(value);
+      if (value >= 100) {
+        clearInterval(interval);
+        toast.success("Identity Verified");
+        router.push(`/dashboard?id=${result.userId}`);
+      }
+    }, 60);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -162,45 +166,101 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
     finally { setLoading(false); }
   };
 
-  const handlePostLogin = async (location: any) => {
-    if (!pendingLoginData) return;
-    setShowLocationDialog(false);
-    setIsAuthorizing(true);
-
-    const { email, deviceId, result } = pendingLoginData;
+  const handlePinSubmit = async () => {
+    if (pinValue.length < 6) return;
+    setPinLoading(true);
+    
+    const deviceId = getDeviceId();
+    
+    /** * FIX APPLIED HERE:
+     * Changed "terminal_pin" to "engiconnect_user_pin" 
+     * to match your browser's local storage data.
+     */
+    const savedPin = localStorage.getItem("engiconnect_user_pin"); 
 
     try {
-      await addDoc(collection(logsDb, "activity_logs"), {
-        email, status: "login", deviceId, location,
-        browser: navigator.userAgent, os: navigator.platform,
-        userId: result.userId, date_created: serverTimestamp(),
+      const response = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+            pin: pinValue, 
+            savedPin: savedPin, 
+            deviceId, 
+            mode: "pin" 
+        }),
       });
-    } catch (err) { console.error("Log error", err); }
+      const result = await response.json();
 
-    localStorage.setItem("userId", result.userId);
-    localStorage.setItem("userName", result.Username);
-    localStorage.setItem("department", result.Department);
-
-    let value = 0;
-    const interval = setInterval(() => {
-      value += 20;
-      setProgress(value);
-      if (value >= 100) {
-        clearInterval(interval);
-        toast.success("Identity Verified");
-        router.push(`/dashboard?id=${result.userId}`);
+      if (!response.ok) {
+        toast.error(result.message || "Invalid Terminal PIN");
+        setPinValue("");
+        setPinLoading(false);
+        return;
       }
-    }, 60);
+
+      setShowPinDialog(false);
+      setPendingLoginData({ email: result.Email, deviceId, result });
+      setShowLocationDialog(true);
+    } catch {
+      toast.error("Terminal sync failed.");
+    } finally {
+      setPinLoading(false);
+    }
+  };
+
+  const handleBiometricLogin = () => {
+    toast.info("Initializing biometric scanner...");
+    setTimeout(() => {
+      toast.error("Biometric identity not recognized. Use PIN or Password.");
+    }, 1500);
+  };
+
+  const handleRequestReset = async () => {
+    if (!resetEmail) { toast.error("Please enter your email."); return; }
+    setResetLoading(true);
+    try {
+      const res = await fetch("/api/request-reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: resetEmail }),
+      });
+      const data = await res.json();
+      toast.success(data.message || "Reset link sent if account exists.");
+      setShowResetDialog(false);
+    } catch { toast.error("Failed to send reset link."); } 
+    finally { setResetLoading(false); }
+  };
+
+  const submitTicket = async () => {
+    if (!remarks.trim()) return;
+    setTicketSubmitting(true);
+    try {
+      const { error } = await supabase.from("tickets").insert([{
+        ticket_id: generateTicketID(),
+        department: "ENGINEERING", 
+        requestor_name: email || "engiconnect User",
+        mode: "System Directory",
+        status: "Pending",
+        ticket_subject: `Account Locked - ${email}`,
+        date_created: new Date().toISOString(),
+      }]);
+      if (error) throw error;
+      toast.success("Incident ticket submitted.");
+      setShowTicketDialog(false);
+      setRemarks("");
+      fetchTickets();
+    } catch (err: any) { toast.error("Submission failed."); } 
+    finally { setTicketSubmitting(false); }
   };
 
   return (
-    <div className="min-h-screen w-full flex bg-[#F9FAFA] relative">
+    <div className="min-h-screen w-full flex bg-[#F9FAFA] relative font-sans">
       
-      {/* LEFT SIDE: WHITE FORM PANEL */}
+      {/* LEFT SIDE: LOGIN FORM */}
       <div className="flex-[1] flex flex-col justify-center items-center px-6 md:px-12 lg:px-20 z-10 bg-white relative shadow-2xl">
         <div className="w-full max-w-[400px] space-y-8">
           
-          {/* Logo & Header */}
+          {/* Header Section */}
           <div className="space-y-4">
             <div className="flex items-center gap-3">
               <div className="bg-[#121212] p-2 rounded-xl shadow-lg rotate-[-2deg]">
@@ -213,7 +273,7 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
             </div>
             <div className="space-y-1">
               <h2 className="text-3xl font-bold tracking-tight text-[#121212]">Portal Access</h2>
-              <p className="text-muted-foreground text-sm font-medium border-l-2 border-red-600 pl-3">Internal Engineering Protocol.</p>
+              <p className="text-muted-foreground text-sm font-medium border-l-2 border-red-600 pl-3">Internal Protocol: engiconnect</p>
             </div>
           </div>
 
@@ -264,7 +324,7 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
               className="w-full h-14 bg-[#121212] hover:bg-black text-white rounded-xl text-md font-bold uppercase tracking-widest relative overflow-hidden transition-all active:scale-[0.98] shadow-xl shadow-black/10"
             >
               <div className="relative z-10 flex items-center justify-center gap-2">
-                {loading && <Loader2 className="h-5 w-5 animate-spin" />}
+                {(loading || pinLoading) && <Loader2 className="h-5 w-5 animate-spin" />}
                 {isAuthorizing && <ShieldCheck className="h-5 w-5 animate-pulse" />}
                 <span>{isAuthorizing ? `Authorizing ${progress}%` : "Secure Login"}</span>
               </div>
@@ -273,42 +333,77 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
               )}
             </Button>
 
+            {/* Alternative Login Methods */}
             <div className="grid grid-cols-2 gap-3">
-               <Button variant="outline" className="h-14 rounded-xl border-2 border-muted hover:border-[#121212] flex flex-col gap-1" type="button">
-                  <Grid3X3 className="h-4 w-4 text-[#121212]" />
-                  <span className="text-[9px] font-black uppercase tracking-tighter">Pin Pad</span>
-               </Button>
-               <Button variant="outline" className="h-14 rounded-xl border-2 border-muted hover:border-[#121212] flex flex-col gap-1" type="button">
+               <Dialog open={showPinDialog} onOpenChange={setShowPinDialog}>
+                 <DialogTrigger asChild>
+                    <Button variant="outline" className="h-14 rounded-xl border-2 border-muted hover:border-[#121212] flex flex-col gap-1" type="button">
+                      <Grid3X3 className="h-4 w-4 text-[#121212]" />
+                      <span className="text-[9px] font-black uppercase tracking-tighter">Pin Pad</span>
+                    </Button>
+                 </DialogTrigger>
+                 <DialogContent className="rounded-[20px] p-8 border-none text-center bg-[#F9FAFA] sm:max-w-[400px]">
+                    <DialogHeader className="items-center">
+                      <div className="p-3 bg-[#121212] rounded-xl mb-2"><Lock className="text-white size-6" /></div>
+                      <DialogTitle className="font-black uppercase tracking-tight text-lg">Device PIN</DialogTitle>
+                      <DialogDescription className="text-xs font-medium">Enter 6-digit terminal code.</DialogDescription>
+                    </DialogHeader>
+                    <div className="relative flex justify-center gap-2 py-8 cursor-text" onClick={() => pinInputRef.current?.focus()}>
+                      <input
+                        ref={pinInputRef}
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        value={pinValue}
+                        onChange={(e) => setPinValue(e.target.value.replace(/\D/g, ''))}
+                        className="absolute inset-0 opacity-0 z-10"
+                      />
+                      {[...Array(6)].map((_, i) => (
+                        <div key={i} className={`size-12 rounded-xl border-2 flex items-center justify-center text-lg font-black transition-all ${pinValue[i] ? "border-[#121212] bg-[#121212] text-white" : "border-muted bg-white"}`}>
+                          {pinValue[i] ? "●" : ""}
+                        </div>
+                      ))}
+                    </div>
+                    <Button 
+                      onClick={handlePinSubmit} 
+                      disabled={pinValue.length < 6 || pinLoading} 
+                      className="w-full bg-[#121212] h-12 rounded-xl font-bold uppercase text-[10px] tracking-widest shadow-lg"
+                    >
+                      {pinLoading ? <Loader2 className="animate-spin h-4 w-4" /> : "Verify Terminal PIN"}
+                    </Button>
+                 </DialogContent>
+               </Dialog>
+
+               <Button onClick={handleBiometricLogin} variant="outline" className="h-14 rounded-xl border-2 border-muted hover:border-[#121212] flex flex-col gap-1" type="button">
                   <Fingerprint className="h-4 w-4 text-[#121212]" />
                   <span className="text-[9px] font-black uppercase tracking-tighter">Biometric</span>
                </Button>
             </div>
           </form>
 
+          {/* Footer Links */}
           <div className="flex flex-col items-center gap-4 text-xs font-bold uppercase tracking-widest text-muted-foreground/60">
-             <button onClick={() => { setResetSent(false); setShowResetDialog(true); }} className="hover:text-[#121212] transition-colors underline decoration-dotted">
-                Request Recovery
+             <button onClick={() => setShowResetDialog(true)} className="hover:text-[#121212] transition-colors underline decoration-dotted">
+               Request Recovery
              </button>
              <p>© 2026 Disruptive Solutions Inc.</p>
           </div>
         </div>
       </div>
 
-      {/* RIGHT SIDE: ENGINEER WALLPAPER */}
+      {/* RIGHT SIDE: VISUAL WALLPAPER */}
       <div className="hidden lg:block flex-[1.2] relative bg-slate-900 overflow-hidden">
         <img src="/engineer_wallpaper.png" alt="Wallpaper" className="h-full w-full object-cover opacity-80" />
-        {/* Gradient Overlay to blend with the white form */}
         <div className="absolute inset-0 bg-gradient-to-r from-white via-transparent to-transparent w-full" />
-        
         <div className="absolute bottom-12 right-12 p-8 bg-[#121212]/80 backdrop-blur-xl rounded-2xl border border-white/20 text-white max-w-sm shadow-2xl">
             <h3 className="text-xl font-black uppercase tracking-tighter">ENGINEERING DEPARTMENT</h3>
             <p className="text-xs text-white/60 mt-2 leading-relaxed">
-              System monitoring active. This terminal is a secure access point for Disruptive Solutions Engineering protocols.
+              System monitoring active. Secure access point for engiconnect protocols.
             </p>
         </div>
       </div>
 
-      {/* DIALOGS */}
+      {/* VERIFICATION DIALOGS */}
       <Dialog open={showLocationDialog} onOpenChange={setShowLocationDialog}>
         <DialogContent className="sm:max-w-md bg-[#F9FAFA] border-none text-center rounded-[20px]">
           <DialogHeader><DialogTitle className="uppercase font-black tracking-tight text-center">Geo-Verification</DialogTitle></DialogHeader>
@@ -323,6 +418,7 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
         </DialogContent>
       </Dialog>
 
+      {/* LOCKED ACCOUNT / TICKET DIALOG */}
       <Dialog open={showTicketDialog} onOpenChange={setShowTicketDialog}>
         <DialogContent className="bg-[#F9FAFA] border-none shadow-2xl rounded-[20px]">
           <DialogHeader>
@@ -341,6 +437,7 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
         </DialogContent>
       </Dialog>
 
+      {/* PASSWORD RESET DIALOG */}
       <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
         <DialogContent className="sm:max-w-md bg-[#F9FAFA] border-none shadow-2xl rounded-[20px]">
           <DialogHeader>

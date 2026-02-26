@@ -52,11 +52,28 @@ export function NavUser({ user }: NavUserProps) {
     }, 100)
   }
 
+  // const handleLogout = async () => {
+  //   startTransition("Signing out...", "logging-out")
+  //   await new Promise((resolve) => setTimeout(resolve, 1000))
+  //   sessionStorage.clear()
+  //   localStorage.clear()
+  //   router.replace("/login")
+  // }
+
   const handleLogout = async () => {
     startTransition("Signing out...", "logging-out")
     await new Promise((resolve) => setTimeout(resolve, 1000))
+
+    // Clear the volatile session data
     sessionStorage.clear()
-    localStorage.clear()
+
+    // ❌ DO NOT use localStorage.clear()
+    // ✅ Remove only user-specific items
+    localStorage.removeItem("userId")
+    localStorage.removeItem("userName")
+    localStorage.removeItem("department")
+    // This leaves 'deviceId' and 'engiconnect_user_pin' untouched!
+
     router.replace("/login")
   }
 
@@ -75,7 +92,7 @@ export function NavUser({ user }: NavUserProps) {
           <div className="w-64 text-center space-y-6">
             <Loader2 className="size-8 text-red-600 animate-spin mx-auto" />
             <h2 className="text-gray-900 font-bold text-sm uppercase tracking-widest">
-                {status === "logging-out" ? "Signing Out" : "Loading Profile"}
+              {status === "logging-out" ? "Signing Out" : "Loading Profile"}
             </h2>
             <Progress value={progress} className="h-1 bg-gray-100" />
           </div>
@@ -86,8 +103,8 @@ export function NavUser({ user }: NavUserProps) {
         <SidebarMenuItem>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <SidebarMenuButton 
-                size="lg" 
+              <SidebarMenuButton
+                size="lg"
                 className="h-12 px-2 hover:bg-gray-100/50 active:scale-[0.97] transition-all"
               >
                 <Avatar className="h-8 w-8 rounded-lg border border-gray-100 shadow-sm">
@@ -104,13 +121,13 @@ export function NavUser({ user }: NavUserProps) {
               </SidebarMenuButton>
             </DropdownMenuTrigger>
 
-            <DropdownMenuContent 
+            <DropdownMenuContent
               className={cn(
                 "p-1.5 shadow-xl border-gray-100 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100",
                 "w-[calc(100vw-32px)] max-w-[240px] rounded-2xl", // Fixed desktop width & responsive mobile
-              )} 
-              align={isMobile ? "center" : "start"} 
-              side={isMobile ? "bottom" : "right"} 
+              )}
+              align={isMobile ? "center" : "start"}
+              side={isMobile ? "bottom" : "right"}
               sideOffset={8}
             >
               <DropdownMenuLabel className="p-2 font-normal">
@@ -118,7 +135,7 @@ export function NavUser({ user }: NavUserProps) {
                   <Avatar className="h-10 w-10 rounded-xl border border-gray-50 shadow-sm">
                     <AvatarImage src={user.avatar} alt={user.name} />
                     <AvatarFallback className="bg-gray-50 text-gray-900 font-bold">
-                        {user.name?.[0]}
+                      {user.name?.[0]}
                     </AvatarFallback>
                   </Avatar>
                   <div className="grid flex-1 text-left leading-tight overflow-hidden">
@@ -131,8 +148,8 @@ export function NavUser({ user }: NavUserProps) {
               <DropdownMenuSeparator className="bg-gray-50 mx-1 my-1.5" />
 
               <DropdownMenuGroup className="space-y-0.5">
-                <DropdownMenuItem 
-                  onSelect={handleAccountClick} 
+                <DropdownMenuItem
+                  onSelect={handleAccountClick}
                   className="rounded-lg py-2.5 px-3 cursor-pointer hover:bg-gray-50 focus:bg-gray-50 transition-colors"
                 >
                   <BadgeCheck className="mr-2.5 h-4 w-4 text-gray-400" />
