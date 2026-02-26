@@ -171,11 +171,6 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
     setPinLoading(true);
     
     const deviceId = getDeviceId();
-    
-    /** * FIX APPLIED HERE:
-     * Changed "terminal_pin" to "engiconnect_user_pin" 
-     * to match your browser's local storage data.
-     */
     const savedPin = localStorage.getItem("engiconnect_user_pin"); 
 
     try {
@@ -342,13 +337,16 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
                       <span className="text-[9px] font-black uppercase tracking-tighter">Pin Pad</span>
                     </Button>
                  </DialogTrigger>
-                 <DialogContent className="rounded-[20px] p-8 border-none text-center bg-[#F9FAFA] sm:max-w-[400px]">
+                 {/* Updated Dialog Content for Mobile responsivity */}
+                 <DialogContent className="rounded-[20px] p-6 sm:p-8 border-none text-center bg-[#F9FAFA] w-[95vw] sm:max-w-[400px]">
                     <DialogHeader className="items-center">
                       <div className="p-3 bg-[#121212] rounded-xl mb-2"><Lock className="text-white size-6" /></div>
                       <DialogTitle className="font-black uppercase tracking-tight text-lg">Device PIN</DialogTitle>
                       <DialogDescription className="text-xs font-medium">Enter 6-digit terminal code.</DialogDescription>
                     </DialogHeader>
-                    <div className="relative flex justify-center gap-2 py-8 cursor-text" onClick={() => pinInputRef.current?.focus()}>
+                    
+                    {/* Responsive Grid for PIN Boxes */}
+                    <div className="relative flex justify-center gap-1.5 sm:gap-2 py-6 sm:py-8 cursor-text" onClick={() => pinInputRef.current?.focus()}>
                       <input
                         ref={pinInputRef}
                         type="text"
@@ -359,11 +357,18 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
                         className="absolute inset-0 opacity-0 z-10"
                       />
                       {[...Array(6)].map((_, i) => (
-                        <div key={i} className={`size-12 rounded-xl border-2 flex items-center justify-center text-lg font-black transition-all ${pinValue[i] ? "border-[#121212] bg-[#121212] text-white" : "border-muted bg-white"}`}>
+                        <div 
+                          key={i} 
+                          className={cn(
+                            "size-10 sm:size-12 rounded-lg sm:rounded-xl border-2 flex items-center justify-center text-lg font-black transition-all",
+                            pinValue[i] ? "border-[#121212] bg-[#121212] text-white" : "border-muted bg-white"
+                          )}
+                        >
                           {pinValue[i] ? "●" : ""}
                         </div>
                       ))}
                     </div>
+                    
                     <Button 
                       onClick={handlePinSubmit} 
                       disabled={pinValue.length < 6 || pinLoading} 
@@ -405,22 +410,22 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
 
       {/* VERIFICATION DIALOGS */}
       <Dialog open={showLocationDialog} onOpenChange={setShowLocationDialog}>
-        <DialogContent className="sm:max-w-md bg-[#F9FAFA] border-none text-center rounded-[20px]">
+        <DialogContent className="w-[95vw] sm:max-w-md bg-[#F9FAFA] border-none text-center rounded-[20px]">
           <DialogHeader><DialogTitle className="uppercase font-black tracking-tight text-center">Geo-Verification</DialogTitle></DialogHeader>
           <div className="py-4 space-y-4">
              <div className="h-16 w-16 bg-[#121212] rounded-full flex items-center justify-center mx-auto shadow-lg"><ShieldCheck className="text-white h-8 w-8" /></div>
              <p className="text-sm font-medium text-muted-foreground text-center">Logging site coordinates for engineering compliance.</p>
           </div>
-          <DialogFooter className="flex justify-center gap-2 sm:justify-center">
-            <Button variant="outline" className="rounded-xl px-8" onClick={() => handlePostLogin(null)}>Skip</Button>
-            <Button className="bg-[#121212] rounded-xl px-8" onClick={async () => handlePostLogin(await getLocation())}>Verify</Button>
+          <DialogFooter className="flex flex-row justify-center gap-2">
+            <Button variant="outline" className="rounded-xl px-6 flex-1 sm:flex-none" onClick={() => handlePostLogin(null)}>Skip</Button>
+            <Button className="bg-[#121212] rounded-xl px-6 flex-1 sm:flex-none" onClick={async () => handlePostLogin(await getLocation())}>Verify</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* LOCKED ACCOUNT / TICKET DIALOG */}
       <Dialog open={showTicketDialog} onOpenChange={setShowTicketDialog}>
-        <DialogContent className="bg-[#F9FAFA] border-none shadow-2xl rounded-[20px]">
+        <DialogContent className="w-[95vw] sm:max-w-md bg-[#F9FAFA] border-none shadow-2xl rounded-[20px]">
           <DialogHeader>
             <DialogTitle className="text-red-600 uppercase font-black text-2xl tracking-tighter">Access Locked</DialogTitle>
             <DialogDescription className="font-medium">Manual incident report required.</DialogDescription>
@@ -439,7 +444,7 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
 
       {/* PASSWORD RESET DIALOG */}
       <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
-        <DialogContent className="sm:max-w-md bg-[#F9FAFA] border-none shadow-2xl rounded-[20px]">
+        <DialogContent className="w-[95vw] sm:max-w-md bg-[#F9FAFA] border-none shadow-2xl rounded-[20px]">
           <DialogHeader>
             <DialogTitle className="uppercase font-black text-xl tracking-tight text-[#121212]">Recovery Request</DialogTitle>
           </DialogHeader>
