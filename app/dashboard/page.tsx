@@ -19,7 +19,8 @@ import {
 
 import { db } from "@/lib/firebase";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
+import { NotificationBell } from "@/components/notification-bell";
 
 export default function EngiconnectDashboard() {
     const router = useRouter()
