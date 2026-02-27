@@ -6,222 +6,177 @@ import { AppSidebar } from "@/components/app-sidebar"
 import ProtectedPageWrapper from "@/components/protected-page-wrapper"
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import {
-    Plus, Search, ChevronRight, Layout, RotateCcw,
-    Clock, Hammer, User2, Loader2, CheckCircle2, ShieldCheck
+    Plus, Search, RotateCcw, Layout, Clock, Hammer, 
+    CheckCircle2, Loader2, User2, ArrowRight
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 
-// FIREBASE
+// DATABASE
 import { db } from "@/lib/firebase"
 import { collection, onSnapshot, query, orderBy, where } from "firebase/firestore"
 import { PageHeader } from "@/components/page-header"
 
-/**
- * @name ShopDrawingListPage
- * @department ENGINEERING
- * @protocol Multi-Dept Visibility Rev 2.6.4-Fixed
- */
 export default function ShopDrawingListPage() {
     const router = useRouter()
-    const [user, setUser] = React.useState<{ id: string | null; dept: string }>({ id: null, dept: "" })
-    const [isUserLoading, setIsUserLoading] = React.useState(true)
+    const [userId, setUserId] = React.useState<string | null>(null)
+    const [userDept, setUserDept] = React.useState("")
+    
+    // NEW: States to hold profile info for engiconnect
+    const [userName, setUserName] = React.useState("")
+    const [profilePicture, setProfilePicture] = React.useState("")
+    
     const [drawings, setDrawings] = React.useState<any[]>([])
     const [isDataLoading, setIsDataLoading] = React.useState(true)
     const [selectedStatus, setSelectedStatus] = React.useState<string | null>(null)
-    const [searchQuery, setSearchQuery] = React.useState("")
-
-    // 1. IDENTITY & DEPARTMENT RETRIEVAL (Matching SiteVisit Logic)
+    const [searchTerm, setSearchTerm] = React.useState("")
+    
+    // Identity & Profile Fetch
     React.useEffect(() => {
         const storedId = localStorage.getItem("userId")
-        if (!storedId) { 
-            setIsUserLoading(false)
-            setIsDataLoading(false) 
-            return 
-        }
+        setUserId(storedId)
+        if (!storedId) return
 
-        const fetchUser = async () => {
+        const fetchProfile = async () => {
             try {
                 const res = await fetch(`/api/user?id=${encodeURIComponent(storedId)}`)
                 const data = await res.json()
-                setUser({ 
-                    id: storedId, 
-                    dept: data.Department?.toUpperCase() || "SALES" 
-                })
-            } catch (error) {
-                console.error("Profile Retrieval Error:", error)
-            } finally {
-                setIsUserLoading(false)
+                
+                // SAVE PROFILE DATA
+                setUserName(data.name || data.fullName || "User")
+                setProfilePicture(data.profilePicture || data.image || "")
+                
+                // Standardize department to lowercase
+                setUserDept(data.Department?.toLowerCase() || data.department?.toLowerCase() || "sales")
+            } catch (e) { 
+                console.error("Profile error:", e) 
             }
         }
-        fetchUser()
+        fetchProfile()
     }, [])
 
-    // 2. LIVE DATA SYNC (Synchronized with SiteVisit Logic)
+    // Real-time Sync
     React.useEffect(() => {
-        if (isUserLoading || !user.id) return
+        if (!userId) return
 
         setIsDataLoading(true)
-        const baseCollection = collection(db, "shop_drawing_requests")
-        let q
+        const baseCol = collection(db, "shop_drawing_requests")
+        const isStaff = userDept === "engineering" || userDept === "it"
 
-        const userDept = user.dept.toUpperCase()
-        const hasGlobalAccess = userDept === "ENGINEERING" || userDept === "IT"
-
-        if (hasGlobalAccess) {
-            // Admin View: All records
-            q = query(baseCollection, orderBy("createdAt", "desc"))
-        } else {
-            // Restricted View: User-specific submissions
-            q = query(
-                baseCollection,
-                where("submittedBy", "==", user.id),
-                orderBy("createdAt", "desc")
-            )
-        }
+        const q = isStaff 
+            ? query(baseCol, orderBy("createdAt", "desc"))
+            : query(baseCol, where("submittedBy", "==", userId), orderBy("createdAt", "desc"))
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const liveData = snapshot.docs.map(doc => {
+            setDrawings(snapshot.docs.map(doc => {
                 const data = doc.data()
-                // Ensure date formatting is safe
-                const rawDate = data.createdAt?.toDate ? data.createdAt.toDate() : new Date()
-                
                 return {
                     id: doc.id.slice(-6).toUpperCase(),
                     fullId: doc.id,
                     ...data,
-                    project: data.projectName || data.parameters?.notes?.substring(0, 20) || "Standard Requirement",
-                    date: rawDate.toLocaleDateString('en-CA'),
-                    status: data.status?.toUpperCase() || "PENDING_REVIEW"
+                    project: data.projectName || "New Request",
+                    status: (data.status || "PENDING_REVIEW").toUpperCase()
                 }
-            })
-            setDrawings(liveData)
-            setIsDataLoading(false)
-        }, (error) => {
-            console.error("Firestore Sync Error:", error)
+            }))
             setIsDataLoading(false)
         })
-
         return () => unsubscribe()
-    }, [user, isUserLoading]) // Monitoring the whole user object like SiteVisit
+    }, [userId, userDept])
 
-    // 3. CLIENT-SIDE FILTERING
-    const filteredDrawings = drawings.filter(d => {
-        const matchesSearch = d.project?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                             d.id.toLowerCase().includes(searchQuery.toLowerCase())
+    const handleCreateRequest = () => router.push('/request/shop-drawing/add')
+
+    const filtered = drawings.filter(d => {
+        const matchesSearch = d.project.toLowerCase().includes(searchTerm.toLowerCase()) || d.id.includes(searchTerm.toUpperCase())
         const matchesStatus = selectedStatus ? d.status === selectedStatus : true
         return matchesSearch && matchesStatus
     })
 
-    const handleCreateRequest = () => router.push('/request/shop-drawing/add')
-
     return (
         <ProtectedPageWrapper>
             <SidebarProvider defaultOpen={false}>
-                <AppSidebar userId={user.id} />
-                <SidebarInset className="bg-[#F9FAFA] font-sans pb-24 md:pb-0 relative">
-
+                <AppSidebar userId={userId} />
+                <SidebarInset className="relative bg-[#F4F7F7] min-h-screen font-sans">
+                    
                     <PageHeader
-                        title="DRAWING_INVENTORY"
-                        version="REV 2.6.4"
+                        title="Drawing Hub"
+                        version="V2.6"
                         showBackButton={true}
                         trigger={<SidebarTrigger className="mr-2" />}
                         actions={
-                            <div className="flex items-center gap-3">
-                                <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-black/5 border border-black/10 rounded-sm shadow-sm">
-                                    <ShieldCheck className="size-3 text-black/50" />
-                                    <span className="text-[10px] font-bold uppercase tracking-widest text-black/70">
-                                        DEPT: {user.dept}
-                                    </span>
-                                </div>
-                                {!isUserLoading && user.dept === "SALES" && (
-                                    <Button
-                                        onClick={handleCreateRequest}
-                                        className="hidden md:flex bg-[#121212] text-white font-bold uppercase text-[10px] tracking-widest h-10 px-6 rounded-md shadow-md hover:bg-black transition-all"
-                                    >
-                                        <Plus className="mr-2 size-4" /> Create Request
+                            <div className="flex items-center gap-2">
+                                {userDept === "sales" && (
+                                    <Button onClick={handleCreateRequest} className="hidden md:flex bg-black hover:bg-zinc-800 text-white px-5 rounded-xl h-10 text-xs font-bold tracking-tight">
+                                        <Plus className="mr-2 size-4" /> NEW DRAWING REQUEST
                                     </Button>
                                 )}
                             </div>
                         }
                     />
 
-                    <main className="flex flex-1 flex-col gap-6 p-4 md:p-10 max-w-7xl mx-auto w-full">
-
-                        {/* ANALYTICS SECTION */}
+                    <main className="p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6 pb-32 md:pb-8">
+                        
                         <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                            <StatCard label="Total Load" val={drawings.length} icon={Layout} isActive={selectedStatus === null} onClick={() => setSelectedStatus(null)} color="#121212" />
-                            <StatCard label="Awaiting Review" val={drawings.filter(d => d.status === "PENDING_REVIEW").length} icon={Clock} isActive={selectedStatus === "PENDING_REVIEW"} onClick={() => setSelectedStatus("PENDING_REVIEW")} color="#F59E0B" />
-                            <StatCard label="In Development" val={drawings.filter(d => d.status === "IN_DEVELOPMENT").length} icon={Hammer} isActive={selectedStatus === "IN_DEVELOPMENT"} onClick={() => setSelectedStatus("IN_DEVELOPMENT")} color="#3B82F6" />
-                            <StatCard label="Finalized" val={drawings.filter(d => d.status === "FINALIZED").length} icon={CheckCircle2} isActive={selectedStatus === "FINALIZED"} onClick={() => setSelectedStatus("FINALIZED")} color="#10B981" />
+                            <StatCard label="All Projects" val={drawings.length} icon={Layout} isActive={selectedStatus === null} onClick={() => setSelectedStatus(null)} />
+                            <StatCard label="Reviewing" val={drawings.filter(d => d.status === "PENDING_REVIEW").length} icon={Clock} isActive={selectedStatus === "PENDING_REVIEW"} onClick={() => setSelectedStatus("PENDING_REVIEW")} />
+                            <StatCard label="Designing" val={drawings.filter(d => d.status === "IN_DEVELOPMENT").length} icon={Hammer} isActive={selectedStatus === "IN_DEVELOPMENT"} onClick={() => setSelectedStatus("IN_DEVELOPMENT")} />
+                            <StatCard label="Finished" val={drawings.filter(d => d.status === "FINALIZED").length} icon={CheckCircle2} isActive={selectedStatus === "FINALIZED"} onClick={() => setSelectedStatus("FINALIZED")} isDone />
                         </section>
 
-                        {/* SEARCH & SYNC CONTROLS */}
-                        <div className="flex flex-col md:flex-row gap-4 mt-2">
-                            <div className="relative flex-1 group">
-                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-black/30 group-focus-within:text-black transition-colors" />
-                                <Input
-                                    placeholder="Search Project Title or Reference ID..."
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="pl-11 h-12 bg-white border-black/10 rounded-md shadow-sm focus-visible:ring-black"
+                        <div className="flex flex-col md:flex-row gap-3">
+                            <div className="relative flex-1">
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-zinc-400" />
+                                <input
+                                    placeholder="Search project name or #ID..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="w-full pl-11 h-12 rounded-2xl border-none bg-white shadow-sm ring-1 ring-zinc-200 focus:ring-2 focus:ring-black outline-none transition-all text-sm"
                                 />
                             </div>
-                            <Button variant="outline" onClick={() => { setSelectedStatus(null); setSearchQuery("") }} className="h-12 px-6 bg-white border-black/10 font-bold text-[10px] uppercase tracking-widest hover:bg-[#121212] hover:text-white transition-all shadow-sm">
-                                <RotateCcw className="mr-2 size-3" /> Reset Sync
+                            <Button variant="outline" onClick={() => { setSelectedStatus(null); setSearchTerm("") }} className="h-12 rounded-2xl bg-white border-zinc-200 font-bold text-[10px] tracking-widest uppercase">
+                                <RotateCcw className="mr-2 size-3" /> RESET
                             </Button>
                         </div>
 
-                        {/* PROTOCOL LEDGER TABLE */}
-                        <div className="bg-white border border-black/5 rounded-lg overflow-hidden shadow-sm">
-                            <div className="hidden md:grid grid-cols-5 bg-[#F9FAFA] border-b border-black/5 p-5">
-                                {["Reference", "Project Entity", "Sync Date", "Personnel", "Status"].map((h) => (
-                                    <span key={h} className="text-[10px] font-black uppercase tracking-widest text-black/40">{h}</span>
-                                ))}
-                            </div>
-
-                            <div className="divide-y divide-black/5">
+                        <div className="bg-white rounded-[24px] shadow-sm border border-zinc-200/60 overflow-hidden">
+                            <div className="divide-y divide-zinc-50">
                                 {isDataLoading ? (
-                                    <div className="p-20 flex flex-col items-center gap-4">
-                                        <Loader2 className="animate-spin size-6 text-black/10" />
-                                        <span className="text-[10px] font-bold uppercase tracking-widest text-black/20">Accessing Protocol Records...</span>
+                                    <div className="p-20 text-center flex flex-col items-center gap-3">
+                                        <Loader2 className="animate-spin text-zinc-200 size-8" />
+                                        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Opening Files...</p>
                                     </div>
-                                ) : filteredDrawings.length === 0 ? (
-                                    <div className="p-20 text-center text-[10px] font-bold uppercase tracking-[0.2em] text-black/20 italic">
-                                        System_Null // No Department Records
-                                    </div>
+                                ) : filtered.length === 0 ? (
+                                    <div className="p-20 text-center text-zinc-400 text-xs font-bold uppercase tracking-widest italic">No Records Found</div>
                                 ) : (
-                                    filteredDrawings.map((item) => (
-                                        <div
-                                            key={item.fullId}
-                                            onClick={() => router.push(`/request/shop-drawing/${item.fullId}`)}
-                                            className="grid grid-cols-1 md:grid-cols-5 gap-4 p-6 hover:bg-[#F9FAFA] cursor-pointer transition-all items-center active:scale-[0.99]"
-                                        >
-                                            <div className="flex flex-col">
-                                                <span className="text-[11px] font-bold font-mono text-black">#{item.id}</span>
-                                                <span className="text-[9px] uppercase text-black/40 mt-1 font-bold">DRAWING_ID</span>
+                                    filtered.map((d) => (
+                                        <div key={d.id} onClick={() => router.push(`/request/shop-drawing/${d.fullId}`)} className="flex flex-col md:grid md:grid-cols-6 gap-4 p-6 items-center hover:bg-zinc-50/40 transition-colors cursor-pointer group">
+                                            <span className="hidden md:block text-[10px] font-mono font-bold text-zinc-400">#{d.id}</span>
+                                            
+                                            <div className="w-full md:col-span-2 flex flex-col">
+                                                <div className="flex justify-between items-center md:block">
+                                                    <span className="text-sm font-bold text-zinc-900 uppercase truncate group-hover:text-black">{d.project}</span>
+                                                    <span className="md:hidden text-[10px] font-mono font-bold text-zinc-300">#{d.id}</span>
+                                                </div>
+                                                <span className="text-[10px] text-zinc-400 font-medium">Requested {d.date || "Recently"}</span>
                                             </div>
 
-                                            <div className="flex flex-col">
-                                                <span className="text-sm font-bold text-black uppercase tracking-tight truncate pr-4">{item.project}</span>
-                                                <span className="text-[9px] text-black/30 font-bold uppercase">{item.parameters?.postType || "Standard"} POLE</span>
-                                            </div>
-
-                                            <span className="text-[12px] text-black/50 font-medium italic">{item.date}</span>
-
-                                            <div className="flex items-center gap-2 text-[11px] font-bold uppercase text-black/70">
-                                                <User2 className="size-3 text-black/20" />
-                                                <span className="truncate">{item.assignedTo ? "ENGINEERING_ACTIVE" : "UNASSIGNED"}</span>
-                                            </div>
-
-                                            <div className="flex items-center md:justify-end gap-4">
-                                                <Badge variant="outline" className={cn("rounded-sm font-black text-[9px] uppercase border px-2.5 py-0.5", getStatusStyles(item.status))}>
-                                                    {item.status.replace("_", " ")}
+                                            <div className="w-full flex items-center justify-between md:contents">
+                                                <div className="flex items-center gap-2 text-xs font-bold text-zinc-500">
+                                                    <User2 className="size-3 text-zinc-300" />
+                                                    {d.assignedTo ? "ENGINEERING" : "WAITING"}
+                                                </div>
+                                                
+                                                <Badge className={cn("rounded-full px-3 py-1 text-[9px] font-bold border-none", 
+                                                    d.status === "FINALIZED" || d.status === "APPROVED" ? "bg-emerald-50 text-emerald-600" : 
+                                                    d.status === "IN_DEVELOPMENT" || d.status === "ACCEPTED" ? "bg-blue-50 text-blue-600" : "bg-amber-50 text-amber-600"
+                                                )}>
+                                                    {d.status.replace("_", " ")}
                                                 </Badge>
-                                                <ChevronRight className="size-4 text-black/10 transition-all" />
+
+                                                <div className="hidden md:flex justify-end">
+                                                    <ArrowRight className="size-4 text-zinc-200 group-hover:text-black group-hover:translate-x-1 transition-all" />
+                                                </div>
                                             </div>
                                         </div>
                                     ))
@@ -231,45 +186,39 @@ export default function ShopDrawingListPage() {
                     </main>
 
                     {/* MOBILE FLOATING ACTION BUTTON */}
-                    {!isUserLoading && user.dept === "SALES" && (
-                         <div className="md:hidden fixed bottom-8 right-6 z-50">
-                         <Button 
-                             onClick={handleCreateRequest}
-                             className="size-16 rounded-full bg-[#121212] text-white shadow-2xl hover:bg-black active:scale-95 transition-all flex items-center justify-center border border-white/10"
-                         >
-                             <Plus className="size-6 stroke-[3px]" />
-                         </Button>
-                     </div>
+                    {userDept === "sales" && (
+                        <div className="md:hidden fixed bottom-8 right-6 z-50">
+                            <Button 
+                                onClick={handleCreateRequest}
+                                className="size-16 rounded-3xl bg-black text-white shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center border border-white/10"
+                            >
+                                <Plus className="size-7 stroke-[3px]" />
+                            </Button>
+                        </div>
                     )}
+
                 </SidebarInset>
             </SidebarProvider>
         </ProtectedPageWrapper>
     )
 }
 
-function StatCard({ label, val, icon: Icon, isActive, onClick, color }: any) {
+function StatCard({ label, val, icon: Icon, isActive, onClick, isDone }: any) {
     return (
         <div
             onClick={onClick}
             className={cn(
-                "cursor-pointer p-5 flex flex-col gap-3 transition-all border rounded-lg bg-white shadow-sm",
-                isActive ? "border-black ring-1 ring-black/5 translate-y-[-2px]" : "border-black/5 opacity-80 hover:opacity-100 shadow-none"
+                "p-5 md:p-6 flex flex-col gap-3 rounded-[24px] bg-white transition-all shadow-sm border-2 cursor-pointer active:scale-95",
+                isActive ? "border-black shadow-md" : "border-transparent"
             )}
         >
             <div className="flex justify-between items-start">
-                <Icon className="size-5" style={{ color: isActive ? color : '#ccc' }} />
-                <span className="text-2xl font-bold tracking-tighter text-[#121212]">{val.toString().padStart(2, '0')}</span>
+                <div className={cn("p-2.5 rounded-xl", isDone ? "bg-emerald-50 text-emerald-500" : "bg-zinc-50 text-zinc-400")}>
+                    <Icon className="size-5" />
+                </div>
+                <span className="text-2xl md:text-3xl font-black text-zinc-900">{val.toString().padStart(2, '0')}</span>
             </div>
-            <span className={cn("text-[10px] font-bold uppercase tracking-[0.1em]", isActive ? "text-black" : "text-black/40")}>{label}</span>
+            <p className="text-[9px] md:text-[10px] font-bold uppercase text-zinc-400 tracking-[0.15em]">{label}</p>
         </div>
     )
-}
-
-function getStatusStyles(status: string) {
-    switch (status?.toUpperCase()) {
-        case "PENDING_REVIEW": return "text-amber-600 border-amber-200 bg-amber-50";
-        case "IN_DEVELOPMENT": return "text-blue-600 border-blue-200 bg-blue-50";
-        case "FINALIZED": return "text-emerald-600 border-emerald-200 bg-emerald-50";
-        default: return "text-black/40 border-black/10 bg-black/5";
-    }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldLabel } from "@/components/ui/field";
@@ -11,39 +11,50 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { 
-  Weight, Droplets, Lock, Paperclip, Info, X, Loader2, Send, ClipboardCheck, Plus
+  Weight, Droplets, Send, Loader2, ChevronRight, ChevronLeft, 
+  LayoutGrid, Ruler, Anchor, Paintbrush, Eye, Paperclip, X,
+  ZoomIn, ZoomOut, Maximize2, RefreshCcw, FileDown, ClipboardCheck,
+  FileText
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { toast } from "sonner";
+
+// ZOOM & EXPORT INTEGRATION
+import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 // FIREBASE INTEGRATION
 import { db } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 
 /**
- * @name SalesToEngineeringProtocol
- * @department ENGINEERING
- * @version 4.2.2-GlobalAccess
- * @protocol Internal Shared Engineering Pool
+ * engiconnect: Shop Drawing Protocol
+ * Version 4.3.2 (Added Technical Drawing Tab)
  */
 export default function CompleteShopDrawingProtocol() {
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const visualizerRef = useRef<HTMLDivElement>(null);
+  const exportRef = useRef<HTMLDivElement>(null); 
+
   const [activeTab, setActiveTab] = useState("schematic");
-  const [showInstructions, setShowInstructions] = useState(false);
+  const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
 
-  // AUTH SYNC: Ensures the request is tagged to you so it appears in your filtered ledger
+  // Identity Check
   useEffect(() => {
     const storedId = localStorage.getItem("userId");
     if (storedId) {
       setCurrentUserId(storedId);
     } else {
-      toast.error("Identity Missing", { description: "User ID not found in local storage." });
+      toast.error("Identity Missing", { description: "Log in to ensure project visibility." });
     }
   }, []);
 
-  // CORE PARAMETERS (Finalized Corporate Set)
+  // Main Design State
   const [formData, setFormData] = useState({
     postType: "straight", 
     height: "10",
@@ -62,16 +73,17 @@ export default function CompleteShopDrawingProtocol() {
     anchorBoltShape: "J",
     anchorBoltLength: "700",
     bendLength: "100",
-    protectionFinish: "hdg",
     stiffenerSize: "150",
     stiffenerThick: "12",
-    handHole: "with",
+    protectionFinish: "hdg",
     topCoat: "powder",
+    handHole: "with",
+    application: "street",
     ralColor: "#475569",
     notes: ""
   });
 
-  // ANALYTICS ENGINE
+  // Calculate Weight and Area
   const stats = useMemo(() => {
     const h = parseFloat(formData.height) || 0;
     const t = parseFloat(formData.thickness) || 0;
@@ -85,55 +97,106 @@ export default function CompleteShopDrawingProtocol() {
     return { weight, surfaceArea };
   }, [formData]);
 
-  // SUBMISSION WORKFLOW
-  const handleSubmit = async () => {
-    if (isSubmitting) return;
-    
-    // Safety check: Cannot submit without an ID, otherwise the record becomes invisible to you
-    if (!currentUserId) {
-      toast.error("Authentication Error", { 
-        description: "Your User ID is missing. Please log in again to ensure visibility." 
-      });
+  // PDF Export Logic
+  const downloadDrawingPDF = async () => {
+    const svgElement = exportRef.current?.querySelector("svg");
+    if (!svgElement) {
+      toast.error("Drawing not ready for export");
       return;
     }
 
-    setIsSubmitting(true);
-    const toastId = toast.loading("Executing Corporate Protocol...");
+    const toastId = toast.loading("Generating Technical Drawing...");
 
     try {
-      /**
-       * PAYLOAD MAPPING
-       * submittedBy: Matches your user ID for visibility in your Sales Ledger
-       * department: Tagged as ENGINEERING for global internal visibility
-       * assignedTo: Left null/empty so all engineers can view and claim
-       */
+      const canvas = await html2canvas(exportRef.current!, { 
+        scale: 3, 
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        logging: false,
+        ignoreElements: (element) => element.classList.contains('z-20') 
+      });
+      
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("p", "mm", "a4");
+      
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(18);
+      pdf.text("ENGICONNECT SHOP DRAWING", 105, 20, { align: "center" });
+      
+      pdf.setLineWidth(0.5);
+      pdf.line(20, 25, 190, 25);
+
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "normal");
+      const leftCol = 20;
+      const rightCol = 110;
+      
+      pdf.text(`Height: ${formData.height}m`, leftCol, 35);
+      pdf.text(`Thickness: ${formData.thickness}mm`, leftCol, 40);
+      pdf.text(`Weight (est): ${stats.weight}kg`, leftCol, 45);
+      
+      pdf.text(`Finish: ${formData.protectionFinish.toUpperCase()}`, rightCol, 35);
+      pdf.text(`Top Coat: ${formData.topCoat}`, rightCol, 40);
+      pdf.text(`Project: ${formData.notes?.substring(0, 30) || 'Standard Design'}`, rightCol, 45);
+
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfWidth = pdf.internal.pageSize.getWidth() - 40;
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      pdf.addImage(imgData, "PNG", 20, 55, pdfWidth, pdfHeight);
+
+      pdf.save(`ShopDrawing_${formData.height}M_${new Date().getTime()}.pdf`);
+      toast.success("PDF Generated Successfully", { id: toastId });
+    } catch (error) {
+      toast.error("Failed to generate PDF", { id: toastId });
+    }
+  };
+
+  const toggleFullScreen = () => {
+    if (!visualizerRef.current) return;
+    if (!document.fullscreenElement) {
+      visualizerRef.current.requestFullscreen().catch(() => {
+        toast.error("Error", { description: "Cannot enter full screen." });
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setAttachedFile(e.target.files[0]);
+      toast.success("File attached", { description: e.target.files[0].name });
+    }
+  };
+
+  const removeFile = () => {
+    setAttachedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleSubmit = async () => {
+    if (isSubmitting || !currentUserId) return;
+    setIsSubmitting(true);
+    const toastId = toast.loading("Saving to engiconnect...");
+
+    try {
       const payload = {
-        projectName: formData.notes?.substring(0, 25) || `POLE-${formData.height}M-${new Date().getTime().toString().slice(-4)}`,
+        projectName: formData.notes?.substring(0, 25) || `POLE-${formData.height}M`,
         submittedBy: currentUserId, 
         department: "ENGINEERING", 
         status: "PENDING_REVIEW",
-        assignedTo: null, // Open for all engineers
         parameters: { ...formData },
         metrics: { ...stats },
+        fileName: attachedFile ? attachedFile.name : null,
         createdAt: serverTimestamp(),
-        lastUpdated: serverTimestamp()
       };
       
-      const docRef = await addDoc(collection(db, "shop_drawing_requests"), payload);
-      
-      toast.success("Protocol Document Created", { 
-        id: toastId,
-        description: `Reference ID: ${docRef.id.substring(0, 8).toUpperCase()}`
-      });
-
-      // Redirecting to Ledger to view the newly created (and filtered) request
-      setTimeout(() => {
-        router.push("/request/shop-drawing");
-      }, 800);
-
+      await addDoc(collection(db, "shop_drawing_requests"), payload);
+      toast.success("Protocol saved!", { id: toastId });
+      setTimeout(() => router.push("/request/shop-drawing"), 800);
     } catch (e) {
-      console.error("Firebase Protocol Error:", e);
-      toast.error("Submission Failed", { id: toastId });
+      toast.error("Failed to save.", { id: toastId });
     } finally {
       setIsSubmitting(false);
     }
@@ -143,7 +206,7 @@ export default function CompleteShopDrawingProtocol() {
     const { 
       height, armLength, boomAngle, topDiameter, bottomDiameter, thickness, 
       postType, armType, armBaseDia, armTipDia, basePlateSize, basePlateThick,
-      anchorBoltShape, anchorBoltLength, anchorBoltSpacing, bendLength, stiffenerSize, handHole, ralColor
+      anchorBoltShape, anchorBoltLength, anchorBoltSpacing, bendLength, stiffenerSize, ralColor
     } = formData;
     
     const h = parseFloat(height) || 0;
@@ -156,7 +219,7 @@ export default function CompleteShopDrawingProtocol() {
     const bpT = parseFloat(basePlateThick) || 20;
     const stiffH = parseFloat(stiffenerSize) || 0;
     
-    const scale = 350 / 15; 
+    const scale = 300 / 15; 
     const poleH = h * scale;
     const armW = aL * scale;
     const armRun = Math.cos(angle * Math.PI / 180) * armW;
@@ -172,229 +235,314 @@ export default function CompleteShopDrawingProtocol() {
     const visBoltL = (parseFloat(anchorBoltLength) / 20);
     const visBoltSpacing = (parseFloat(anchorBoltSpacing) / 10);
     const visBendL = (parseFloat(bendLength) / 10);
-    const groundY = 420;
+    const groundY = 380;
+
+    // Technical Drawing View (Blue Print Style)
+    const isTech = activeTab === "technical";
 
     return (
-      <svg viewBox="0 0 300 500" className="w-full h-full overflow-visible transition-all duration-500">
-        <defs>
-          <linearGradient id="lightBeamGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#FDE68A" stopOpacity="0.4" />
-            <stop offset="80%" stopColor="#FBBF24" stopOpacity="0.1" />
-            <stop offset="100%" stopColor="#F59E0B" stopOpacity="0" />
-          </linearGradient>
-          <filter id="lightBloom"><feGaussianBlur stdDeviation="6" result="blur" /><feComposite in="SourceGraphic" in2="blur" operator="over" /></filter>
-        </defs>
-        <g stroke={activeTab === 'photometric' ? '#334155' : '#94a3b8'} strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round">
-          <path d={`M ${150 - visBoltSpacing/2} ${groundY} v ${visBoltL} ${anchorBoltShape === 'J' ? `q 0 ${visBendL/2} -${visBendL} 0` : anchorBoltShape === 'L' ? `h -${visBendL}` : ''}`} />
-          <path d={`M ${150 + visBoltSpacing/2} ${groundY} v ${visBoltL} ${anchorBoltShape === 'J' ? `q 0 ${visBendL/2} ${visBendL} 0` : anchorBoltShape === 'L' ? `h ${visBendL}` : ''}`} />
-        </g>
-        <rect x="0" y={groundY} width="300" height="80" fill={activeTab === 'photometric' ? '#020617' : '#f1f5f9'} opacity="0.9" />
-        {activeTab === "photometric" && (
-          <g filter="url(#lightBloom)" opacity="0.8">
-            <path d={`M ${150 + visTopD/2 + armRun} ${groundY - poleH - armRise} L ${150 + visTopD/2 + armRun + 60} ${groundY} L ${150 + visTopD/2 + armRun - 60} ${groundY} Z`} fill="url(#lightBeamGrad)" />
-            {armType === "double" && (
-              <path d={`M ${150 - visTopD/2 - armRun} ${groundY - poleH - armRise} L ${150 - visTopD/2 - armRun + 60} ${groundY} L ${150 - visTopD/2 - armRun - 60} ${groundY} Z`} fill="url(#lightBeamGrad)" />
-            )}
-          </g>
+      <TransformWrapper initialScale={1} minScale={0.5} maxScale={8} centerOnInit>
+        {({ zoomIn, zoomOut, resetTransform }) => (
+          <>
+            <div className="absolute bottom-4 left-4 flex gap-1 z-20">
+              <Button size="sm" variant="secondary" className="h-8 w-8 p-0 rounded-md shadow-sm bg-white/80 backdrop-blur" onClick={() => zoomIn()}><ZoomIn size={14} /></Button>
+              <Button size="sm" variant="secondary" className="h-8 w-8 p-0 rounded-md shadow-sm bg-white/80 backdrop-blur" onClick={() => zoomOut()}><ZoomOut size={14} /></Button>
+              <Button size="sm" variant="secondary" className="h-8 w-8 p-0 rounded-md shadow-sm bg-white/80 backdrop-blur" onClick={() => resetTransform()}><RefreshCcw size={14} /></Button>
+              <Button size="sm" variant="secondary" className="h-8 w-8 p-0 rounded-md shadow-sm bg-white/80 backdrop-blur" onClick={toggleFullScreen}><Maximize2 size={14} /></Button>
+              <Button size="sm" variant="secondary" className="h-8 w-8 p-0 rounded-md shadow-sm bg-white/80 backdrop-blur text-emerald-600" onClick={downloadDrawingPDF}><FileDown size={14} /></Button>
+            </div>
+
+            <TransformComponent wrapperClass="!w-full !h-full" contentClass="w-full h-full flex items-center justify-center">
+              <div ref={exportRef} className={`cursor-grab active:cursor-grabbing p-10 rounded-lg ${isTech ? 'bg-white' : ''}`}>
+                <svg viewBox="0 0 300 450" className="w-[300px] h-[450px] overflow-visible transition-all duration-500">
+                  <defs>
+                    <linearGradient id="lightBeamGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                      <stop offset="0%" stopColor="#FDE68A" stopOpacity="0.4" />
+                      <stop offset="80%" stopColor="#FBBF24" stopOpacity="0.1" />
+                      <stop offset="100%" stopColor="#F59E0B" stopOpacity="0" />
+                    </linearGradient>
+                    <filter id="lightBloom"><feGaussianBlur stdDeviation="6" result="blur" /><feComposite in="SourceGraphic" in2="blur" operator="over" /></filter>
+                  </defs>
+                  
+                  {/* Anchor Bolts */}
+                  <g stroke={activeTab === 'photometric' ? '#334155' : isTech ? '#121212' : '#94a3b8'} strokeWidth={isTech ? "1" : "2"} fill="none" strokeLinecap="round" strokeLinejoin="round">
+                    <path d={`M ${150 - visBoltSpacing/2} ${groundY} v ${visBoltL} ${anchorBoltShape === 'J' ? `q 0 ${visBendL/2} -${visBendL} 0` : anchorBoltShape === 'L' ? `h -${visBendL}` : ''}`} />
+                    <path d={`M ${150 + visBoltSpacing/2} ${groundY} v ${visBoltL} ${anchorBoltShape === 'J' ? `q 0 ${visBendL/2} ${visBendL} 0` : anchorBoltShape === 'L' ? `h ${visBendL}` : ''}`} />
+                  </g>
+                  
+                  {/* Ground Line */}
+                  {!isTech && <rect x="0" y={groundY} width="300" height="60" fill={activeTab === 'photometric' ? '#020617' : '#f1f5f9'} opacity="0.9" />}
+                  {isTech && <line x1="50" y1={groundY} x2="250" y2={groundY} stroke="#121212" strokeWidth="0.5" strokeDasharray="4" />}
+                  
+                  {/* Photometric Layer */}
+                  {activeTab === "photometric" && (
+                    <g filter="url(#lightBloom)" opacity="0.8">
+                      <path d={`M ${150 + visTopD/2 + armRun} ${groundY - poleH - armRise} L ${150 + visTopD/2 + armRun + 50} ${groundY} L ${150 + visTopD/2 + armRun - 50} ${groundY} Z`} fill="url(#lightBeamGrad)" />
+                      {armType === "double" && (
+                        <path d={`M ${150 - visTopD/2 - armRun} ${groundY - poleH - armRise} L ${150 - visTopD/2 - armRun + 50} ${groundY} L ${150 - visTopD/2 - armRun - 50} ${groundY} Z`} fill="url(#lightBeamGrad)" />
+                      )}
+                    </g>
+                  )}
+                  
+                  {/* Stiffeners and Base Plate */}
+                  <path d={`M ${150 - visBotD/2} ${groundY - visBPT} L ${150 - visBotD/2 - visStiff} ${groundY - visBPT} L ${150 - visBotD/2} ${groundY - visBPT - visStiff} Z`} fill={activeTab === 'photometric' ? '#1e293b' : isTech ? 'none' : '#94a3b8'} stroke={isTech ? '#121212' : 'none'} opacity="0.8" />
+                  <path d={`M ${150 + visBotD/2} ${groundY - visBPT} L ${150 + visBotD/2 + visStiff} ${groundY - visBPT} L ${150 + visBotD/2} ${groundY - visBPT - visStiff} Z`} fill={activeTab === 'photometric' ? '#1e293b' : isTech ? 'none' : '#94a3b8'} stroke={isTech ? '#121212' : 'none'} opacity="0.8" />
+                  <rect x={150 - visBP/2} y={groundY - visBPT} width={visBP} height={visBPT} fill={activeTab === 'photometric' ? '#1e293b' : isTech ? 'none' : '#475569'} stroke={isTech ? '#121212' : 'none'} rx="1" />
+                  
+                  {/* Main Pole Body */}
+                  <path d={`M ${150 - visBotD/2} ${groundY - visBPT} L ${150 + visBotD/2} ${groundY - visBPT} L ${150 + visTopD/2} ${groundY - poleH} L ${150 - visTopD/2} ${groundY - poleH} Z`} fill={activeTab === 'photometric' ? '#0f172a' : isTech ? 'none' : ralColor} stroke={activeTab === 'photometric' ? '#334155' : '#121212'} strokeWidth={isTech ? 1 : thick / 4} />
+                  
+                  {/* Outreach / Arms */}
+                  <g transform={`translate(150, ${groundY - poleH})`}>
+                    {postType === "straight" ? (
+                      <>
+                        <path d={`M ${visTopD/2} ${-visABase/4} L ${visTopD/2 + armRun} ${-armRise - visATip/2} L ${visTopD/2 + armRun} ${-armRise + visATip/2} L ${visTopD/2} ${visABase/4} Z`} fill={activeTab === 'photometric' ? '#0f172a' : isTech ? 'none' : ralColor} stroke="#121212" strokeWidth={isTech ? 1 : 0.5} />
+                        {armType === "double" && <path d={`M ${-visTopD/2} ${-visABase/4} L ${-visTopD/2 - armRun} ${-armRise - visATip/2} L ${-visTopD/2 - armRun} ${-armRise + visATip/2} L ${-visTopD/2} ${visABase/4} Z`} fill={activeTab === 'photometric' ? '#0f172a' : isTech ? 'none' : ralColor} stroke="#121212" strokeWidth={isTech ? 1 : 0.5} />}
+                      </>
+                    ) : (
+                      <>
+                        <path d={`M ${visTopD/2} 0 Q ${visTopD/2} ${-armRise * 0.7} ${visTopD/2 + armRun} ${-armRise}`} fill="none" stroke={activeTab === 'photometric' ? '#334155' : isTech ? '#121212' : ralColor} strokeWidth={(visABase + visATip)/2} strokeLinecap="round" />
+                        {armType === "double" && <path d={`M ${-visTopD/2} 0 Q ${-visTopD/2} ${-armRise * 0.7} ${-visTopD/2 - armRun} ${-armRise}`} fill="none" stroke={activeTab === 'photometric' ? '#334155' : isTech ? '#121212' : ralColor} strokeWidth={(visABase + visATip)/2} strokeLinecap="round" />}
+                      </>
+                    )}
+                  </g>
+
+                  {/* Technical Annotations */}
+                  {isTech && (
+                    <g className="text-[6px] fill-black font-mono">
+                      {/* Height Dim */}
+                      <line x1="80" y1={groundY} x2="80" y2={groundY - poleH} stroke="black" strokeWidth="0.5" />
+                      <text x="75" y={groundY - poleH/2} transform={`rotate(-90, 75, ${groundY - poleH/2})`}>{height}m Height</text>
+                      
+                      {/* Diameters */}
+                      <text x="150" y={groundY + 10} textAnchor="middle">{bottomDiameter}mm Bottom Dia</text>
+                      <text x="150" y={groundY - poleH - 10} textAnchor="middle">{topDiameter}mm Top Dia</text>
+                      
+                      {/* Arm Length */}
+                      <text x={150 + armRun} y={groundY - poleH - armRise - 10} textAnchor="middle">{armLength}m Arm</text>
+                      
+                      {/* Thickness */}
+                      <text x={150 + visBotD} y={groundY - poleH/4} textAnchor="start">{thickness}mm Wall</text>
+                    </g>
+                  )}
+                </svg>
+              </div>
+            </TransformComponent>
+          </>
         )}
-        <path d={`M ${150 - visBotD/2} ${groundY - visBPT} L ${150 - visBotD/2 - visStiff} ${groundY - visBPT} L ${150 - visBotD/2} ${groundY - visBPT - visStiff} Z`} fill={activeTab === 'photometric' ? '#1e293b' : '#94a3b8'} opacity="0.8" />
-        <path d={`M ${150 + visBotD/2} ${groundY - visBPT} L ${150 + visBotD/2 + visStiff} ${groundY - visBPT} L ${150 + visBotD/2} ${groundY - visBPT - visStiff} Z`} fill={activeTab === 'photometric' ? '#1e293b' : '#94a3b8'} opacity="0.8" />
-        <rect x={150 - visBP/2} y={groundY - visBPT} width={visBP} height={visBPT} fill={activeTab === 'photometric' ? '#1e293b' : '#475569'} rx="1" />
-        <path d={`M ${150 - visBotD/2} ${groundY - visBPT} L ${150 + visBotD/2} ${groundY - visBPT} L ${150 + visTopD/2} ${groundY - poleH} L ${150 - visTopD/2} ${groundY - poleH} Z`} fill={activeTab === 'photometric' ? '#0f172a' : ralColor} stroke={activeTab === 'photometric' ? '#334155' : '#121212'} strokeWidth={thick / 4} />
-        {handHole === "with" && <rect x={147} y={groundY - 60} width={6} height={12} rx="1" fill="#000" opacity="0.2" />}
-        <g transform={`translate(150, ${groundY - poleH})`}>
-          {postType === "straight" ? (
-            <>
-              <path d={`M ${visTopD/2} ${-visABase/4} L ${visTopD/2 + armRun} ${-armRise - visATip/2} L ${visTopD/2 + armRun} ${-armRise + visATip/2} L ${visTopD/2} ${visABase/4} Z`} fill={activeTab === 'photometric' ? '#0f172a' : ralColor} stroke={activeTab === 'photometric' ? '#334155' : '#121212'} strokeWidth="0.5" />
-              {armType === "double" && <path d={`M ${-visTopD/2} ${-visABase/4} L ${-visTopD/2 - armRun} ${-armRise - visATip/2} L ${-visTopD/2 - armRun} ${-armRise + visATip/2} L ${-visTopD/2} ${visABase/4} Z`} fill={activeTab === 'photometric' ? '#0f172a' : ralColor} stroke={activeTab === 'photometric' ? '#334155' : '#121212'} strokeWidth="0.5" />}
-            </>
-          ) : (
-            <>
-              <path d={`M ${visTopD/2} 0 Q ${visTopD/2} ${-armRise * 0.7} ${visTopD/2 + armRun} ${-armRise}`} fill="none" stroke={activeTab === 'photometric' ? '#334155' : ralColor} strokeWidth={(visABase + visATip)/2} strokeLinecap="round" />
-              {armType === "double" && <path d={`M ${-visTopD/2} 0 Q ${-visTopD/2} ${-armRise * 0.7} ${-visTopD/2 - armRun} ${-armRise}`} fill="none" stroke={activeTab === 'photometric' ? '#334155' : ralColor} strokeWidth={(visABase + visATip)/2} strokeLinecap="round" />}
-            </>
-          )}
-        </g>
-      </svg>
+      </TransformWrapper>
     );
   };
 
   return (
-    <div className="min-h-screen bg-[#F9FAFA] font-sans pb-32">
-      <PageHeader title="Shop Drawing Request" version="Revision 4.2.2" showBackButton={true} />
+    <div className="min-h-screen bg-[#F3F4F6] font-sans pb-10">
+      <PageHeader title="Shop Drawing Wizard" version="4.3.2" showBackButton={true} />
       
-      <main className="p-4 md:p-10 max-w-[1750px] mx-auto grid grid-cols-1 xl:grid-cols-12 gap-10">
-        {/* Left Column: Input Protocols */}
-        <div className="xl:col-span-7 space-y-8 order-2 xl:order-1">
-          
-          {showInstructions ? (
-              <div className="bg-[#121212] p-6 rounded-lg shadow-xl border border-white/5 relative overflow-hidden transition-all">
-                  <button onClick={() => setShowInstructions(false)} className="absolute top-4 right-4 text-white/40 hover:text-white transition-colors">
-                      <X className="size-4" />
-                  </button>
-                  <div className="flex items-center gap-3 mb-4">
-                      <ClipboardCheck className="size-4 text-emerald-400" />
-                      <span className="text-[10px] font-bold text-white uppercase tracking-[0.2em]">Standard Operating Procedure</span>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      <div className="space-y-2">
-                          <h4 className="text-emerald-400 text-[9px] font-black uppercase tracking-tight">Requirement Entry</h4>
-                          <p className="text-[9px] text-white/50 font-bold uppercase leading-relaxed">Input specific client requirements to generate real-time logistical estimates.</p>
-                      </div>
-                      <div className="space-y-2">
-                          <h4 className="text-emerald-400 text-[9px] font-black uppercase tracking-tight">Visual Verification</h4>
-                          <p className="text-[9px] text-white/50 font-bold uppercase leading-relaxed">Confirm the structural profile and lighting coverage via the visualization portal.</p>
-                      </div>
-                      <div className="space-y-2">
-                          <h4 className="text-emerald-400 text-[9px] font-black uppercase tracking-tight">Final Authorization</h4>
-                          <p className="text-[9px] text-white/50 font-bold uppercase leading-relaxed">Submit the finalized request for departmental review and processing.</p>
-                      </div>
-                  </div>
-              </div>
-          ) : (
-              <button onClick={() => setShowInstructions(true)} className="flex items-center gap-2 text-[10px] font-bold uppercase text-black/30 hover:text-black transition-colors pl-1">
-                  <Info className="size-3.5" /> View Submission Guidelines
+      <main className="p-3 md:p-6 max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* FORM SIDE */}
+        <div className="lg:col-span-7 space-y-4">
+          <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-200 flex justify-between items-center overflow-x-auto gap-3">
+            {[
+              { id: 1, label: "Column", icon: LayoutGrid },
+              { id: 2, label: "Outreach", icon: Ruler },
+              { id: 3, label: "Base", icon: Anchor },
+              { id: 4, label: "Review", icon: ClipboardCheck }
+            ].map((step) => (
+              <button key={step.id} onClick={() => setCurrentStep(step.id)} className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all whitespace-nowrap ${currentStep === step.id ? 'bg-black text-white' : 'text-gray-400 hover:bg-gray-50'}`}>
+                <step.icon size={14} /> <span className="text-[9px] font-bold uppercase">{step.label}</span>
               </button>
-          )}
+            ))}
+          </div>
 
-          {/* Section 1: Core Geometry */}
-          <Card className="shadow-sm border-black/5 rounded-2xl bg-white overflow-hidden border">
-            <CardHeader className="bg-[#121212] py-4 px-8 flex flex-row items-center justify-between">
-              <CardTitle className="text-[10px] font-black uppercase tracking-[0.3em] text-white flex items-center gap-2">
-                <Lock size={12} className="text-emerald-400" /> Client Specifications
+          <Card className="shadow-lg border-none rounded-2xl bg-white overflow-hidden flex flex-col">
+            <CardHeader className="bg-gray-50 border-b border-gray-100 py-4 px-6">
+              <CardTitle className="text-[11px] font-black uppercase tracking-widest flex items-center gap-2">
+                <span className="bg-black text-white size-5 rounded-full flex items-center justify-center text-[9px]">{currentStep}</span>
+                {currentStep === 1 && "Column Specs"}
+                {currentStep === 2 && "Arm Details"}
+                {currentStep === 3 && "Foundation Details"}
+                {currentStep === 4 && "Final Review & Finish"}
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-6 md:p-8 grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10">
-              <Field><FieldLabel>Lamp Post Type</FieldLabel>
-                <Select onValueChange={(v) => setFormData({...formData, postType: v})} value={formData.postType}>
-                  <SelectTrigger className="h-12"><SelectValue/></SelectTrigger>
-                  <SelectContent><SelectItem value="straight">Straight Tapered</SelectItem><SelectItem value="bent">Self Bent</SelectItem></SelectContent>
-                </Select>
-              </Field>
-              <Field className="space-y-4">
-                <div className="flex justify-between items-center"><FieldLabel className="mb-0">Height (m)</FieldLabel><Input className="w-16 h-8 text-center text-[10px] font-bold" value={formData.height} onChange={(e) => setFormData({...formData, height: e.target.value})} /></div>
-                <Slider value={[parseFloat(formData.height) || 0]} min={3} max={20} step={0.5} onValueChange={(v) => setFormData({...formData, height: v[0].toString()})} />
-              </Field>
-              <Field className="space-y-4"><FieldLabel>Top Diameter (mm)</FieldLabel><Slider value={[parseFloat(formData.topDiameter) || 0]} min={60} max={250} onValueChange={(v) => setFormData({...formData, topDiameter: v[0].toString()})} /><Input className="h-10 text-xs font-mono" value={formData.topDiameter} onChange={(e) => setFormData({...formData, topDiameter: e.target.value})} /></Field>
-              <Field className="space-y-4"><FieldLabel>Bottom Diameter (mm)</FieldLabel><Slider value={[parseFloat(formData.bottomDiameter) || 0]} min={120} max={500} onValueChange={(v) => setFormData({...formData, bottomDiameter: v[0].toString()})} /><Input className="h-10 text-xs font-mono" value={formData.bottomDiameter} onChange={(e) => setFormData({...formData, bottomDiameter: e.target.value})} /></Field>
-              <div className="col-span-1 md:col-span-2"><Field className="space-y-4"><div className="flex justify-between items-center"><FieldLabel className="mb-0">Structural Thickness (mm)</FieldLabel><span className="text-[10px] font-black text-emerald-600">{formData.thickness}mm</span></div><Slider value={[parseFloat(formData.thickness) || 0]} min={3} max={10} step={0.5} onValueChange={(v) => setFormData({...formData, thickness: v[0].toString()})} /></Field></div>
-            </CardContent>
-          </Card>
 
-          {/* Section 2: Arm Metrics */}
-          <Card className="shadow-sm border-black/5 rounded-2xl bg-white overflow-hidden border">
-            <CardHeader className="bg-[#F9FAFA] py-4 px-8 border-b border-black/5 flex justify-between items-center"><CardTitle className="text-[10px] font-black uppercase tracking-[0.3em] text-black">Outreach Configuration</CardTitle></CardHeader>
-            <CardContent className="p-6 md:p-8 grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10">
-              <Field><FieldLabel>Arm Type</FieldLabel>
-                <Select onValueChange={(v) => setFormData({...formData, armType: v})} value={formData.armType}><SelectTrigger className="h-12"><SelectValue/></SelectTrigger>
-                  <SelectContent><SelectItem value="single">Single Outreach</SelectItem><SelectItem value="double">Double Outreach</SelectItem></SelectContent>
-                </Select>
-              </Field>
-              <Field><FieldLabel>Arm Quantity</FieldLabel><Input className="h-12 font-mono" value={formData.armQty} onChange={(e) => setFormData({...formData, armQty: e.target.value})} /></Field>
-              <Field className="space-y-4 col-span-1 md:col-span-2"><div className="flex justify-between items-center"><FieldLabel className="mb-0">Arm Length (m)</FieldLabel><span className="text-[10px] font-black">{formData.armLength}m</span></div><Slider value={[parseFloat(formData.armLength) || 0]} min={0.5} max={5} step={0.1} onValueChange={(v) => setFormData({...formData, armLength: v[0].toString()})} /></Field>
-              <Field className="space-y-4"><FieldLabel>Arm Base Diameter</FieldLabel><Slider value={[parseFloat(formData.armBaseDia) || 0]} min={40} max={150} onValueChange={(v) => setFormData({...formData, armBaseDia: v[0].toString()})} /><Input className="h-10 text-xs font-mono text-center" value={formData.armBaseDia} onChange={(e) => setFormData({...formData, armBaseDia: e.target.value})} /></Field>
-              <Field className="space-y-4"><FieldLabel>Arm Tip Diameter</FieldLabel><Slider value={[parseFloat(formData.armTipDia) || 0]} min={20} max={100} onValueChange={(v) => setFormData({...formData, armTipDia: v[0].toString()})} /><Input className="h-10 text-xs font-mono text-center" value={formData.armTipDia} onChange={(e) => setFormData({...formData, armTipDia: e.target.value})} /></Field>
-              <div className="col-span-1 md:col-span-2"><Field className="space-y-4"><div className="flex justify-between items-center"><FieldLabel className="mb-0">Inclination Angle</FieldLabel><span className="text-[10px] font-black">{formData.boomAngle}°</span></div><Slider value={[parseFloat(formData.boomAngle) || 0]} min={0} max={90} step={1} onValueChange={(v) => setFormData({...formData, boomAngle: v[0].toString()})} /></Field></div>
-            </CardContent>
-          </Card>
+            <CardContent className="p-6 flex-1 overflow-y-auto max-h-[600px]">
+              {currentStep === 1 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 animate-in fade-in slide-in-from-bottom-2">
+                  <Field><FieldLabel>Post Design</FieldLabel>
+                    <Select onValueChange={(v) => setFormData({...formData, postType: v})} value={formData.postType}>
+                      <SelectTrigger className="h-11 rounded-lg"><SelectValue/></SelectTrigger>
+                      <SelectContent><SelectItem value="straight">Straight Tapered</SelectItem><SelectItem value="bent">Self Bent</SelectItem></SelectContent>
+                    </Select>
+                  </Field>
+                  <Field><FieldLabel>Total Height (m)</FieldLabel>
+                    <div className="flex gap-3 items-center"><Slider className="flex-1" value={[parseFloat(formData.height) || 0]} min={3} max={20} step={0.5} onValueChange={(v) => setFormData({...formData, height: v[0].toString()})} /><Input className="w-16 h-11 text-center font-bold text-md rounded-lg" value={formData.height} onChange={(e) => setFormData({...formData, height: e.target.value})} /></div>
+                  </Field>
+                  <Field><FieldLabel>Top Diameter (mm)</FieldLabel><Input className="h-11 rounded-lg font-mono" value={formData.topDiameter} onChange={(e) => setFormData({...formData, topDiameter: e.target.value})} /></Field>
+                  <Field><FieldLabel>Bottom Diameter (mm)</FieldLabel><Input className="h-11 rounded-lg font-mono" value={formData.bottomDiameter} onChange={(e) => setFormData({...formData, bottomDiameter: e.target.value})} /></Field>
+                  <Field className="md:col-span-2"><FieldLabel>Thickness (mm)</FieldLabel>
+                    <div className="grid grid-cols-5 gap-2">{["3.0", "4.0", "4.5", "5.0", "6.0"].map((t) => (
+                      <Button key={t} variant={formData.thickness === t ? "default" : "outline"} onClick={() => setFormData({...formData, thickness: t})} className="h-10 rounded-lg text-xs">{t}mm</Button>
+                    ))}</div>
+                  </Field>
+                </div>
+              )}
 
-          {/* Section 3: Finishing */}
-          <Card className="shadow-sm border-black/5 rounded-2xl bg-white border">
-            <CardHeader className="py-4 px-8 border-b border-black/5 bg-[#F9FAFA]"><CardTitle className="text-[10px] font-black uppercase tracking-[0.3em]">Anchorage & Finish</CardTitle></CardHeader>
-            <CardContent className="p-6 md:p-8 grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10">
-              <Field className="space-y-4"><FieldLabel>Base Plate Dimension</FieldLabel><Slider value={[parseFloat(formData.basePlateSize) || 0]} min={200} max={800} onValueChange={(v) => setFormData({...formData, basePlateSize: v[0].toString()})} /><Input className="h-10 text-xs font-mono" value={formData.basePlateSize} onChange={(e) => setFormData({...formData, basePlateSize: e.target.value})} /></Field>
-              <Field className="space-y-4"><FieldLabel>Plate Thickness</FieldLabel><Slider value={[parseFloat(formData.basePlateThick) || 0]} min={10} max={50} onValueChange={(v) => setFormData({...formData, basePlateThick: v[0].toString()})} /><Input className="h-10 text-xs font-mono" value={formData.basePlateThick} onChange={(e) => setFormData({...formData, basePlateThick: e.target.value})} /></Field>
-              <Field className="space-y-4"><FieldLabel>Bolt Spacing</FieldLabel><Slider value={[parseFloat(formData.anchorBoltSpacing) || 0]} min={100} max={600} onValueChange={(v) => setFormData({...formData, anchorBoltSpacing: v[0].toString()})} /><Input className="h-10 text-xs font-mono" value={formData.anchorBoltSpacing} onChange={(e) => setFormData({...formData, anchorBoltSpacing: e.target.value})} /></Field>
-              <Field className="space-y-4"><FieldLabel>Bolt Shape</FieldLabel>
-                <Select onValueChange={(v) => setFormData({...formData, anchorBoltShape: v})} value={formData.anchorBoltShape}>
-                  <SelectTrigger className="h-10"><SelectValue/></SelectTrigger>
-                  <SelectContent><SelectItem value="J">J-Bolt</SelectItem><SelectItem value="L">L-Bolt</SelectItem><SelectItem value="I">Straight</SelectItem></SelectContent>
-                </Select>
-              </Field>
-              <Field className="space-y-4"><FieldLabel>Bolt Length</FieldLabel><Slider value={[parseFloat(formData.anchorBoltLength) || 0]} min={300} max={1500} step={50} onValueChange={(v) => setFormData({...formData, anchorBoltLength: v[0].toString()})} /><Input className="h-10 text-xs font-mono" value={formData.anchorBoltLength} onChange={(e) => setFormData({...formData, anchorBoltLength: e.target.value})} /></Field>
-              <Field className="space-y-4"><FieldLabel>Bend Dimension</FieldLabel><Slider value={[parseFloat(formData.bendLength) || 0]} min={50} max={300} onValueChange={(v) => setFormData({...formData, bendLength: v[0].toString()})} /><Input className="h-10 text-xs font-mono" value={formData.bendLength} onChange={(e) => setFormData({...formData, bendLength: e.target.value})} /></Field>
-              <Field className="space-y-4"><FieldLabel>Surface Protection</FieldLabel>
-                <Select onValueChange={(v) => setFormData({...formData, protectionFinish: v})} value={formData.protectionFinish}>
-                  <SelectTrigger className="h-10"><SelectValue/></SelectTrigger>
-                  <SelectContent><SelectItem value="hdg">Hot Dip Galvanize</SelectItem><SelectItem value="eg">Electro Galvanize</SelectItem></SelectContent>
-                </Select>
-              </Field>
-              <Field className="space-y-4"><FieldLabel>Stiffener Dimension</FieldLabel><Slider value={[parseFloat(formData.stiffenerSize) || 0]} min={0} max={300} onValueChange={(v) => setFormData({...formData, stiffenerSize: v[0].toString()})} /><Input className="h-10 text-xs font-mono" value={formData.stiffenerSize} onChange={(e) => setFormData({...formData, stiffenerSize: e.target.value})} /></Field>
-              <Field className="space-y-4"><FieldLabel>Stiffener Thickness</FieldLabel><Slider value={[parseFloat(formData.stiffenerThick) || 0]} min={3} max={25} onValueChange={(v) => setFormData({...formData, stiffenerThick: v[0].toString()})} /><Input className="h-10 text-xs font-mono" value={formData.stiffenerThick} onChange={(e) => setFormData({...formData, stiffenerThick: e.target.value})} /></Field>
-              <Field className="space-y-4"><FieldLabel>Access Point</FieldLabel>
-                <Select onValueChange={(v) => setFormData({...formData, handHole: v})} value={formData.handHole}>
-                  <SelectTrigger className="h-10"><SelectValue/></SelectTrigger>
-                  <SelectContent><SelectItem value="with">Required</SelectItem><SelectItem value="none">None</SelectItem></SelectContent>
-                </Select>
-              </Field>
-              <Field className="space-y-4"><FieldLabel>Final Coating</FieldLabel>
-                <Select onValueChange={(v) => setFormData({...formData, topCoat: v})} value={formData.topCoat}>
-                  <SelectTrigger className="h-10"><SelectValue/></SelectTrigger>
-                  <SelectContent><SelectItem value="spray">Spray Paint</SelectItem><SelectItem value="powder">Powder Coat</SelectItem></SelectContent>
-                </Select>
-              </Field>
-              <Field><FieldLabel>Color Selection</FieldLabel>
-                <div className="flex gap-4"><Input type="color" className="w-12 h-10 p-1" value={formData.ralColor} onChange={(e) => setFormData({...formData, ralColor: e.target.value})} /><Input className="h-10 flex-1 font-mono text-xs uppercase" value={formData.ralColor} onChange={(e) => setFormData({...formData, ralColor: e.target.value})} /></div>
-              </Field>
-            </CardContent>
-          </Card>
+              {currentStep === 2 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 animate-in fade-in slide-in-from-right-2">
+                  <Field><FieldLabel>Arm Type</FieldLabel>
+                    <Select onValueChange={(v) => setFormData({...formData, armType: v})} value={formData.armType}>
+                      <SelectTrigger className="h-11 rounded-lg"><SelectValue/></SelectTrigger>
+                      <SelectContent><SelectItem value="single">Single Outreach</SelectItem><SelectItem value="double">Double Outreach</SelectItem></SelectContent>
+                    </Select>
+                  </Field>
+                  <Field><FieldLabel>Quantity</FieldLabel><Input className="h-11 rounded-lg" type="number" value={formData.armQty} onChange={(e) => setFormData({...formData, armQty: e.target.value})} /></Field>
+                  <Field><FieldLabel>Length (m)</FieldLabel><Input className="h-11 rounded-lg font-mono" value={formData.armLength} onChange={(e) => setFormData({...formData, armLength: e.target.value})} /></Field>
+                  <Field><FieldLabel>Inclination Angle (°)</FieldLabel><Input className="h-11 rounded-lg font-mono" value={formData.boomAngle} onChange={(e) => setFormData({...formData, boomAngle: e.target.value})} /></Field>
+                  <Field><FieldLabel>Arm Base Dia (mm)</FieldLabel><Input className="h-11 rounded-lg font-mono" value={formData.armBaseDia} onChange={(e) => setFormData({...formData, armBaseDia: e.target.value})} /></Field>
+                  <Field><FieldLabel>Arm Tip Dia (mm)</FieldLabel><Input className="h-11 rounded-lg font-mono" value={formData.armTipDia} onChange={(e) => setFormData({...formData, armTipDia: e.target.value})} /></Field>
+                </div>
+              )}
 
-          <div className="flex flex-col md:flex-row gap-6 items-stretch">
-            <div className="flex-1 bg-white p-8 rounded-2xl border border-black/5 shadow-sm">
-                <FieldLabel className="text-black/30 italic">Project Notes</FieldLabel>
-                <Textarea placeholder="Detail specific project constraints or client-requested modifications..." value={formData.notes} onChange={(e) => setFormData({...formData, notes: e.target.value})} className="min-h-[80px] border-none bg-transparent focus-visible:ring-0" />
+              {currentStep === 3 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 animate-in fade-in slide-in-from-right-2">
+                  <Field><FieldLabel>Base Plate Size (mm)</FieldLabel><Input className="h-11 rounded-lg" value={formData.basePlateSize} onChange={(e) => setFormData({...formData, basePlateSize: e.target.value})} /></Field>
+                  <Field><FieldLabel>Base Plate Thick (mm)</FieldLabel><Input className="h-11 rounded-lg" value={formData.basePlateThick} onChange={(e) => setFormData({...formData, basePlateThick: e.target.value})} /></Field>
+                  <Field><FieldLabel>Bolt Spacing (mm)</FieldLabel><Input className="h-11 rounded-lg" value={formData.anchorBoltSpacing} onChange={(e) => setFormData({...formData, anchorBoltSpacing: e.target.value})} /></Field>
+                  <Field><FieldLabel>Bolt Shape</FieldLabel>
+                    <Select onValueChange={(v) => setFormData({...formData, anchorBoltShape: v})} value={formData.anchorBoltShape}>
+                      <SelectTrigger className="h-11 rounded-lg"><SelectValue/></SelectTrigger>
+                      <SelectContent><SelectItem value="J">J-Bolt</SelectItem><SelectItem value="L">L-Bolt</SelectItem><SelectItem value="I">Straight</SelectItem></SelectContent>
+                    </Select>
+                  </Field>
+                  <Field><FieldLabel>Bolt Length (mm)</FieldLabel><Input className="h-11 rounded-lg" value={formData.anchorBoltLength} onChange={(e) => setFormData({...formData, anchorBoltLength: e.target.value})} /></Field>
+                  <Field><FieldLabel>Bend Dimension (mm)</FieldLabel><Input className="h-11 rounded-lg" value={formData.bendLength} onChange={(e) => setFormData({...formData, bendLength: e.target.value})} /></Field>
+                  <Field><FieldLabel>Stiffener Size (mm)</FieldLabel><Input className="h-11 rounded-lg" value={formData.stiffenerSize} onChange={(e) => setFormData({...formData, stiffenerSize: e.target.value})} /></Field>
+                  <Field><FieldLabel>Stiffener Thick (mm)</FieldLabel><Input className="h-11 rounded-lg" value={formData.stiffenerThick} onChange={(e) => setFormData({...formData, stiffenerThick: e.target.value})} /></Field>
+                </div>
+              )}
+
+              {currentStep === 4 && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-right-2">
+                  {/* Summary Table */}
+                  <div className="bg-gray-50 rounded-xl border border-gray-100 overflow-hidden">
+                    <div className="grid grid-cols-2 border-b border-gray-100">
+                       <div className="p-3 border-r border-gray-100">
+                          <p className="text-[8px] font-bold text-gray-400 uppercase">Column</p>
+                          <p className="text-xs font-medium">{formData.height}m ({formData.thickness}mm)</p>
+                       </div>
+                       <div className="p-3">
+                          <p className="text-[8px] font-bold text-gray-400 uppercase">Arm</p>
+                          <p className="text-xs font-medium">{formData.armLength}m ({formData.armType})</p>
+                       </div>
+                    </div>
+                    <div className="grid grid-cols-2">
+                       <div className="p-3 border-r border-gray-100">
+                          <p className="text-[8px] font-bold text-gray-400 uppercase">Base Plate</p>
+                          <p className="text-xs font-medium">{formData.basePlateSize}x{formData.basePlateThick}mm</p>
+                       </div>
+                       <div className="p-3">
+                          <p className="text-[8px] font-bold text-gray-400 uppercase">Weight</p>
+                          <p className="text-xs font-medium">{stats.weight}kg</p>
+                       </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                    <Field><FieldLabel>Surface Finish</FieldLabel>
+                      <Select onValueChange={(v) => setFormData({...formData, protectionFinish: v})} value={formData.protectionFinish}>
+                        <SelectTrigger className="h-11 rounded-lg"><SelectValue/></SelectTrigger>
+                        <SelectContent><SelectItem value="hdg">Hot Dip Galvanized</SelectItem><SelectItem value="eg">Electro Galvanized</SelectItem></SelectContent>
+                      </Select>
+                    </Field>
+                    <Field><FieldLabel>Top Coat</FieldLabel>
+                      <Select onValueChange={(v) => setFormData({...formData, topCoat: v})} value={formData.topCoat}>
+                        <SelectTrigger className="h-11 rounded-lg"><SelectValue/></SelectTrigger>
+                        <SelectContent><SelectItem value="powder">Powder Coated</SelectItem><SelectItem value="epoxy">Epoxy Paint</SelectItem></SelectContent>
+                      </Select>
+                    </Field>
+
+                    <Field className="md:col-span-2"><FieldLabel>Color (RAL / HEX)</FieldLabel>
+                      <div className="flex gap-3"><Input type="color" className="w-16 h-11 p-1 rounded-lg cursor-pointer" value={formData.ralColor} onChange={(e) => setFormData({...formData, ralColor: e.target.value})} /><Input className="h-11 flex-1 font-mono text-md uppercase rounded-lg" value={formData.ralColor} onChange={(e) => setFormData({...formData, ralColor: e.target.value})} /></div>
+                    </Field>
+
+                    <div className="md:col-span-2 space-y-2">
+                      <FieldLabel>Supporting Documents</FieldLabel>
+                      <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+                      {!attachedFile ? (
+                        <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} className="w-full h-11 border-dashed border-2 rounded-xl gap-2 text-xs text-gray-500">
+                          <Paperclip size={14} /> Attach File / Drawing
+                        </Button>
+                      ) : (
+                        <div className="flex items-center justify-between p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                          <div className="flex items-center gap-2 overflow-hidden">
+                            <Paperclip className="text-emerald-600 shrink-0" size={14} />
+                            <span className="text-xs font-medium text-emerald-900 truncate">{attachedFile.name}</span>
+                          </div>
+                          <button onClick={removeFile} className="p-1 hover:bg-emerald-100 rounded-full text-emerald-600"><X size={14} /></button>
+                        </div>
+                      )}
+                    </div>
+
+                    <Field className="md:col-span-2"><FieldLabel>Project Notes</FieldLabel><Textarea placeholder="Add project name or reference..." value={formData.notes} onChange={(e) => setFormData({...formData, notes: e.target.value})} className="min-h-[80px] rounded-xl p-3 bg-gray-50 border-none text-sm" /></Field>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+
+            <div className="p-5 border-t border-gray-100 flex justify-between bg-gray-50/50">
+              <Button variant="ghost" disabled={currentStep === 1} onClick={() => setCurrentStep(prev => prev - 1)} className="h-11 px-6 rounded-xl gap-2 font-bold uppercase text-[10px]">
+                <ChevronLeft size={14} /> Back
+              </Button>
+              {currentStep < 4 ? (
+                <Button onClick={() => setCurrentStep(prev => prev + 1)} className="h-11 px-8 rounded-xl gap-2 bg-black text-white hover:bg-gray-800 font-bold uppercase text-[10px] shadow-md">
+                  Next Step <ChevronRight size={14} />
+                </Button>
+              ) : (
+                <Button onClick={handleSubmit} disabled={isSubmitting} className="h-11 px-8 rounded-xl gap-2 bg-emerald-600 text-white hover:bg-emerald-700 font-bold uppercase text-[10px] shadow-md">
+                  {isSubmitting ? <Loader2 className="animate-spin" /> : <><Send size={14} /> Submit to engiconnect</>}
+                </Button>
+              )}
             </div>
-            <Button variant="outline" className="w-full md:w-48 border-dashed border-2 h-auto py-6 flex flex-col gap-2 font-bold text-[9px] uppercase tracking-widest rounded-2xl hover:bg-slate-50">
-                <Paperclip size={20} className="text-black/20" /> Client Assets
-            </Button>
-          </div>
+          </Card>
         </div>
 
-        {/* Right Column: Visualization & Submission */}
-        <div className="xl:col-span-5 order-1 xl:order-2">
-          <div className="sticky top-10 space-y-6">
-            <Card className="border-black/5 bg-white shadow-2xl overflow-hidden rounded-[2.5rem] border p-4 md:p-8">
-              <div className="w-full flex flex-col md:flex-row items-center justify-between mb-8 gap-4">
-                <span className="text-[10px] font-bold text-[#121212] uppercase tracking-[0.1em]">Proposal Preview</span>
-                <Tabs defaultValue="schematic" onValueChange={setActiveTab} className="bg-slate-100 p-1 rounded-xl w-full md:w-auto">
-                  <TabsList className="h-10 bg-transparent border-none w-full">
-                    <TabsTrigger value="schematic" className="flex-1 md:flex-none rounded-lg text-[9px] font-bold px-6">Profile</TabsTrigger>
-                    <TabsTrigger value="photometric" className="flex-1 md:flex-none rounded-lg text-[9px] font-bold px-6">Illumination</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              </div>
-
-              <div className={`w-full relative rounded-[2rem] p-4 md:p-10 min-h-[400px] md:min-h-[600px] flex items-center justify-center transition-all duration-700 ${activeTab === 'photometric' ? 'bg-[#020617]' : 'bg-[#F9FAFA] border border-black/5'}`}>
-                {render2DVisualizer()}
-                <div className={`absolute top-4 right-4 md:top-8 md:right-8 p-3 md:p-4 rounded-xl border transition-all ${activeTab === 'photometric' ? 'bg-white/10 text-white border-white/20' : 'bg-white/80 text-black border-black/5'} backdrop-blur-md`}>
-                  <div className="text-[9px] font-bold uppercase tracking-widest flex items-center gap-2"><Weight size={10}/> {stats.weight} KG Est.</div>
-                  <div className="text-[9px] font-bold uppercase tracking-widest flex items-center gap-2 mt-2"><Droplets size={10}/> {stats.surfaceArea} M² Est.</div>
+        {/* PREVIEW SIDE */}
+        <div className="lg:col-span-5">
+          <div className="sticky top-6 space-y-4">
+            <Card className="bg-white border-none shadow-xl rounded-[2rem] overflow-hidden">
+              <div className="p-5">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-[10px] font-black uppercase tracking-tighter text-gray-400 flex items-center gap-2"><Eye size={12}/> Live Visualizer</h3>
+                  <Tabs defaultValue="schematic" onValueChange={setActiveTab} className="bg-gray-100 p-0.5 rounded-lg">
+                    <TabsList className="bg-transparent h-7">
+                      <TabsTrigger value="schematic" className="text-[9px] font-bold px-3">Profile</TabsTrigger>
+                      <TabsTrigger value="technical" className="text-[9px] font-bold px-3 flex gap-1"><FileText size={10}/> Technical</TabsTrigger>
+                      <TabsTrigger value="photometric" className="text-[9px] font-bold px-3">Light</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                </div>
+                
+                <div ref={visualizerRef} className={`relative rounded-2xl flex items-center justify-center transition-all min-h-[420px] overflow-hidden ${activeTab === 'photometric' ? 'bg-[#020617]' : activeTab === 'technical' ? 'bg-white border-2 border-dashed border-gray-200' : 'bg-gray-50'}`}>
+                  {render2DVisualizer()}
+                  
+                  {/* Floating Metrics Badge */}
+                  <div className="absolute top-4 right-4 flex flex-col gap-2 z-20">
+                    <div className="bg-white/90 backdrop-blur shadow-sm border border-gray-100 p-2 rounded-xl flex items-center gap-2">
+                      <div className="bg-black text-white p-1.5 rounded-md"><Weight size={12}/></div>
+                      <div><p className="text-[7px] font-bold text-gray-400 uppercase">Weight</p><p className="text-xs font-black">{stats.weight} kg</p></div>
+                    </div>
+                    <div className="bg-white/90 backdrop-blur shadow-sm border border-gray-100 p-2 rounded-xl flex items-center gap-2">
+                      <div className="bg-black text-white p-1.5 rounded-md"><Droplets size={12}/></div>
+                      <div><p className="text-[7px] font-bold text-gray-400 uppercase">Area</p><p className="text-xs font-black">{stats.surfaceArea} m²</p></div>
+                    </div>
+                  </div>
                 </div>
               </div>
-
-              <Button 
-                onClick={handleSubmit} 
-                disabled={isSubmitting}
-                className="w-full mt-10 h-20 bg-[#121212] text-white rounded-[1.5rem] font-bold uppercase tracking-[0.5em] text-[10px] shadow-lg active:scale-95 transition-transform"
-              >
-                {isSubmitting ? (
-                  <span className="flex items-center gap-3"><Loader2 className="animate-spin size-4" /> Processing...</span>
-                ) : (
-                  <span className="flex items-center gap-3">Finalize Submission <Send className="size-3" /></span>
-                )}
-              </Button>
             </Card>
           </div>
         </div>
       </main>
-
-      {/* FAB: Concierge Assistant */}
-      <button 
-        className="fixed bottom-10 right-10 size-16 bg-[#121212] text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-50 border-4 border-white"
-        onClick={() => toast.info("Concierge Assistant Active")}
-      >
-        <Plus size={24} />
-      </button>
     </div>
   );
 }
