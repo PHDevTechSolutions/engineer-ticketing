@@ -67,6 +67,8 @@ export function CollaborationHub({
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  // NEW: Track which message is "active" (clicked) on mobile/desktop
+  const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const unreadRef = useRef<HTMLDivElement>(null);
@@ -83,14 +85,10 @@ export function CollaborationHub({
     if (receivedSound.current) receivedSound.current.volume = 0.3;
   }, []);
 
-  // --- CORE POSITIONING LOGIC ---
   const scrollToMessage = (msgId: string) => {
     const element = document.getElementById(`msg-${msgId}`);
-    
     if (element) {
       element.scrollIntoView({ behavior: "smooth", block: "center" });
-      
-      // Highlight the target message temporarily
       element.classList.add("ring-2", "ring-blue-400", "ring-offset-2", "rounded-xl");
       setTimeout(() => {
         element.classList.remove("ring-2", "ring-blue-400", "ring-offset-2", "rounded-xl");
@@ -157,10 +155,8 @@ export function CollaborationHub({
   const sendChat = async () => {
     if (!chatMessage.trim() || isSending) return;
     setIsSending(true);
-    
     const content = chatMessage;
     const currentReply = replyingTo;
-    
     setChatMessage(""); 
     setReplyingTo(null);
 
@@ -203,6 +199,7 @@ export function CollaborationHub({
       );
       await updateDoc(docRef, { messages: updatedMessages });
       toast.success("Status updated");
+      setActiveMessageId(null); // Close the menu after action
     } catch (e) {
       toast.error("Failed to update");
     }
@@ -212,7 +209,10 @@ export function CollaborationHub({
     <div className="fixed bottom-6 right-6 z-[100]">
       <Popover open={isOpen} onOpenChange={(val) => {
         setIsOpen(val);
-        if (!val) setLastSeenTime(Date.now());
+        if (!val) {
+          setLastSeenTime(Date.now());
+          setActiveMessageId(null);
+        }
       }}>
         <PopoverTrigger asChild>
           <button className={cn(
@@ -228,7 +228,7 @@ export function CollaborationHub({
           </button>
         </PopoverTrigger>
 
-        <PopoverContent side="top" align="end" sideOffset={20} className="w-[380px] p-0 border-none shadow-2xl rounded-[32px] overflow-hidden">
+        <PopoverContent side="top" align="end" sideOffset={20} className="w-[380px] p-0 border-none shadow-2xl rounded-[32px] overflow-hidden max-w-[95vw]">
           <div className="flex flex-col h-[580px] bg-[#f8fafc] max-h-[85vh] relative">
             
             <div className="p-5 bg-slate-900 text-white shrink-0">
@@ -263,10 +263,16 @@ export function CollaborationHub({
               )}
             </div>
 
-            <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#f1f5f9]/50 scroll-smooth">
+            <div 
+              ref={scrollRef} 
+              onScroll={handleScroll} 
+              onClick={() => setActiveMessageId(null)} // Close active menus when clicking background
+              className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#f1f5f9]/50 scroll-smooth"
+            >
               {filteredMessages.map((msg, i) => {
                 const isMe = msg.senderId === currentUserId;
                 const isFirstUnread = i === firstUnreadIndex;
+                const isActive = activeMessageId === msg.id;
 
                 return (
                   <React.Fragment key={msg.id}>
@@ -289,20 +295,39 @@ export function CollaborationHub({
 
                       <div className={cn("flex flex-col gap-1 max-w-[75%]", isMe ? "items-end" : "items-start")}>
                         {!isMe && <span className="text-[10px] text-slate-500 font-bold ml-1">{msg.senderName}</span>}
-                        <div className={cn(
-                            "px-4 py-2.5 text-[13px] shadow-sm relative group/bubble transition-all duration-300",
+                        <div 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveMessageId(isActive ? null : msg.id);
+                          }}
+                          className={cn(
+                            "px-4 py-2.5 text-[13px] shadow-sm relative transition-all duration-300 cursor-pointer touch-manipulation",
                             isMe ? "bg-blue-600 text-white rounded-2xl rounded-br-none" : "bg-white text-slate-800 rounded-2xl rounded-bl-none",
-                            msg.isResolved && "opacity-60 grayscale-[0.5]"
-                          )}>
+                            msg.isResolved && "opacity-60 grayscale-[0.5]",
+                            isActive && "ring-2 ring-blue-400 ring-offset-1"
+                          )}
+                        >
+                          {/* UPDATED: Buttons now visible on click/active OR hover */}
                           <div className={cn(
-                            "absolute -top-4 flex items-center gap-1 opacity-0 group-hover/bubble:opacity-100 transition-all z-10",
+                            "absolute -top-6 flex items-center gap-2 transition-all z-20",
+                            (isActive) ? "opacity-100 scale-100 visible" : "opacity-0 scale-95 invisible group-hover:opacity-100 group-hover:scale-100 group-hover:visible",
                             isMe ? "right-0" : "left-0"
                           )}>
-                            <button onClick={() => setReplyingTo(msg)} className="p-1.5 bg-white shadow-md rounded-full text-slate-400 hover:text-blue-500 border border-slate-100">
-                              <Reply size={12} />
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); setReplyingTo(msg); setActiveMessageId(null); }} 
+                              className="p-2 bg-white shadow-lg rounded-full text-blue-600 border border-slate-100 active:bg-blue-50"
+                            >
+                              <Reply size={16} />
                             </button>
-                            <button onClick={() => toggleResolve(msg.id)} className="p-1.5 bg-white shadow-md rounded-full text-slate-400 hover:text-green-500 border border-slate-100">
-                              <CheckCircle2 size={12} />
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); toggleResolve(msg.id); }} 
+                              className="p-2 bg-white shadow-lg rounded-full text-green-600 border border-slate-100 active:bg-green-50"
+                            >
+                              <CheckCircle2 size={16} />
+                            </button>
+                            {/* Close active menu button for mobile */}
+                            <button className="md:hidden p-2 bg-white shadow-lg rounded-full text-slate-400 border border-slate-100">
+                               <X size={16} />
                             </button>
                           </div>
 
