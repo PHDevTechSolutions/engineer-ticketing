@@ -52,10 +52,58 @@ export function CollaborationHub({
   const [isUploading, setIsUploading] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
 
+  // New states for mobile reply triggering
+  const [swipingId, setSwipingId] = useState<number | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const touchStart = useRef<number | null>(null);
+  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const unreadRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isAtBottom = useRef(true);
+
+  // --- Mobile Touch Handlers ---
+  const handleTouchStart = (e: React.TouchEvent, index: number, msg: Message) => {
+    touchStart.current = e.targetTouches[0].clientX;
+    setSwipingId(index);
+
+    // Long press logic
+    longPressTimer.current = setTimeout(() => {
+      setReplyingTo(msg);
+      if (window.navigator.vibrate) window.navigator.vibrate(50);
+    }, 600);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStart.current !== null) {
+      const currentTouch = e.targetTouches[0].clientX;
+      const diff = currentTouch - touchStart.current;
+      
+      if (Math.abs(diff) > 10 && longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+      }
+
+      // Swipe right movement
+      if (diff > 0 && diff < 70) {
+        setSwipeOffset(diff);
+      }
+    }
+  };
+
+  const handleTouchEnd = (msg: Message) => {
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    
+    // If swiped far enough, trigger reply
+    if (swipeOffset > 45) {
+      setReplyingTo(msg);
+      if (window.navigator.vibrate) window.navigator.vibrate(10);
+    }
+
+    setSwipingId(null);
+    setSwipeOffset(0);
+    touchStart.current = null;
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -74,7 +122,6 @@ export function CollaborationHub({
     formData.append("upload_preset", "engiconnect_uploads");
 
     try {
-      // Remember to put your real Cloudinary cloud name here!
       const res = await fetch(
         `https://api.cloudinary.com/v1_1/your_cloud_name/image/upload`,
         { method: "POST", body: formData }
@@ -215,14 +262,32 @@ export function CollaborationHub({
             </div>
 
             {/* Chat Area */}
-            <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 space-y-4 overflow-x-hidden">
               {filteredMessages.map((msg, i) => {
                 const isMe = msg.senderId === currentUserId;
-                // FIX: Fallback to "User" if senderName is missing to avoid charAt error
                 const safeName = msg.senderName || "User";
 
                 return (
-                  <div key={i} className={cn("flex gap-2.5 group", isMe ? "flex-row-reverse" : "flex-row")}>
+                  <div 
+                    key={i} 
+                    className={cn(
+                      "flex gap-2.5 group relative transition-transform duration-150", 
+                      isMe ? "flex-row-reverse" : "flex-row"
+                    )}
+                    style={{ 
+                      transform: swipingId === i ? `translateX(${swipeOffset}px)` : 'none' 
+                    }}
+                    onTouchStart={(e) => handleTouchStart(e, i, msg)}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={() => handleTouchEnd(msg)}
+                  >
+                    {/* Visual cue for swipe reply */}
+                    {swipingId === i && swipeOffset > 10 && (
+                      <div className="absolute left-[-30px] top-1/2 -translate-y-1/2 text-blue-500 opacity-50">
+                        <Reply size={20} />
+                      </div>
+                    )}
+
                     <Avatar className="h-8 w-8 shrink-0 self-end border-2 border-white">
                       <AvatarImage src={isMe ? profilePicture : msg.senderImage} className="object-cover" />
                       <AvatarFallback className="bg-blue-600 text-[10px] text-white">
