@@ -118,9 +118,13 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
       });
     } catch (err) { console.error("Log error", err); }
 
+    // --- FIX: USE FIRSTNAME FROM MONGODB DATA ---
+    // If Firstname is missing, it will use the part of the email before the "@" 
+    const displayName = result.Firstname || email?.split('@')[0] || "Staff Member";
+
     localStorage.setItem("userId", result.userId);
-    localStorage.setItem("userName", result.Username);
-    localStorage.setItem("department", result.Department);
+    localStorage.setItem("userName", displayName);
+    localStorage.setItem("department", result.Department || "IT");
 
     let value = 0;
     const interval = setInterval(() => {
@@ -128,7 +132,7 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
       setProgress(value);
       if (value >= 100) {
         clearInterval(interval);
-        toast.success("Identity Verified");
+        toast.success(`Identity Verified: Welcome ${displayName}`);
         router.push(`/dashboard?id=${result.userId}`);
       }
     }, 60);
@@ -328,7 +332,6 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
               )}
             </Button>
 
-            {/* Alternative Login Methods */}
             <div className="grid grid-cols-2 gap-3">
                <Dialog open={showPinDialog} onOpenChange={setShowPinDialog}>
                  <DialogTrigger asChild>
@@ -337,7 +340,6 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
                       <span className="text-[9px] font-black uppercase tracking-tighter">Pin Pad</span>
                     </Button>
                  </DialogTrigger>
-                 {/* Updated Dialog Content for Mobile responsivity */}
                  <DialogContent className="rounded-[20px] p-6 sm:p-8 border-none text-center bg-[#F9FAFA] w-[95vw] sm:max-w-[400px]">
                     <DialogHeader className="items-center">
                       <div className="p-3 bg-[#121212] rounded-xl mb-2"><Lock className="text-white size-6" /></div>
@@ -345,7 +347,6 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
                       <DialogDescription className="text-xs font-medium">Enter 6-digit terminal code.</DialogDescription>
                     </DialogHeader>
                     
-                    {/* Responsive Grid for PIN Boxes */}
                     <div className="relative flex justify-center gap-1.5 sm:gap-2 py-6 sm:py-8 cursor-text" onClick={() => pinInputRef.current?.focus()}>
                       <input
                         ref={pinInputRef}
@@ -386,7 +387,6 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
             </div>
           </form>
 
-          {/* Footer Links */}
           <div className="flex flex-col items-center gap-4 text-xs font-bold uppercase tracking-widest text-muted-foreground/60">
              <button onClick={() => setShowResetDialog(true)} className="hover:text-[#121212] transition-colors underline decoration-dotted">
                Request Recovery
@@ -396,7 +396,6 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
         </div>
       </div>
 
-      {/* RIGHT SIDE: VISUAL WALLPAPER */}
       <div className="hidden lg:block flex-[1.2] relative bg-slate-900 overflow-hidden">
         <img src="/engineer_wallpaper.png" alt="Wallpaper" className="h-full w-full object-cover opacity-80" />
         <div className="absolute inset-0 bg-gradient-to-r from-white via-transparent to-transparent w-full" />
@@ -408,7 +407,6 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
         </div>
       </div>
 
-      {/* VERIFICATION DIALOGS */}
       <Dialog open={showLocationDialog} onOpenChange={setShowLocationDialog}>
         <DialogContent className="w-[95vw] sm:max-w-md bg-[#F9FAFA] border-none text-center rounded-[20px]">
           <DialogHeader><DialogTitle className="uppercase font-black tracking-tight text-center">Geo-Verification</DialogTitle></DialogHeader>
@@ -423,7 +421,6 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
         </DialogContent>
       </Dialog>
 
-      {/* LOCKED ACCOUNT / TICKET DIALOG */}
       <Dialog open={showTicketDialog} onOpenChange={setShowTicketDialog}>
         <DialogContent className="w-[95vw] sm:max-w-md bg-[#F9FAFA] border-none shadow-2xl rounded-[20px]">
           <DialogHeader>
@@ -442,7 +439,6 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
         </DialogContent>
       </Dialog>
 
-      {/* PASSWORD RESET DIALOG */}
       <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
         <DialogContent className="w-[95vw] sm:max-w-md bg-[#F9FAFA] border-none shadow-2xl rounded-[20px]">
           <DialogHeader>

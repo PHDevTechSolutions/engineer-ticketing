@@ -24,7 +24,6 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-// Import your fixed component
 import { CollaborationHub } from "@/components/collaboration-hub";
 
 export default function EngineeringReviewPage() {
@@ -39,7 +38,7 @@ export default function EngineeringReviewPage() {
     name: "",
     profilePicture: "" 
   });
-  
+
   const [clarification, setClarification] = useState("");
   const [activeTab, setActiveTab] = useState("schematic");
   const [isUpdating, setIsUpdating] = useState(false);
@@ -69,6 +68,8 @@ export default function EngineeringReviewPage() {
     let unsubscribe: () => void;
     const loadUserAndData = async () => {
       const storedId = localStorage.getItem("userId");
+      const storedName = localStorage.getItem("userName");
+
       if (!storedId) {
         toast.error("User not found. Please log in.");
         return;
@@ -79,10 +80,17 @@ export default function EngineeringReviewPage() {
         const user = await res.json();
         const dept = (user.Department || user.department || "").toLowerCase();
 
+        // LOGIC FIX: Check if the name is missing or literally the string "undefined"
+        let finalName = user.Name || user.name || user.userName || storedName;
+        
+        if (!finalName || finalName === "undefined") {
+          finalName = "Staff Member";
+        }
+
         setUserContext({
           role: dept,
           id: storedId,
-          name: user.Name || user.userName || "Staff Member",
+          name: finalName,
           profilePicture: user.profilePicture || user.image || ""
         });
 
@@ -107,12 +115,8 @@ export default function EngineeringReviewPage() {
     return () => unsubscribe?.();
   }, [params.id]);
 
-  /**
-   * UPDATED: handleUpdateStatus
-   * Now includes stronger click protection and better UI feedback
-   */
   const handleUpdateStatus = async (status: string, extraData = {}) => {
-    if (isUpdating) return; // CLICK LOCK
+    if (isUpdating) return; 
     
     setIsUpdating(true);
     const loadingToast = toast.loading(`Processing ${status.replace('_', ' ')}...`);
@@ -128,10 +132,9 @@ export default function EngineeringReviewPage() {
       });
       toast.success(`Request ${status.toLowerCase()} successfully`, { id: loadingToast });
     } catch (error) {
-      console.error("Update Error:", error);
-      toast.error("Process failed. Please check your connection.", { id: loadingToast });
+      toast.error("Process failed.");
     } finally {
-      setIsUpdating(false); // UNLOCK
+      setIsUpdating(false); 
     }
   };
 
@@ -288,7 +291,6 @@ export default function EngineeringReviewPage() {
                 </Tabs>
               </div>
 
-              {/* COLLABORATION HUB: Pass context for messaging logic */}
               <CollaborationHub
                 requestId={params.id}
                 messages={data?.messages || []}
