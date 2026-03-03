@@ -6,7 +6,7 @@ import {
   Clock, CheckCircle2, History, Loader2,
   ShieldCheck, ChevronLeft, Image as ImageIcon, ExternalLink,
   Check, Timer, FileText, MapPin, Lightbulb, Ruler, Building2,
-  Briefcase, AlertCircle, PlayCircle
+  Briefcase, AlertCircle, PlayCircle, Paperclip, CheckSquare
 } from "lucide-react";
 
 // DATABASE
@@ -50,6 +50,12 @@ export default function DialuxRequestReviewPage() {
     managerSig: ""
   });
 
+  // DESIGN SUBMISSION STATE
+  const [designSubmission, setDesignSubmission] = useState({
+    details: "",
+    reportUrl: ""
+  });
+
   const [isUpdating, setIsUpdating] = useState(false);
   const [countdown, setCountdown] = useState("03:00:00");
   const [isOverdue, setIsOverdue] = useState(false);
@@ -61,7 +67,7 @@ export default function DialuxRequestReviewPage() {
   const isAdmin = ["it", "engineering", "admin"].includes(userContext.department);
   const isSales = userContext.department === "sales";
 
-  // UPDATED: DYNAMIC SLA TIMER (3h for Engineering, 24h for Sales, 1h for Designing/Free)
+  // DYNAMIC SLA TIMER
   useEffect(() => {
     const timerInterval = setInterval(() => {
       let referenceTime = data?.createdAt;
@@ -74,7 +80,6 @@ export default function DialuxRequestReviewPage() {
         referenceTime = data?.acknowledgedAt;
         hoursLimit = 1;
       } else if (status === "IN_DESIGN") {
-        // You can set a custom limit for the actual design phase if needed
         referenceTime = data?.designStartedAt;
         hoursLimit = 48; 
       }
@@ -127,6 +132,7 @@ export default function DialuxRequestReviewPage() {
             const reqData = docSnap.data();
             setData(reqData);
             if (reqData.assessment) setAssessment(reqData.assessment);
+            if (reqData.designSubmission) setDesignSubmission(reqData.designSubmission || { details: "", reportUrl: "" });
             if (reqData.attachments?.length > 0) setSelectedImage(reqData.attachments[0] || "");
           } else {
             toast.error("Simulation record not found.");
@@ -204,7 +210,7 @@ export default function DialuxRequestReviewPage() {
     }
   };
 
-  // NEW STAGE: Start Designing (Engineering/Admin)
+  // STAGE 3: Start Designing
   const handleStartDesign = async () => {
     setIsProcessingAction(true);
     const toastId = toast.loading("Moving to Design Phase...");
@@ -219,6 +225,51 @@ export default function DialuxRequestReviewPage() {
       toast.success("Project is now In Design.", { id: toastId });
     } catch (error) {
       toast.error("Failed to start design.", { id: toastId });
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
+
+  // STAGE 4: Complete Design (Engineering/Admin)
+  const handleCompleteDesign = async () => {
+    if (!designSubmission.details || !designSubmission.reportUrl) {
+      return toast.error("Please fill in design details and attach report link.");
+    }
+
+    setIsProcessingAction(true);
+    const toastId = toast.loading("Submitting simulation results...");
+
+    try {
+      const docRef = doc(db, "dialux_requests", params.id);
+      await updateDoc(docRef, {
+        status: "COMPLETED",
+        designSubmission: designSubmission,
+        completedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      toast.success("Simulation project completed!", { id: toastId });
+    } catch (error) {
+      toast.error("Submission failed.", { id: toastId });
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
+
+  // NEW STAGE 5: Sales Final Acknowledgement
+  const handleFinalAcknowledgement = async () => {
+    setIsProcessingAction(true);
+    const toastId = toast.loading("Closing project...");
+
+    try {
+      const docRef = doc(db, "dialux_requests", params.id);
+      await updateDoc(docRef, {
+        status: "CLOSED",
+        salesAcknowledgedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      toast.success("Project successfully acknowledged and closed.", { id: toastId });
+    } catch (error) {
+      toast.error("Acknowledgement failed.", { id: toastId });
     } finally {
       setIsProcessingAction(false);
     }
@@ -256,34 +307,36 @@ export default function DialuxRequestReviewPage() {
             </div>
           </div>
 
-          <div className={cn(
-            "flex items-center gap-2 md:gap-3 px-2 md:px-3 py-1.5 rounded-lg border transition-all shrink-0 ml-2",
-            isOverdue ? "bg-red-50 border-red-200" : "bg-zinc-50 border-zinc-200"
-          )}>
-            <div className="flex flex-col items-end border-r pr-2 md:pr-3 border-zinc-200">
-              <span className={cn(
-                "text-[6px] md:text-[7px] font-black uppercase tracking-widest leading-none",
-                isOverdue ? "text-red-500" : "text-zinc-400"
-              )}>
-                {isOverdue ? "SLA Breach" : "SLA Window"}
-              </span>
-              <span className={cn(
-                "text-[8px] md:text-[9px] font-bold uppercase mt-0.5",
-                isOverdue ? "text-red-600" : "text-zinc-500"
-              )}>
-                {status === "PENDING" ? "Engineering (3h)" : status === "IN_QUEUE" ? "Designing (1h)" : status === "IN_DESIGN" ? "Work Phase" : "Review/Sales (24h)"}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 md:gap-2">
-              <Timer size={14} className={cn("shrink-0", isOverdue ? "text-red-500" : "text-blue-500")} />
-              <span className={cn(
-                "text-sm md:text-lg font-mono font-black tabular-nums leading-none tracking-tighter",
-                isOverdue ? "text-red-600" : "text-zinc-900"
-              )}>
-                {countdown}
-              </span>
-            </div>
-          </div>
+          {(status !== "COMPLETED" && status !== "CLOSED") && (
+             <div className={cn(
+               "flex items-center gap-2 md:gap-3 px-2 md:px-3 py-1.5 rounded-lg border transition-all shrink-0 ml-2",
+               isOverdue ? "bg-red-50 border-red-200" : "bg-zinc-50 border-zinc-200"
+             )}>
+               <div className="flex flex-col items-end border-r pr-2 md:pr-3 border-zinc-200">
+                 <span className={cn(
+                   "text-[6px] md:text-[7px] font-black uppercase tracking-widest leading-none",
+                   isOverdue ? "text-red-500" : "text-zinc-400"
+                 )}>
+                   {isOverdue ? "SLA Breach" : "SLA Window"}
+                 </span>
+                 <span className={cn(
+                   "text-[8px] md:text-[9px] font-bold uppercase mt-0.5",
+                   isOverdue ? "text-red-600" : "text-zinc-500"
+                 )}>
+                   {status === "PENDING" ? "Engineering (3h)" : status === "IN_QUEUE" ? "Designing (1h)" : status === "IN_DESIGN" ? "Work Phase" : "Review/Sales (24h)"}
+                 </span>
+               </div>
+               <div className="flex items-center gap-1.5 md:gap-2">
+                 <Timer size={14} className={cn("shrink-0", isOverdue ? "text-red-500" : "text-blue-500")} />
+                 <span className={cn(
+                   "text-sm md:text-lg font-mono font-black tabular-nums leading-none tracking-tighter",
+                   isOverdue ? "text-red-600" : "text-zinc-900"
+                 )}>
+                   {countdown}
+                 </span>
+               </div>
+             </div>
+          )}
         </header>
 
         <main className="p-4 md:p-8 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8 pb-32">
@@ -404,11 +457,24 @@ export default function DialuxRequestReviewPage() {
                 <TimelineStep 
                   title="Design Phase" 
                   date={data?.designStartedAt}
-                  status={status === 'IN_DESIGN' ? 'active' : (status === 'COMPLETED' ? 'completed' : 'pending')} 
+                  status={status === 'IN_DESIGN' ? 'active' : (status === 'COMPLETED' || status === 'CLOSED' ? 'completed' : 'pending')} 
+                />
+
+                <TimelineStep 
+                  title="Project Delivered" 
+                  date={data?.completedAt}
+                  status={status === 'COMPLETED' || status === 'CLOSED' ? 'completed' : 'pending'} 
+                />
+
+                <TimelineStep 
+                  title="Project Acknowledged" 
+                  date={data?.salesAcknowledgedAt}
+                  status={status === 'CLOSED' ? 'completed' : (status === 'COMPLETED' ? 'active' : 'pending')} 
                 />
               </div>
             </div>
 
+            {/* ENGINEERING ASSESSMENT FORM */}
             <div className="bg-zinc-100 rounded-[24px] border-2 border-zinc-200 p-6 shadow-sm space-y-6">
               <div className="bg-zinc-200/50 p-3 rounded-xl border border-zinc-300">
                 <h2 className="text-center font-black text-[11px] uppercase tracking-tighter text-zinc-700">Engineering Assessment</h2>
@@ -509,7 +575,7 @@ export default function DialuxRequestReviewPage() {
                 </>
               )}
 
-              {/* NEW STAGE: IN DESIGN QUEUE -> START DESIGNING */}
+              {/* STAGE 3: IN DESIGN QUEUE -> START DESIGNING */}
               {status === "IN_QUEUE" && (
                 <div className="flex flex-col gap-2">
                   {isAdmin ? (
@@ -531,6 +597,107 @@ export default function DialuxRequestReviewPage() {
                 </div>
               )}
             </div>
+
+            {/* DIALUX SIMULATION SUBMISSION FORM (Visible in Design Phase) */}
+            {status === "IN_DESIGN" && (
+              <div className="bg-zinc-100 rounded-[24px] border-2 border-zinc-200 p-6 shadow-sm space-y-6">
+                <div className="bg-zinc-200/50 p-3 rounded-xl border border-zinc-300">
+                  <h2 className="text-center font-black text-[11px] uppercase tracking-tighter text-zinc-700 italic flex items-center justify-center gap-2">
+                    (A. {assessment.simulationType === 'FREE' ? 'Free DIAlux' : 'Paid DIAlux'})
+                  </h2>
+                </div>
+
+                <div className="bg-white rounded-xl border border-zinc-300 p-1 divide-y divide-zinc-200">
+                  <div className="p-2 space-y-1">
+                    <label className="text-[9px] font-black uppercase text-zinc-400 block ml-1">Engineering Dept.:</label>
+                    <Input
+                      placeholder="Insert Details"
+                      className="border-none bg-transparent h-8 text-[11px] font-bold italic focus-visible:ring-0 px-1"
+                      value={designSubmission.details}
+                      onChange={(e) => setDesignSubmission({ ...designSubmission, details: e.target.value })}
+                      disabled={!isAdmin}
+                    />
+                  </div>
+                  <div className="p-2 space-y-2">
+                    <label className="text-[9px] font-black uppercase text-zinc-400 block ml-1">Attach Report:</label>
+                    <div className="bg-zinc-50 border border-dashed border-zinc-300 rounded-lg p-3 flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-zinc-100 transition-colors">
+                      <Input
+                        placeholder="Attach DIAlux Simulation Report Link"
+                        className="bg-white text-[10px] font-bold h-8"
+                        value={designSubmission.reportUrl}
+                        onChange={(e) => setDesignSubmission({ ...designSubmission, reportUrl: e.target.value })}
+                        disabled={!isAdmin}
+                      />
+                      <span className="text-[8px] font-black text-blue-500 uppercase flex items-center gap-1">
+                        <Paperclip size={10} /> {designSubmission.reportUrl ? "Link Updated" : "Paste Simulation Link"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {isAdmin && (
+                  <Button
+                    className="w-full bg-[#00C853] hover:bg-[#00B24A] text-white font-black uppercase text-[10px] h-12 rounded-xl shadow-lg flex items-center justify-center gap-2"
+                    onClick={handleCompleteDesign}
+                    disabled={isProcessingAction}
+                  >
+                    {isProcessingAction ? <Loader2 className="animate-spin" size={16} /> : "Submit"}
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {/* STAGE 5: DISPLAY COMPLETED RESULTS & FINAL SALES ACKNOWLEDGEMENT */}
+            {(status === "COMPLETED" || status === "CLOSED") && data?.designSubmission && (
+              <div className={cn(
+                "rounded-[24px] border-2 p-6 shadow-sm space-y-4",
+                status === "CLOSED" ? "bg-zinc-50 border-zinc-200" : "bg-green-50 border-green-200"
+              )}>
+                <div className="flex items-center justify-between">
+                  <div className={cn("flex items-center gap-2", status === "CLOSED" ? "text-zinc-500" : "text-green-600")}>
+                    {status === "CLOSED" ? <CheckSquare size={18} /> : <CheckCircle2 size={18} />}
+                    <span className="text-[11px] font-black uppercase tracking-widest">
+                      {status === "CLOSED" ? "Project Closed" : "Simulation Delivered"}
+                    </span>
+                  </div>
+                  {status === "CLOSED" && (
+                     <Badge className="bg-zinc-200 text-zinc-600 font-black text-[8px] uppercase">Finalized</Badge>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-[9px] font-black text-zinc-400 uppercase">Engineering Details:</p>
+                    <p className="text-xs font-bold text-zinc-700 bg-white p-3 rounded-lg border border-zinc-100 italic">
+                      "{data.designSubmission.details}"
+                    </p>
+                  </div>
+                  <Button 
+                    className="w-full bg-white hover:bg-zinc-50 text-zinc-900 border border-zinc-200 font-black text-[10px] uppercase h-11 rounded-xl shadow-sm transition-all"
+                    onClick={() => window.open(data.designSubmission.reportUrl, '_blank')}
+                  >
+                    <ExternalLink size={14} className="mr-2" /> View Simulation Report
+                  </Button>
+
+                  {/* SALES FINAL ACKNOWLEDGEMENT BUTTON */}
+                  {status === "COMPLETED" && isSales && (
+                    <Button
+                      className="w-full bg-[#00C853] hover:bg-[#00B24A] text-white font-black text-[10px] uppercase h-11 rounded-xl shadow-lg mt-2 animate-pulse"
+                      onClick={handleFinalAcknowledgement}
+                      disabled={isProcessingAction}
+                    >
+                      {isProcessingAction ? <Loader2 className="animate-spin" size={16} /> : "Acknowledge Delivery & Close Project"}
+                    </Button>
+                  )}
+                  
+                  {status === "COMPLETED" && !isSales && (
+                    <p className="text-[9px] text-center font-bold text-zinc-400 uppercase italic">
+                      Awaiting Sales Acknowledgement to close project.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </main>
       </SidebarInset>
