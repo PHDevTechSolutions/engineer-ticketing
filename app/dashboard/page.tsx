@@ -63,7 +63,7 @@ export default function EngiconnectDashboard() {
     const services = [
         { label: "Site Visit Appointment", icon: CalendarCheck, count: notifications.siteVisit, path: "/appointments/site-visit" },
         { label: "Job Request", icon: FileText, count: notifications.jobRequest, path: "/request/job" },
-        { label: "Dialux Simulation", icon: Monitor, count: 0, path: "/requests/dialux" },
+        { label: "Dialux Simulation", icon: Monitor, count: 0, path: "/request/dialux" },
         { label: "Product Recommendation", icon: ThumbsUp, count: 0, path: "/requests/recommendation" },
         { label: "SPF Shop Drawing Request", icon: StreetLightIcon, count: notifications.shopDrawing, path: "/request/shop-drawing" },
         { label: "Testing Monitoring", icon: ClipboardCheck, count: notifications.testingActive + notifications.testingOverdue, path: "/request/testing" },
