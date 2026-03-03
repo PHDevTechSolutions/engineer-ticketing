@@ -70,7 +70,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // Department Access Control (engiconnect protocol)
-    const allowedDepartments = ["IT", "Sales", "Engineering"];
+    const allowedDepartments = ["IT", "Sales", "Engineering", "Procurement"];
     if (!allowedDepartments.includes(user.Department)) {
       return res.status(403).json({ message: "Access denied: Unauthorized Department." });
     }
