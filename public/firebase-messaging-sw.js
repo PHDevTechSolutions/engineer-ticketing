@@ -1,55 +1,48 @@
+// public/firebase-messaging-sw.js
+
 importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-messaging-compat.js');
 
-// 1. Paste your ACTUAL Main Project config here
+// !!! REPLACE THESE WITH YOUR ACTUAL FIREBASE PROJECT KEYS !!!
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyATdZZ6p4nUwM1fXGHOambj_jhLxbGc08k",
+  authDomain: "engiconnect-b15c6.firebaseapp.com",
+  projectId: "engiconnect-b15c6",
+  storageBucket: "engiconnect-b15c6.firebasestorage.app",
+  messagingSenderId: "238950711944",
+  appId: "1:238950711944:web:f7879997e3441f569dd53d",
+  measurementId: "G-03BP7P26PL"
 };
 
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
-// 2. This handles the notification when the app is CLOSED or in the background
+// Background handler (Handles notifications when the app/browser is closed)
 messaging.onBackgroundMessage((payload) => {
-  console.log('[engiconnect] Background Message:', payload);
-  
-  const notificationTitle = payload.notification.title || "engiconnect Update";
+  const notificationTitle = payload.notification?.title || "EngiConnect Update";
   const notificationOptions = {
-    body: payload.notification.body || "New drawing request received.",
-    icon: '/icons/disruptive.png',
-    badge: '/icons/disruptive.png', // Small icon for the phone's status bar
-    tag: 'drawing-alert', // Prevents multiple notifications from stacking up
+    body: payload.notification?.body || "New update received.",
+    icon: '/icons/icon-192x192.png', // Ensure this file exists in /public
+    badge: '/icons/icon-192x192.png',
+    tag: 'drawing-alert',
     data: {
-      url: '/dashboard' // Where to send the user when they tap
+      url: '/dashboard'
     }
   };
 
   self.registration.showNotification(notificationTitle, notificationOptions);
 });
 
-// 3. The "Action" logic: Opens the app when the user taps the notification
+// Click logic
 self.addEventListener('notificationclick', (event) => {
-  event.notification.close(); // Close the notification popup
-
-  // This tells the phone to open your app and go to the dashboard
+  event.notification.close();
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      // If the app is already open, just focus it
-      for (var i = 0; i < windowClients.length; i++) {
-        var client = windowClients[i];
-        if (client.url === '/' && 'focus' in client) {
-          return client.focus();
-        }
+      // Logic to focus an existing tab or open a new window
+      if (windowClients.length > 0) {
+        return windowClients[0].focus();
       }
-      // If the app is closed, open it to the dashboard
-      if (clients.openWindow) {
-        return clients.openWindow('/dashboard');
-      }
+      return clients.openWindow(event.notification.data.url || '/dashboard');
     })
   );
 });
