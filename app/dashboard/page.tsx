@@ -30,11 +30,9 @@ export default function EngiconnectDashboard() {
     const [currentTime, setCurrentTime] = useState(new Date())
     const [weather, setWeather] = useState({ temp: "--", condition: "Syncing...", code: 0 });
 
-    // Paging State for Services
     const [currentPage, setCurrentPage] = useState(0);
     const scrollRef = useRef<HTMLDivElement>(null);
 
-    // Activity Tabs State
     const [activeTab, setActiveTab] = useState("Monitoring");
     const tabs = ["Monitoring", "Projects", "Requests", "Admin"];
 
@@ -188,39 +186,49 @@ export default function EngiconnectDashboard() {
             setNotifications(prev => ({ ...prev, testingActive: active, testingOverdue: overdue }));
         });
 
-        const unsubMessages = onSnapshot(collection(db, "shop_drawing_requests"), (snap) => {
-            let shopUnread = 0;
-            snap.docs.forEach(doc => {
+        const calculateUnread = (snap: any) => {
+            let count = 0;
+            snap.docs.forEach((doc: any) => {
                 const data = doc.data();
                 if (data.messages && Array.isArray(data.messages)) {
-                    // Using the map in database to compare timestamps
                     const lastSeenValue = data.lastSeenBy?.[userId];
                     const lastSeenTime = lastSeenValue ? new Date(lastSeenValue).getTime() : 0;
-                    
-                    const unread = data.messages.filter((m: any) => {
+                    count += data.messages.filter((m: any) => {
                         const messageTime = new Date(m.time).getTime();
                         return m.senderId !== userId && messageTime > lastSeenTime;
                     }).length;
-                    shopUnread += unread;
                 }
             });
-            setNotifications(prev => {
-                const updatedUnreadByService = { ...prev.unreadByService, shopDrawing: shopUnread };
-                const totalUnread = Object.values(updatedUnreadByService).reduce((a, b) => a + b, 0);
-                return { 
-                    ...prev, 
-                    unreadByService: updatedUnreadByService,
-                    unreadMessages: totalUnread
-                };
-            });
+            return count;
+        };
+
+        const unsubMsgShop = onSnapshot(collection(db, "shop_drawing_requests"), (snap) => {
+            setNotifications(prev => ({ ...prev, unreadByService: { ...prev.unreadByService, shopDrawing: calculateUnread(snap) } }));
+        });
+
+        const unsubMsgDialux = onSnapshot(collection(db, "dialux_requests"), (snap) => {
+            setNotifications(prev => ({ ...prev, unreadByService: { ...prev.unreadByService, dialux: calculateUnread(snap) } }));
+        });
+
+        const unsubMsgJob = onSnapshot(collection(db, "job_requests"), (snap) => {
+            setNotifications(prev => ({ ...prev, unreadByService: { ...prev.unreadByService, jobRequest: calculateUnread(snap) } }));
+        });
+
+        const unsubMsgSite = onSnapshot(collection(db, "appointments"), (snap) => {
+            setNotifications(prev => ({ ...prev, unreadByService: { ...prev.unreadByService, siteVisit: calculateUnread(snap) } }));
         });
 
         return () => { 
             unsubSite(); unsubShop(); unsubTesting(); unsubJob(); unsubOther(); 
             unsubDialuxPending(); unsubDialuxProgress(); unsubDialuxDone();
-            unsubMessages();
+            unsubMsgShop(); unsubMsgDialux(); unsubMsgJob(); unsubMsgSite();
         };
     }, [userId]);
+
+    useEffect(() => {
+        const total = Object.values(notifications.unreadByService).reduce((a, b) => a + b, 0);
+        setNotifications(prev => ({ ...prev, unreadMessages: total }));
+    }, [notifications.unreadByService]);
 
     useEffect(() => {
         if (!db) return;
@@ -255,6 +263,7 @@ export default function EngiconnectDashboard() {
                 <AppSidebar userId={userId} />
                 <SidebarInset className="bg-[#F2F4F7] relative min-h-screen font-sans pb-safe">
 
+                    {/* Desktop Header */}
                     <header className="hidden md:flex h-20 items-center justify-between px-8 bg-white border-b border-gray-100 sticky top-0 z-50">
                         <div className="flex items-center gap-6">
                             <div className="flex items-center gap-4">
@@ -280,7 +289,11 @@ export default function EngiconnectDashboard() {
                         <div className="flex items-center gap-4">
                             <button onClick={() => router.push('/messages')} className="p-2.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all relative">
                                 <MessageSquare size={20} />
-                                {notifications.unreadMessages > 0 && <span className="absolute top-2.5 right-2.5 size-2 bg-blue-600 rounded-full border-2 border-white animate-pulse" />}
+                                {notifications.unreadMessages > 0 && (
+                                    <span className="absolute -top-1 -right-1 flex min-w-[20px] h-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white border-2 border-white px-1">
+                                        {notifications.unreadMessages}
+                                    </span>
+                                )}
                             </button>
                             <button className="p-2.5 text-gray-400 hover:text-[#E33636] hover:bg-red-50 rounded-xl transition-all relative">
                                 <Bell size={20} />
@@ -300,6 +313,7 @@ export default function EngiconnectDashboard() {
                         </div>
                     </header>
 
+                    {/* Mobile Header */}
                     <header className="md:hidden bg-[#E33636] pt-14 pb-20 px-6 rounded-b-[40px] shadow-lg relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-24 -mt-24" />
                         <div className="max-w-7xl mx-auto relative z-10">
@@ -320,7 +334,11 @@ export default function EngiconnectDashboard() {
                                 <div className="flex gap-2">
                                     <button onClick={() => router.push('/messages')} className="p-2.5 bg-white/10 rounded-full border border-white/10 text-white relative">
                                         <MessageSquare size={18} />
-                                        {notifications.unreadMessages > 0 && <span className="absolute top-2 right-2.5 size-2 bg-blue-400 rounded-full border-2 border-[#E33636]" />}
+                                        {notifications.unreadMessages > 0 && (
+                                            <span className="absolute -top-1 -right-1 flex min-w-[16px] h-4 items-center justify-center rounded-full bg-blue-400 text-[9px] font-bold text-white border-2 border-[#E33636] px-0.5">
+                                                {notifications.unreadMessages}
+                                            </span>
+                                        )}
                                     </button>
                                     <button className="p-2.5 bg-white/10 rounded-full border border-white/10 text-white relative">
                                         <Bell size={18} />
@@ -351,6 +369,7 @@ export default function EngiconnectDashboard() {
                     </header>
 
                     <main className="px-4 -mt-8 space-y-8 pb-32 relative z-20 md:mt-0 md:px-12 md:py-10">
+                        {/* Service Grid Section */}
                         <section>
                             <div className="bg-white rounded-[24px] py-6 pb-6 px-4 shadow-sm border border-gray-100">
                                 <div className="md:hidden">
@@ -365,7 +384,7 @@ export default function EngiconnectDashboard() {
                                                     <button key={i} onClick={() => router.push(service.path)} className="flex flex-col items-center">
                                                         <div className="size-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-3 active:scale-95 transition-all relative">
                                                             <service.icon className="text-[#E33636]" size={28} />
-                                                            {service.count > 0 && <span className="absolute -top-1 -right-1 bg-[#E33636] text-white text-[10px] size-5 rounded-full flex items-center justify-center font-bold border-2 border-white">{service.count}</span>}
+                                                            {service.count > 0 && <span className="absolute -top-1 -right-1 bg-[#E33636] text-white text-[10px] min-w-[20px] h-5 px-1 rounded-full flex items-center justify-center font-bold border-2 border-white">{service.count}</span>}
                                                             {service.msgCount > 0 && <span className="absolute -bottom-1 -left-1 bg-blue-600 text-white text-[9px] size-5 rounded-full flex items-center justify-center font-bold border-2 border-white"><MessageSquare size={10} fill="currentColor" /></span>}
                                                         </div>
                                                         <span className="text-[11px] font-bold text-gray-600 text-center leading-tight px-1">{service.label}</span>
@@ -386,7 +405,7 @@ export default function EngiconnectDashboard() {
                                         <button key={i} onClick={() => router.push(service.path)} className="flex flex-col items-center group">
                                             <div className="size-14 bg-gray-50 rounded-xl flex items-center justify-center mb-2 group-hover:bg-red-50 transition-all relative">
                                                 <service.icon className="text-[#E33636]" size={24} />
-                                                {service.count > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[9px] size-5 rounded-full flex items-center justify-center font-bold border-2 border-white">{service.count}</span>}
+                                                {service.count > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[9px] min-w-[20px] h-5 px-1 rounded-full flex items-center justify-center font-bold border-2 border-white">{service.count}</span>}
                                                 {service.msgCount > 0 && <span className="absolute -bottom-1.5 -left-1.5 bg-blue-600 text-white text-[9px] size-5 rounded-full flex items-center justify-center font-bold border-2 border-white shadow-md animate-bounce"><MessageSquare size={10} fill="currentColor" /></span>}
                                             </div>
                                             <span className="text-[10px] font-bold text-gray-500 text-center">{service.label}</span>
@@ -396,6 +415,7 @@ export default function EngiconnectDashboard() {
                             </div>
                         </section>
 
+                        {/* Summary Stats */}
                         <section className="grid grid-cols-3 gap-3">
                              <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center">
                                 <span className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">Total Pending</span>
@@ -417,31 +437,39 @@ export default function EngiconnectDashboard() {
                              </div>
                         </section>
 
+                        {/* Updated Internal Communication / Collaboration Clusters */}
                         <section className="space-y-4">
                             <div className="flex items-center justify-between">
-                                <h2 className="text-lg font-bold text-gray-900 tracking-tight">Internal Communication</h2>
+                                <h2 className="text-lg font-bold text-gray-900 tracking-tight">Collaboration Clusters</h2>
                                 <button onClick={() => router.push('/messages')} className="text-[10px] font-bold text-blue-600 uppercase tracking-wider flex items-center gap-1">
                                     Open Inbox <MessageSquare size={12} />
                                 </button>
                             </div>
                             <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col items-center justify-center space-y-3">
-                                <div className="flex items-center gap-6">
+                                <div className="flex items-center gap-6 overflow-x-auto no-scrollbar w-full justify-center">
                                     {Object.entries(notifications.unreadByService).map(([service, count]) => (
                                         count > 0 && (
-                                            <div key={service} className="flex flex-col items-center">
+                                            <button 
+                                                key={service} 
+                                                onClick={() => router.push(`/messages?filter=${service}`)} 
+                                                className="flex flex-col items-center active:scale-95 transition-transform"
+                                            >
                                                 <div className="size-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center relative mb-1">
                                                     <MessageSquare size={20} fill="currentColor" />
-                                                    <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-[8px] size-4 rounded-full flex items-center justify-center border-2 border-white">{count}</span>
+                                                    <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-[8px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center border-2 border-white font-bold">
+                                                        {count}
+                                                    </span>
                                                 </div>
-                                                <span className="text-[8px] font-black text-gray-400 uppercase">{service}</span>
-                                            </div>
+                                                <span className="text-[8px] font-black text-gray-400 uppercase">{service.replace(/([A-Z])/g, ' $1').trim()}</span>
+                                            </button>
                                         )
                                     ))}
-                                    {notifications.unreadMessages === 0 && <p className="text-[10px] font-bold text-gray-400 uppercase italic">No new internal messages</p>}
+                                    {notifications.unreadMessages === 0 && <p className="text-[10px] font-bold text-gray-400 uppercase italic">All conversations read</p>}
                                 </div>
                             </div>
                         </section>
 
+                        {/* Recent Activity */}
                         <section className="space-y-4">
                             <div className="flex items-center justify-between">
                                 <h2 className="text-lg font-bold text-gray-900 tracking-tight">Recent Activity</h2>
@@ -481,6 +509,7 @@ export default function EngiconnectDashboard() {
                             </div>
                         </section>
 
+                        {/* Overview Tabs */}
                         <section className="space-y-4 px-2">
                             <div className="flex flex-col gap-4">
                                 <div className="flex items-end justify-between">
