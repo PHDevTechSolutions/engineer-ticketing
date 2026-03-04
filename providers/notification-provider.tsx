@@ -20,14 +20,22 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     const [permission, setPermission] = useState<NotificationPermission | "unsupported">("default");
     const [isSyncing, setIsSyncing] = useState(false);
 
-    // --- 1. CORE SYNC LOGIC ---
+    // --- SSR SAFE HELPER ---
+    const getLocalData = (key: string) => {
+        if (typeof window !== "undefined") {
+            return localStorage.getItem(key);
+        }
+        return null;
+    };
+
+    // --- 1. CORE SYNC LOGIC (The "iPhone Fix") ---
     const handleSyncPush = async () => {
-        const userId = localStorage.getItem("userId");
+        const userId = getLocalData("userId");
         if (!userId) return;
 
         setIsSyncing(true);
         try {
-            if (!("serviceWorker" in navigator)) return;
+            if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
 
             // Register SW
             await navigator.serviceWorker.register("/firebase-messaging-sw.js");
@@ -67,11 +75,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
     // --- 2. INITIALIZATION & FOREGROUND FCM ---
     useEffect(() => {
-        const rawDept = localStorage.getItem("department");
+        const rawDept = getLocalData("department");
         if (rawDept?.toUpperCase() !== "ENGINEERING") return;
 
-        // Check current status on load
-        if ("Notification" in window) {
+        // Check current status on load (Client Side Only)
+        if (typeof window !== "undefined" && "Notification" in window) {
             setPermission(Notification.permission);
             navigator.serviceWorker.getRegistration().then(reg => {
                 reg?.pushManager.getSubscription().then(sub => setIsSubscribed(!!sub));
@@ -89,12 +97,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         }
     }, []);
 
-    // --- 3. FIRESTORE LIVE LEDGER LISTENER (For Active App Use) ---
+    // --- 3. FIRESTORE LIVE LEDGER LISTENER ---
     useEffect(() => {
-        const rawDept = localStorage.getItem("department");
+        const rawDept = getLocalData("department");
         if (rawDept?.toUpperCase() !== "ENGINEERING") return;
 
-        if (!audioRef.current) {
+        if (!audioRef.current && typeof window !== "undefined") {
             audioRef.current = new Audio("/sounds/ticket-endorsed.mp3");
             audioRef.current.load();
         }
@@ -155,7 +163,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
     // --- 4. STATUS UI ---
     const renderStatusBadge = () => {
-        const rawDept = localStorage.getItem("department");
+        const rawDept = getLocalData("department");
         if (rawDept?.toUpperCase() !== "ENGINEERING" || pathname !== "/dashboard") return null;
 
         return (
