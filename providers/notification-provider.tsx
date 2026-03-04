@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { db, getMessagingInstance } from "@/lib/firebase"; 
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { getToken } from "firebase/messaging";
+import { getToken, onMessage } from "firebase/messaging"; // Added onMessage
 import { toast } from "sonner";
 import { BellOff, CheckCircle2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -23,10 +23,26 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
     useEffect(() => {
         setIsMounted(true);
+        
+        // Setup Foreground Listener
+        const setupForegroundListener = async () => {
+            const messaging = await getMessagingInstance();
+            if (messaging) {
+                // This catches the notification while the app is OPEN
+                onMessage(messaging, (payload) => {
+                    addLog("Foreground Message Received!");
+                    toast.success(payload.notification?.title || "New Message", {
+                        description: payload.notification?.body,
+                    });
+                });
+            }
+        };
+
         if (typeof window !== "undefined" && "Notification" in window) {
             navigator.serviceWorker.getRegistration().then(reg => {
                 reg?.pushManager.getSubscription().then(sub => setIsSubscribed(!!sub));
             });
+            setupForegroundListener();
         }
     }, []);
 
@@ -53,7 +69,6 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
             if (!fcmToken) throw new Error("Token failed");
 
             addLog("Saving to Main Firestore...");
-            // Saves to the 'users' collection in the MAIN project
             await setDoc(doc(db, "users", userId), {
                 fcmToken,
                 notificationsEnabled: true,
