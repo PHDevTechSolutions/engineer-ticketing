@@ -32,8 +32,10 @@ export default function EngiconnectDashboard() {
 
     const [currentPage, setCurrentPage] = useState(0);
     const scrollRef = useRef<HTMLDivElement>(null);
+    const notifRef = useRef<HTMLDivElement>(null);
 
     const [activeTab, setActiveTab] = useState("Monitoring");
+    const [showNotifDropdown, setShowNotifDropdown] = useState(false);
     const tabs = ["Monitoring", "Projects", "Requests", "Admin"];
 
     const [userDetails, setUserDetails] = useState({
@@ -88,6 +90,16 @@ export default function EngiconnectDashboard() {
         const page = Math.round(scrollLeft / width);
         setCurrentPage(page);
     };
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+                setShowNotifDropdown(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
 
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 1000)
@@ -187,19 +199,24 @@ export default function EngiconnectDashboard() {
         });
 
         const calculateUnread = (snap: any) => {
-            let count = 0;
+            let totalUnreadInService = 0;
             snap.docs.forEach((doc: any) => {
                 const data = doc.data();
+                // Safety check for old data structure
                 if (data.messages && Array.isArray(data.messages)) {
                     const lastSeenValue = data.lastSeenBy?.[userId];
                     const lastSeenTime = lastSeenValue ? new Date(lastSeenValue).getTime() : 0;
-                    count += data.messages.filter((m: any) => {
+                    
+                    const unreadInDoc = data.messages.filter((m: any) => {
+                        if (!m.time || !m.senderId) return false;
                         const messageTime = new Date(m.time).getTime();
                         return m.senderId !== userId && messageTime > lastSeenTime;
                     }).length;
+                    
+                    totalUnreadInService += unreadInDoc;
                 }
             });
-            return count;
+            return totalUnreadInService;
         };
 
         const unsubMsgShop = onSnapshot(collection(db, "shop_drawing_requests"), (snap) => {
@@ -290,15 +307,63 @@ export default function EngiconnectDashboard() {
                             <button onClick={() => router.push('/messages')} className="p-2.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all relative">
                                 <MessageSquare size={20} />
                                 {notifications.unreadMessages > 0 && (
-                                    <span className="absolute -top-1 -right-1 flex min-w-[20px] h-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white border-2 border-white px-1">
+                                    <span className="absolute -top-1 -right-1 flex min-w-[20px] h-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white border-2 border-white px-1 shadow-sm">
                                         {notifications.unreadMessages}
                                     </span>
                                 )}
                             </button>
-                            <button className="p-2.5 text-gray-400 hover:text-[#E33636] hover:bg-red-50 rounded-xl transition-all relative">
-                                <Bell size={20} />
-                                {totalNotifications > 0 && <span className="absolute top-2.5 right-2.5 size-2 bg-[#E33636] rounded-full border-2 border-white" />}
-                            </button>
+                            
+                            {/* Functional Notification Bell with Bubble (Desktop) */}
+                            <div className="relative" ref={notifRef}>
+                                <button 
+                                    onClick={() => setShowNotifDropdown(!showNotifDropdown)}
+                                    className={cn(
+                                        "p-2.5 rounded-xl transition-all relative",
+                                        showNotifDropdown ? "bg-red-50 text-[#E33636]" : "text-gray-400 hover:text-[#E33636] hover:bg-red-50"
+                                    )}
+                                >
+                                    <Bell size={20} />
+                                    {totalNotifications > 0 && (
+                                        <span className="absolute -top-1 -right-1 flex min-w-[20px] h-5 items-center justify-center rounded-full bg-[#E33636] text-[10px] font-bold text-white border-2 border-white px-1 shadow-sm">
+                                            {totalNotifications}
+                                        </span>
+                                    )}
+                                </button>
+
+                                {showNotifDropdown && (
+                                    <div className="absolute right-0 mt-3 w-80 bg-white rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.15)] border border-gray-100 py-4 z-[60] animate-in fade-in zoom-in duration-200">
+                                        <div className="px-5 pb-3 border-b border-gray-50 flex justify-between items-center">
+                                            <h3 className="font-bold text-gray-900 text-sm">Notifications</h3>
+                                            <span className="text-[10px] bg-red-100 text-[#E33636] px-2 py-0.5 rounded-full font-black uppercase">
+                                                {totalNotifications} Alerts
+                                            </span>
+                                        </div>
+                                        <div className="max-h-[380px] overflow-y-auto no-scrollbar py-2">
+                                            {totalNotifications === 0 ? (
+                                                <div className="py-10 text-center">
+                                                    <p className="text-[10px] text-gray-400 font-bold uppercase italic">No pending tasks</p>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    {notifications.siteVisit > 0 && <NotifItem label="Site Visits" count={notifications.siteVisit} icon={CalendarCheck} path="/appointments/site-visit" onClick={() => setShowNotifDropdown(false)} />}
+                                                    {notifications.jobRequest > 0 && <NotifItem label="Job Requests" count={notifications.jobRequest} icon={FileText} path="/request/job" onClick={() => setShowNotifDropdown(false)} />}
+                                                    {notifications.shopDrawing > 0 && <NotifItem label="Shop Drawings" count={notifications.shopDrawing} icon={StreetLightIcon} path="/request/shop-drawing" onClick={() => setShowNotifDropdown(false)} />}
+                                                    {notifications.testingOverdue > 0 && <NotifItem label="Testing Critical" count={notifications.testingOverdue} icon={AlertTriangle} path="/request/testing" color="text-red-600" onClick={() => setShowNotifDropdown(false)} />}
+                                                    {notifications.dialuxRequest > 0 && <NotifItem label="DIAlux Requests" count={notifications.dialuxRequest} icon={Monitor} path="/request/dialux" onClick={() => setShowNotifDropdown(false)} />}
+                                                    {notifications.otherRequest > 0 && <NotifItem label="Misc Requests" count={notifications.otherRequest} icon={MoreHorizontal} path="/request/other" onClick={() => setShowNotifDropdown(false)} />}
+                                                </>
+                                            )}
+                                        </div>
+                                        <button 
+                                            onClick={() => { router.push('/notifications'); setShowNotifDropdown(false); }}
+                                            className="w-full mt-2 pt-3 border-t border-gray-50 text-center text-[10px] font-bold text-[#E33636] uppercase tracking-widest hover:bg-gray-50 py-2 transition-colors"
+                                        >
+                                            View Full History
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
                             <div className="flex items-center gap-4 px-4 py-2 bg-gray-50 rounded-xl border border-gray-100">
                                 <div className="flex items-center gap-2">
                                     <div className="size-2 bg-green-500 rounded-full animate-pulse" />
@@ -335,14 +400,19 @@ export default function EngiconnectDashboard() {
                                     <button onClick={() => router.push('/messages')} className="p-2.5 bg-white/10 rounded-full border border-white/10 text-white relative">
                                         <MessageSquare size={18} />
                                         {notifications.unreadMessages > 0 && (
-                                            <span className="absolute -top-1 -right-1 flex min-w-[16px] h-4 items-center justify-center rounded-full bg-blue-400 text-[9px] font-bold text-white border-2 border-[#E33636] px-0.5">
+                                            <span className="absolute -top-1 -right-1 flex min-w-[16px] h-4 items-center justify-center rounded-full bg-blue-400 text-[9px] font-bold text-white border-2 border-[#E33636] px-0.5 shadow-sm">
                                                 {notifications.unreadMessages}
                                             </span>
                                         )}
                                     </button>
-                                    <button className="p-2.5 bg-white/10 rounded-full border border-white/10 text-white relative">
+                                    {/* Mobile Bell with Bubble */}
+                                    <button onClick={() => router.push('/notifications')} className="p-2.5 bg-white/10 rounded-full border border-white/10 text-white relative">
                                         <Bell size={18} />
-                                        {totalNotifications > 0 && <span className="absolute top-2 right-2.5 size-2 bg-yellow-400 rounded-full border-2 border-[#E33636]" />}
+                                        {totalNotifications > 0 && (
+                                            <span className="absolute -top-1 -right-1 flex min-w-[16px] h-4 items-center justify-center rounded-full bg-yellow-400 text-[9px] font-bold text-[#E33636] border-2 border-[#E33636] px-0.5 shadow-sm">
+                                                {totalNotifications}
+                                            </span>
+                                        )}
                                     </button>
                                     <SidebarTrigger className="p-2.5 bg-white text-[#E33636] rounded-full shadow-lg" />
                                 </div>
@@ -437,7 +507,7 @@ export default function EngiconnectDashboard() {
                              </div>
                         </section>
 
-                        {/* Updated Internal Communication / Collaboration Clusters */}
+                        {/* Collaboration Clusters */}
                         <section className="space-y-4">
                             <div className="flex items-center justify-between">
                                 <h2 className="text-lg font-bold text-gray-900 tracking-tight">Collaboration Clusters</h2>
@@ -479,7 +549,7 @@ export default function EngiconnectDashboard() {
                             </div>
                             <div className="space-y-3">
                                 {recentActivity.length > 0 ? recentActivity.map((item) => (
-                                    <div key={item.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between group active:scale-[0.98] transition-all" 
+                                    <div key={item.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between group active:scale-[0.98] transition-all cursor-pointer" 
                                          onClick={() => {
                                              const paths: Record<string, string> = { 'DIAlux': `/request/dialux/${item.id}`, 'Job': `/request/job/${item.id}`, 'Shop': `/request/shop-drawing/${item.id}` };
                                              router.push(paths[item.type] || '#');
@@ -569,4 +639,27 @@ function ActivityCard({ label, value, icon: Icon, isAlert }: { label: string, va
             {isAlert && <div className="absolute top-0 right-0 size-1.5 bg-red-500 rounded-bl-lg animate-pulse" />}
         </div>
     )
+}
+
+function NotifItem({ label, count, icon: Icon, path, color = "text-gray-900", onClick }: any) {
+    const router = useRouter();
+    return (
+        <button 
+            onClick={() => { router.push(path); onClick(); }}
+            className="w-full px-5 py-3 hover:bg-gray-50 flex items-center justify-between group transition-colors border-b border-gray-50 last:border-0"
+        >
+            <div className="flex items-center gap-3">
+                <div className="size-8 bg-gray-50 rounded-lg flex items-center justify-center text-[#E33636] group-hover:bg-red-50">
+                    <Icon size={16} />
+                </div>
+                <p className={cn("text-[10px] font-bold uppercase tracking-tight", color)}>{label}</p>
+            </div>
+            <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black text-gray-400 bg-gray-100 px-2 py-0.5 rounded-md group-hover:bg-red-100 group-hover:text-[#E33636]">
+                    {count}
+                </span>
+                <ChevronRight size={12} className="text-gray-300 group-hover:translate-x-0.5 transition-transform" />
+            </div>
+        </button>
+    );
 }

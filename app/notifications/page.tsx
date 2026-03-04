@@ -43,7 +43,7 @@ export default function NotificationsPage() {
         setUserId(localStorage.getItem("userId"))
     }, [])
 
-    // Functional icon mapping for streetlights
+    // Functional icon mapping for streetlights (consistent with your dashboard)
     const StreetLightIcon = ({ size = 24, className = "" }) => (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
             <path d="M7 22h3M9 22V7c0-2 1-3 3-3h5" /><path d="M15 4h5l1 2h-7l1-2z" /><path d="M17 9v1M14 8l-.5.5M20 8l.5.5" opacity="0.5" />
@@ -53,6 +53,7 @@ export default function NotificationsPage() {
     useEffect(() => {
         if (!db) return;
 
+        // Real-time listeners for all pending categories
         const unsubSite = onSnapshot(query(collection(db, "appointments"), where("status", "==", "PENDING")), 
             (snap) => setCounts(prev => ({ ...prev, siteVisit: snap.size })));
         
@@ -68,6 +69,7 @@ export default function NotificationsPage() {
         const unsubOther = onSnapshot(query(collection(db, "other_requests"), where("status", "==", "PENDING")), 
             (snap) => setCounts(prev => ({ ...prev, otherRequest: snap.size })));
 
+        // Logic for testing overdue (simplified for notification summary)
         const unsubTesting = onSnapshot(collection(db, "testing_tracker"), (snap) => {
             const today = new Date();
             const overdue = snap.docs.filter(doc => {
