@@ -11,6 +11,7 @@ import { getToken, onMessage } from "firebase/messaging";
 import { toast } from "sonner";
 import { X, ExternalLink, BellRing, BellOff, CheckCircle2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { subscribeUserToPush } from "@/lib/push-subscription";
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
     const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -52,7 +53,6 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
             });
         }
 
-        // Initialize Audio for Shop Drawing Alerts
         if (department === "ENGINEERING" && !audioRef.current) {
             audioRef.current = new Audio("/sounds/ticket-endorsed.mp3");
             audioRef.current.load();
@@ -64,7 +64,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         const department = localStorage.getItem("department")?.toUpperCase();
         if (department !== "ENGINEERING") return;
 
-        addLog("Starting Live Ledger Listener...");
+        addLog("Live Ledger Active");
         const q = query(
             collection(db, "shop_drawing_requests"),
             where("department", "==", "ENGINEERING"),
@@ -88,41 +88,48 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         return () => unsubscribe();
     }, [pathname]);
 
-    // --- 3. RELIABLE SYNC LOGIC ---
+    // --- 3. UPDATED SYNC LOGIC (The Reference Strategy) ---
     const handleSyncPush = async () => {
         const userId = localStorage.getItem("userId");
         if (!userId) return addLog("Error: No userId. Please re-login.");
 
         setIsSyncing(true);
-        addLog("Syncing with Main Project...");
+        addLog("Syncing Device...");
 
         try {
             const messaging = await getMessagingInstance();
             if (!messaging) throw new Error("Messaging unsupported");
 
-            await navigator.serviceWorker.register("/firebase-messaging-sw.js");
+            // Register service worker explicitly
+            const registration = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
             
             const permission = await Notification.requestPermission();
             if (permission !== "granted") throw new Error("Permission denied");
 
+            // Get the FCM Token for normal operations
             const fcmToken = await getToken(messaging, {
                 vapidKey: process.env.NEXT_PUBLIC_VAPID_KEY?.trim(),
             });
 
+            // Get the Full VAPID Subscription (Reference Code Strategy)
+            const fullSubscription = await subscribeUserToPush();
+
             if (!fcmToken) throw new Error("Token generation failed");
 
-            addLog("Saving to Main Firestore...");
-            // Use setDoc + merge to ensure the record is created/updated safely
+            addLog("Updating Firestore Profile...");
+            
             await setDoc(doc(db, "users", userId), {
                 fcmToken,
+                // We store the full object as a string/json for maximum backup
+                pushSubscription: JSON.parse(JSON.stringify(fullSubscription)),
                 notificationsEnabled: true,
                 updatedAt: serverTimestamp(),
-                platform: "web-ios",
+                platform: "web-ios-pwa",
                 lastPushSync: new Date().toISOString()
             }, { merge: true });
 
             setIsSubscribed(true);
-            addLog("SUCCESS: Device Synced!");
+            addLog("SUCCESS: Device fully synced");
             toast.success("Notifications Active");
         } catch (err: any) {
             addLog(`FAILED: ${err.message}`);

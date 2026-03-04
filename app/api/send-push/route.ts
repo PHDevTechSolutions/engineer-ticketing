@@ -26,36 +26,32 @@ export async function POST(request: Request) {
     const message: any = {
       notification: {
         title: title || "New Notification",
-        body: body || "You have a new update in EngiConnect.",
+        body: body || "Update in EngiConnect",
       },
       data: {
         url: "/request/shop-drawing",
       },
       tokens: tokens,
-      // CRITICAL FOR iOS BACKGROUND/LOCK SCREEN
       apns: {
         payload: {
           aps: {
             sound: "default",
             badge: 1,
-            // 'content-available': 1 is the key for background wake-up
-            "content-available": 1,
-            mutableContent: true,
+            "content-available": 1, // Critical for background wake-up
+            "mutable-content": 1,   // Allows Service Worker to modify alert
           },
         },
         headers: {
-          // '10' is High Priority. This wakes the screen immediately.
-          "apns-priority": "10",
+          "apns-priority": "10",     // High priority to bypass battery saving
           "apns-push-type": "alert",
-          "apns-topic": "com.engiconnect.app", // Use your bundle ID or delete this line
         },
       },
-      // Settings for Android devices
       android: {
         priority: "high",
         notification: {
           sound: "default",
-          clickAction: "OPEN_ACTIVITY_1",
+          defaultSound: true,
+          notificationPriority: "priority_max",
         },
       },
     };
@@ -65,7 +61,6 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       successCount: response.successCount,
-      failureCount: response.failureCount,
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
