@@ -175,12 +175,10 @@ export default function CompleteShopDrawingProtocol() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  // page.tsx (Updated handleSubmit)
-
   const handleSubmit = async () => {
     if (isSubmitting || !currentUserId) return;
     setIsSubmitting(true);
-    const toastId = toast.loading("Saving and notifying Engineering...");
+    const toastId = toast.loading("Saving and notifying team...");
 
     try {
       const payload = {
@@ -197,29 +195,25 @@ export default function CompleteShopDrawingProtocol() {
       // 1. Save to Firestore
       await addDoc(collection(db, "shop_drawing_requests"), payload);
 
-      // 2. Gather Engineering FCM Tokens
-      // We import these dynamically to keep the initial load light
-      const { getDocs, query, where, collection: firestoreColl } = await import("firebase/firestore");
-      const userQuery = query(
-        firestoreColl(db, "users"),
-        where("department", "==", "ENGINEERING")
-      );
-
+      // 2. Fetch Engineering tokens to notify the team
+      const { getDocs, query, where, collection: coll } = await import("firebase/firestore");
+      const userQuery = query(coll(db, "users"), where("department", "==", "ENGINEERING"));
       const userSnapshot = await getDocs(userQuery);
+
       const tokens: string[] = [];
       userSnapshot.forEach(doc => {
-        const data = doc.data();
-        if (data.fcmToken) tokens.push(data.fcmToken);
+        const token = doc.data().fcmToken;
+        if (token) tokens.push(token);
       });
 
-      // 3. Trigger the Push Notification via your new API
+      // 3. Trigger the Push Notification
       if (tokens.length > 0) {
         await fetch("/api/send-push", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            title: "New Shop Drawing Submitted",
-            body: `Project: ${payload.projectName}. Review required.`,
+            title: "New Shop Drawing!",
+            body: `Project: ${payload.projectName} requires review.`,
             tokens: tokens
           })
         });
@@ -228,7 +222,6 @@ export default function CompleteShopDrawingProtocol() {
       toast.success("Protocol saved & Team Notified!", { id: toastId });
       setTimeout(() => router.push("/request/shop-drawing"), 800);
     } catch (e) {
-      console.error("Submission Error:", e);
       toast.error("Failed to save.", { id: toastId });
     } finally {
       setIsSubmitting(false);
