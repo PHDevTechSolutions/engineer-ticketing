@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { db, messaging } from "@/lib/firebase"; 
 import { collection, query, where, onSnapshot, limit, doc, updateDoc, arrayUnion } from "firebase/firestore";
 import { getToken, onMessage } from "firebase/messaging";
+import { subscribeUserToPush } from "@/lib/push-subscription";
 import { toast } from "sonner";
 import { X, ExternalLink, BellRing } from "lucide-react";
 
@@ -13,42 +14,49 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const playedIdsRef = useRef<string[]>([]);
   const pathname = usePathname();
 
+  // --- EFFECT 1: SERVICE WORKER & PUSH REGISTRATION ---
   useEffect(() => {
-    const rawDept = localStorage.getItem("department");
     const userId = localStorage.getItem("userId");
-    const dept = rawDept?.toUpperCase();
+    const rawDept = localStorage.getItem("department");
+    if (!userId || rawDept?.toUpperCase() !== "ENGINEERING") return;
 
-    if (dept !== "ENGINEERING") return;
-
-    // --- 1. SERVICE WORKER REGISTRATION (The "Waker") ---
-    if ("serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
-        navigator.serviceWorker
-          .register("/firebase-messaging-sw.js")
-          .then((reg) => console.log("Night Watchman (SW) Ready:", reg.scope))
-          .catch((err) => console.error("SW Registration failed:", err));
-      });
-    }
-
-    // --- 2. PUSH NOTIFICATION SETUP ---
     const setupPushNotifications = async () => {
       try {
-        const permission = await Notification.requestPermission();
-        
-        if (permission === "granted" && messaging) {
-          const token = await getToken(messaging, {
-            vapidKey: "YOUR_PUBLIC_VAPID_KEY_HERE", // Replace this with your actual key
-          });
+        if ("serviceWorker" in navigator) {
+          // 1. Register/Verify Service Worker
+          const registration = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
+          console.log("Push Guard Active:", registration.scope);
 
-          if (token && userId) {
-            console.log("Device Token found:", token);
-            const userRef = doc(db, "users", userId);
-            await updateDoc(userRef, {
-              notificationTokens: arrayUnion(token),
-              notificationsEnabled: true,
-              lastPushSync: new Date().toISOString()
+          // 2. Request Permissions
+          const permission = await Notification.requestPermission();
+          if (permission !== "granted") {
+            console.warn("Notification permission denied by user");
+            return;
+          }
+
+          // 3. Get Browser Push Subscription
+          const subscription = await subscribeUserToPush();
+
+          // 4. Get FCM Token
+          let fcmToken = null;
+          if (messaging) {
+            fcmToken = await getToken(messaging, {
+              vapidKey: process.env.NEXT_PUBLIC_VAPID_KEY,
             });
           }
+
+          // 5. Sync to Firestore
+          const userRef = doc(db, "users", userId);
+          const updateData: any = {
+            notificationsEnabled: true,
+            lastPushSync: new Date().toISOString()
+          };
+
+          if (subscription) updateData.pushSubscription = JSON.parse(JSON.stringify(subscription));
+          if (fcmToken) updateData.fcmToken = fcmToken;
+
+          await updateDoc(userRef, updateData);
+          console.log("Device synchronized with Engineering Push Server");
         }
       } catch (err) {
         console.error("Push setup issue:", err);
@@ -57,20 +65,19 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
     setupPushNotifications();
 
-    // Foreground listener
+    // Foreground listener for FCM messages
     if (messaging) {
       const unsubscribeOnMessage = onMessage(messaging, (payload) => {
-        console.log("Message received in foreground:", payload);
-        // If you want a toast for background-style pushes while app is open:
         toast.info(payload.notification?.title || "New Update", {
-          description: payload.notification?.body
+          description: payload.notification?.body,
+          icon: <BellRing className="size-4" />
         });
       });
       return () => unsubscribeOnMessage();
     }
-  }, []); // Only run once on mount
+  }, []);
 
-  // Separate effect for Firestore Ledger listener
+  // --- EFFECT 2: FIRESTORE LIVE LEDGER LISTENER ---
   useEffect(() => {
     const rawDept = localStorage.getItem("department");
     if (rawDept?.toUpperCase() !== "ENGINEERING") return;
@@ -105,19 +112,9 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, [pathname]);
 
   const showNewDrawingAlert = (id: string, data: any) => {
-    // Attempt to play sound
     audioRef.current?.play().catch(() => {
-      console.log("Audio play blocked by browser. User must interact first.");
+      console.log("Audio play blocked by browser. User interaction required.");
     });
-
-    if (pathname === "/dashboard") {
-      toast("New Project Update", {
-        description: `${data.projectName} is ready for review.`,
-        className: "bg-white border-gray-100 text-[#0F172A] font-sans rounded-xl shadow-lg",
-        duration: 4000,
-      });
-      return;
-    }
 
     toast.custom((t) => (
       <div className="bg-white border border-gray-100 p-5 rounded-[1.5rem] shadow-[0_20px_50px_rgba(15,23,42,0.1)] flex flex-col gap-5 min-w-[360px] animate-in fade-in slide-in-from-right-4 duration-500">
@@ -131,7 +128,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
                 New Drawing Request
               </span>
               <span className="text-gray-400 text-[10px] font-medium">
-                Engineering Department
+                Engineering Dept
               </span>
             </div>
           </div>
@@ -164,11 +161,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         <button 
           onClick={() => { 
             toast.dismiss(t);
-            window.location.href = `/dashboard?id=${localStorage.getItem("userId")}`; 
+            window.location.href = `/request/shop-drawing`; 
           }}
           className="w-full bg-[#0F172A] hover:bg-[#1e293b] text-white text-[12px] font-bold py-4 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg active:scale-[0.98]"
         >
-          Open Ledger
+          Open Requests
           <ExternalLink size={14} />
         </button>
       </div>
