@@ -1,48 +1,62 @@
-// public/firebase-messaging-sw.js
-
 importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-messaging-compat.js');
 
-// !!! REPLACE THESE WITH YOUR ACTUAL FIREBASE PROJECT KEYS !!!
 const firebaseConfig = {
   apiKey: "AIzaSyATdZZ6p4nUwM1fXGHOambj_jhLxbGc08k",
   authDomain: "engiconnect-b15c6.firebaseapp.com",
   projectId: "engiconnect-b15c6",
   storageBucket: "engiconnect-b15c6.firebasestorage.app",
   messagingSenderId: "238950711944",
-  appId: "1:238950711944:web:f7879997e3441f569dd53d",
-  measurementId: "G-03BP7P26PL"
+  appId: "1:238950711944:web:f7879997e3441f569dd53d"
 };
 
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
-// Background handler (Handles notifications when the app/browser is closed)
+// Background handler
 messaging.onBackgroundMessage((payload) => {
-  const notificationTitle = payload.notification?.title || "EngiConnect Update";
+  console.log('[sw.js] Background message received', payload);
+
+  const notificationTitle = payload.notification?.title || "New Drawing Request";
   const notificationOptions = {
-    body: payload.notification?.body || "New update received.",
-    icon: '/icons/icon-192x192.png', // Ensure this file exists in /public
+    body: payload.notification?.body || "A new shop drawing requires your review.",
+    icon: '/icons/icon-192x192.png', 
     badge: '/icons/icon-192x192.png',
-    tag: 'drawing-alert',
+    // 'tag' groups similar notifications so they don't clutter the lock screen
+    tag: 'drawing-alert', 
+    renotify: true,
     data: {
-      url: '/dashboard'
-    }
+      // Dynamic URL: If the payload sends a specific link, go there, else dashboard
+      url: payload.data?.url || '/dashboard'
+    },
+    // Adding 'actions' allows users to jump straight to the request from the lock screen
+    actions: [
+      { action: 'open', title: 'View Request' }
+    ]
   };
 
-  self.registration.showNotification(notificationTitle, notificationOptions);
+  return self.registration.showNotification(notificationTitle, notificationOptions);
 });
 
-// Click logic
+// Click logic for iOS/Android
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  
+  const targetUrl = event.notification.data.url || '/dashboard';
+
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      // Logic to focus an existing tab or open a new window
-      if (windowClients.length > 0) {
-        return windowClients[0].focus();
+      // 1. If a tab is already open, focus it
+      for (var i = 0; i < windowClients.length; i++) {
+        var client = windowClients[i];
+        if (client.url.includes(targetUrl) && 'focus' in client) {
+          return client.focus();
+        }
       }
-      return clients.openWindow(event.notification.data.url || '/dashboard');
+      // 2. If no tab is open, open a new one
+      if (clients.openWindow) {
+        return clients.openWindow(targetUrl);
+      }
     })
   );
 });
