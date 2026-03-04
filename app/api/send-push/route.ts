@@ -1,12 +1,6 @@
-// app/api/send-push/route.ts
 import { NextResponse } from "next/server";
 import admin from "firebase-admin";
 
-/**
- * Initialize Firebase Admin SDK
- * The .replace(/\\n/g, '\n') is critical for Vercel deployments
- * to handle private key formatting correctly.
- */
 if (!admin.apps.length) {
   try {
     admin.initializeApp({
@@ -16,7 +10,6 @@ if (!admin.apps.length) {
         privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
       }),
     });
-    console.log("Firebase Admin Initialized Successfully");
   } catch (error: any) {
     console.error("Firebase Admin Initialization Error:", error.message);
   }
@@ -27,38 +20,47 @@ export async function POST(request: Request) {
     const { title, body, tokens } = await request.json();
 
     if (!tokens || !Array.isArray(tokens) || tokens.length === 0) {
-      return NextResponse.json(
-        { success: false, error: "No valid registration tokens provided." },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: "No tokens" }, { status: 400 });
     }
 
-    // Prepare the multicast message for all targeted Engineering devices
-    const message = {
+    const message: any = {
       notification: {
         title: title || "New Notification",
         body: body || "You have a new update in EngiConnect.",
       },
       data: {
-        url: "/request/shop-drawing", // Directs user to the specific page on tap
+        url: "/request/shop-drawing",
       },
       tokens: tokens,
-      // APNS configuration is required to wake up iOS devices from sleep
+      // CRITICAL FOR iOS BACKGROUND/LOCK SCREEN
       apns: {
         payload: {
           aps: {
             sound: "default",
             badge: 1,
-            contentAvailable: true,
+            // 'content-available': 1 is the key for background wake-up
+            "content-available": 1,
+            mutableContent: true,
           },
+        },
+        headers: {
+          // '10' is High Priority. This wakes the screen immediately.
+          "apns-priority": "10",
+          "apns-push-type": "alert",
+          "apns-topic": "com.engiconnect.app", // Use your bundle ID or delete this line
+        },
+      },
+      // Settings for Android devices
+      android: {
+        priority: "high",
+        notification: {
+          sound: "default",
+          clickAction: "OPEN_ACTIVITY_1",
         },
       },
     };
 
-    // Send the message to all tokens in the array
     const response = await admin.messaging().sendEachForMulticast(message);
-
-    console.log(`Successfully sent ${response.successCount} messages.`);
 
     return NextResponse.json({
       success: true,
@@ -66,10 +68,6 @@ export async function POST(request: Request) {
       failureCount: response.failureCount,
     });
   } catch (error: any) {
-    console.error("Push Notification Route Error:", error);
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
