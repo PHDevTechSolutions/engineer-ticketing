@@ -1,9 +1,8 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
-import { getMessaging, isSupported } from "firebase/messaging"; // Added these
+import { getMessaging, isSupported, Messaging } from "firebase/messaging";
 
-// --- MAIN PROJECT CONFIG ---
 const mainConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -13,7 +12,6 @@ const mainConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// --- LOGS PROJECT CONFIG ---
 const logsConfig = {
   apiKey: process.env.NEXT_PUBLIC_LOGS_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_LOGS_FIREBASE_AUTH_DOMAIN,
@@ -23,25 +21,20 @@ const logsConfig = {
   appId: process.env.NEXT_PUBLIC_LOGS_FIREBASE_APP_ID,
 };
 
-// 1. Initialize Main App (Default)
+// Initialize Apps
 const mainApp = !getApps().length ? initializeApp(mainConfig) : getApp();
-
-// 2. Initialize Logs App (Named "logsApp")
 const logsApp = !getApps().find(app => app.name === "logsApp") 
   ? initializeApp(logsConfig, "logsApp") 
   : getApp("logsApp");
 
-// --- EXPORTS ---
-
-// Main Exports
 export const db = getFirestore(mainApp);
 export const storage = getStorage(mainApp);
-
-// Messaging Export (Browser Only)
-// We check if we are in the browser and if the browser supports messaging
-export const messaging = typeof window !== "undefined" 
-  ? getMessaging(mainApp) 
-  : null;
-
-// Logs Exports
 export const logsDb = getFirestore(logsApp);
+
+// Safe Messaging Export
+export const getMessagingInstance = async (): Promise<Messaging | null> => {
+  if (typeof window !== "undefined" && await isSupported()) {
+    return getMessaging(mainApp);
+  }
+  return null;
+};
