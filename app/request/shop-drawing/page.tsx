@@ -1,98 +1,97 @@
 "use client"
 
 import * as React from "react"
-import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { 
-    Bell, 
-    CalendarCheck, 
-    FileText, 
-    Monitor, 
-    AlertTriangle, 
-    MoreHorizontal, 
-    ChevronRight,
-    Clock
+import { AppSidebar } from "@/components/app-sidebar"
+import ProtectedPageWrapper from "@/components/protected-page-wrapper"
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
+import {
+    Plus, Search, RotateCcw, Layout, Clock, Hammer, 
+    CheckCircle2, Loader2, User2, ArrowRight
 } from "lucide-react"
 
-// Layout Components
-import { AppSidebar } from "@/components/app-sidebar"
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
-import ProtectedPageWrapper from "@/components/protected-page-wrapper"
-import { PageHeader } from "@/components/page-header"
-
-// Firebase
-import { db } from "@/lib/firebase"
-import { collection, query, where, onSnapshot } from "firebase/firestore"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 
-export default function NotificationsPage() {
-    const router = useRouter()
-    const [userId, setUserId] = useState<string | null>(null)
-    const [loading, setLoading] = useState(true)
-    const [counts, setCounts] = useState({
-        siteVisit: 0,
-        jobRequest: 0,
-        shopDrawing: 0,
-        dialuxRequest: 0,
-        otherRequest: 0,
-        testingOverdue: 0
-    })
+// DATABASE
+import { db } from "@/lib/firebase"
+import { collection, onSnapshot, query, orderBy, where } from "firebase/firestore"
+import { PageHeader } from "@/components/page-header"
 
-    // Get User ID from localStorage (matching your standard)
-    useEffect(() => {
-        setUserId(localStorage.getItem("userId"))
+export default function ShopDrawingListPage() {
+    const router = useRouter()
+    const [userId, setUserId] = React.useState<string | null>(null)
+    const [userDept, setUserDept] = React.useState("")
+    
+    // NEW: States to hold profile info for engiconnect
+    const [userName, setUserName] = React.useState("")
+    const [profilePicture, setProfilePicture] = React.useState("")
+    
+    const [drawings, setDrawings] = React.useState<any[]>([])
+    const [isDataLoading, setIsDataLoading] = React.useState(true)
+    const [selectedStatus, setSelectedStatus] = React.useState<string | null>(null)
+    const [searchTerm, setSearchTerm] = React.useState("")
+    
+    // Identity & Profile Fetch
+    React.useEffect(() => {
+        const storedId = localStorage.getItem("userId")
+        setUserId(storedId)
+        if (!storedId) return
+
+        const fetchProfile = async () => {
+            try {
+                const res = await fetch(`/api/user?id=${encodeURIComponent(storedId)}`)
+                const data = await res.json()
+                
+                // SAVE PROFILE DATA
+                setUserName(data.name || data.fullName || "User")
+                setProfilePicture(data.profilePicture || data.image || "")
+                
+                // Standardize department to lowercase
+                setUserDept(data.Department?.toLowerCase() || data.department?.toLowerCase() || "sales")
+            } catch (e) { 
+                console.error("Profile error:", e) 
+            }
+        }
+        fetchProfile()
     }, [])
 
-    // Functional icon mapping for streetlights
-    const StreetLightIcon = ({ size = 24, className = "" }) => (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-            <path d="M7 22h3M9 22V7c0-2 1-3 3-3h5" /><path d="M15 4h5l1 2h-7l1-2z" /><path d="M17 9v1M14 8l-.5.5M20 8l.5.5" opacity="0.5" />
-        </svg>
-    )
+    // Real-time Sync
+    React.useEffect(() => {
+        if (!userId) return
 
-    useEffect(() => {
-        if (!db) return;
+        setIsDataLoading(true)
+        const baseCol = collection(db, "shop_drawing_requests")
+        const isStaff = userDept === "engineering" || userDept === "it"
 
-        const unsubSite = onSnapshot(query(collection(db, "appointments"), where("status", "==", "PENDING")), 
-            (snap) => setCounts(prev => ({ ...prev, siteVisit: snap.size })));
-        
-        const unsubJob = onSnapshot(query(collection(db, "job_requests"), where("status", "==", "PENDING")), 
-            (snap) => setCounts(prev => ({ ...prev, jobRequest: snap.size })));
+        const q = isStaff 
+            ? query(baseCol, orderBy("createdAt", "desc"))
+            : query(baseCol, where("submittedBy", "==", userId), orderBy("createdAt", "desc"))
 
-        const unsubShop = onSnapshot(query(collection(db, "shop_drawing_requests"), where("department", "==", "ENGINEERING"), where("status", "==", "PENDING_REVIEW")), 
-            (snap) => setCounts(prev => ({ ...prev, shopDrawing: snap.size })));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            setDrawings(snapshot.docs.map(doc => {
+                const data = doc.data()
+                return {
+                    id: doc.id.slice(-6).toUpperCase(),
+                    fullId: doc.id,
+                    ...data,
+                    project: data.projectName || "New Request",
+                    status: (data.status || "PENDING_REVIEW").toUpperCase()
+                }
+            }))
+            setIsDataLoading(false)
+        })
+        return () => unsubscribe()
+    }, [userId, userDept])
 
-        const unsubDialux = onSnapshot(query(collection(db, "dialux_requests"), where("status", "==", "PENDING")), 
-            (snap) => setCounts(prev => ({ ...prev, dialuxRequest: snap.size })));
+    const handleCreateRequest = () => router.push('/request/shop-drawing/add')
 
-        const unsubOther = onSnapshot(query(collection(db, "other_requests"), where("status", "==", "PENDING")), 
-            (snap) => setCounts(prev => ({ ...prev, otherRequest: snap.size })));
-
-        const unsubTesting = onSnapshot(collection(db, "testing_tracker"), (snap) => {
-            const today = new Date();
-            const overdue = snap.docs.filter(doc => {
-                const d = doc.data();
-                return !d.releaseDate && d.targetDate?.toDate() && d.targetDate.toDate() < today;
-            }).length;
-            setCounts(prev => ({ ...prev, testingOverdue: overdue }));
-            setLoading(false);
-        });
-
-        return () => {
-            unsubSite(); unsubJob(); unsubShop(); unsubDialux(); unsubOther(); unsubTesting();
-        };
-    }, []);
-
-    const totalAlerts = Object.values(counts).reduce((a, b) => a + b, 0);
-
-    const notificationItems = [
-        { id: 'site', label: "Site Visit Appointments", count: counts.siteVisit, icon: CalendarCheck, path: "/appointments/site-visit", color: "bg-blue-50 text-blue-600" },
-        { id: 'job', label: "Job Requests", count: counts.jobRequest, icon: FileText, path: "/request/job", color: "bg-orange-50 text-orange-600" },
-        { id: 'shop', label: "Shop Drawing Requests", count: counts.shopDrawing, icon: StreetLightIcon, path: "/request/shop-drawing", color: "bg-emerald-50 text-emerald-600" },
-        { id: 'dialux', label: "DIAlux Simulations", count: counts.dialuxRequest, icon: Monitor, path: "/request/dialux", color: "bg-indigo-50 text-indigo-600" },
-        { id: 'testing', label: "Overdue Testing", count: counts.testingOverdue, icon: AlertTriangle, path: "/request/testing", color: "bg-red-50 text-red-600", critical: true },
-        { id: 'other', label: "Misc Requests", count: counts.otherRequest, icon: MoreHorizontal, path: "/request/other", color: "bg-gray-50 text-gray-600" },
-    ];
+    const filtered = drawings.filter(d => {
+        const matchesSearch = d.project.toLowerCase().includes(searchTerm.toLowerCase()) || d.id.includes(searchTerm.toUpperCase())
+        const matchesStatus = selectedStatus ? d.status === selectedStatus : true
+        return matchesSearch && matchesStatus
+    })
 
     return (
         <ProtectedPageWrapper>
@@ -100,92 +99,126 @@ export default function NotificationsPage() {
                 <AppSidebar userId={userId} />
                 <SidebarInset className="relative bg-[#F4F7F7] min-h-screen font-sans">
                     
-                    <PageHeader 
-                        title="Activity Center" 
+                    <PageHeader
+                        title="Drawing Hub"
                         version="V2.6"
                         showBackButton={true}
                         trigger={<SidebarTrigger className="mr-2" />}
+                        actions={
+                            <div className="flex items-center gap-2">
+                                {userDept === "sales" && (
+                                    <Button onClick={handleCreateRequest} className="hidden md:flex bg-black hover:bg-zinc-800 text-white px-5 rounded-xl h-10 text-xs font-bold tracking-tight">
+                                        <Plus className="mr-2 size-4" /> NEW DRAWING REQUEST
+                                    </Button>
+                                )}
+                            </div>
+                        }
                     />
 
-                    <main className="p-4 md:p-8 max-w-4xl mx-auto w-full space-y-6">
+                    <main className="p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6 pb-32 md:pb-8">
                         
-                        {/* Summary Card */}
-                        <div className="flex items-center gap-4 bg-white p-6 rounded-[24px] border border-zinc-200/60 shadow-sm">
-                            <div className="size-14 bg-[#E33636] rounded-2xl flex items-center justify-center text-white shadow-lg shadow-red-100">
-                                <Bell size={24} fill="currentColor" />
+                        <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                            <StatCard label="All Projects" val={drawings.length} icon={Layout} isActive={selectedStatus === null} onClick={() => setSelectedStatus(null)} />
+                            <StatCard label="Reviewing" val={drawings.filter(d => d.status === "PENDING_REVIEW").length} icon={Clock} isActive={selectedStatus === "PENDING_REVIEW"} onClick={() => setSelectedStatus("PENDING_REVIEW")} />
+                            <StatCard label="Designing" val={drawings.filter(d => d.status === "IN_DEVELOPMENT").length} icon={Hammer} isActive={selectedStatus === "IN_DEVELOPMENT"} onClick={() => setSelectedStatus("IN_DEVELOPMENT")} />
+                            <StatCard label="Finished" val={drawings.filter(d => d.status === "FINALIZED").length} icon={CheckCircle2} isActive={selectedStatus === "FINALIZED"} onClick={() => setSelectedStatus("FINALIZED")} isDone />
+                        </section>
+
+                        <div className="flex flex-col md:flex-row gap-3">
+                            <div className="relative flex-1">
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-zinc-400" />
+                                <input
+                                    placeholder="Search project name or #ID..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="w-full pl-11 h-12 rounded-2xl border-none bg-white shadow-sm ring-1 ring-zinc-200 focus:ring-2 focus:ring-black outline-none transition-all text-sm"
+                                />
                             </div>
-                            <div>
-                                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.2em] leading-none mb-1.5">Action Required</p>
-                                <h2 className="text-2xl font-black text-zinc-900 leading-none">{totalAlerts} Pending Tasks</h2>
-                            </div>
+                            <Button variant="outline" onClick={() => { setSelectedStatus(null); setSearchTerm("") }} className="h-12 rounded-2xl bg-white border-zinc-200 font-bold text-[10px] tracking-widest uppercase">
+                                <RotateCcw className="mr-2 size-3" /> RESET
+                            </Button>
                         </div>
 
-                        {/* List Section */}
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-between px-2">
-                                <h3 className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.2em]">Categories</h3>
-                                <div className="flex items-center gap-1.5 text-[9px] font-black text-emerald-500 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100">
-                                    <div className="size-1 bg-emerald-500 rounded-full animate-pulse" />
-                                    LIVE SYNC
-                                </div>
-                            </div>
+                        <div className="bg-white rounded-[24px] shadow-sm border border-zinc-200/60 overflow-hidden">
+                            <div className="divide-y divide-zinc-50">
+                                {isDataLoading ? (
+                                    <div className="p-20 text-center flex flex-col items-center gap-3">
+                                        <Loader2 className="animate-spin text-zinc-200 size-8" />
+                                        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Opening Files...</p>
+                                    </div>
+                                ) : filtered.length === 0 ? (
+                                    <div className="p-20 text-center text-zinc-400 text-xs font-bold uppercase tracking-widest italic">No Records Found</div>
+                                ) : (
+                                    filtered.map((d) => (
+                                        <div key={d.id} onClick={() => router.push(`/request/shop-drawing/${d.fullId}`)} className="flex flex-col md:grid md:grid-cols-6 gap-4 p-6 items-center hover:bg-zinc-50/40 transition-colors cursor-pointer group">
+                                            <span className="hidden md:block text-[10px] font-mono font-bold text-zinc-400">#{d.id}</span>
+                                            
+                                            <div className="w-full md:col-span-2 flex flex-col">
+                                                <div className="flex justify-between items-center md:block">
+                                                    <span className="text-sm font-bold text-zinc-900 uppercase truncate group-hover:text-black">{d.project}</span>
+                                                    <span className="md:hidden text-[10px] font-mono font-bold text-zinc-300">#{d.id}</span>
+                                                </div>
+                                                <span className="text-[10px] text-zinc-400 font-medium">Requested {d.date || "Recently"}</span>
+                                            </div>
 
-                            <div className="grid gap-3">
-                                {notificationItems.map((item) => (
-                                    <button
-                                        key={item.id}
-                                        onClick={() => router.push(item.path)}
-                                        className={cn(
-                                            "w-full bg-white p-5 rounded-[24px] border flex items-center justify-between transition-all active:scale-[0.98] group",
-                                            item.critical && item.count > 0 ? "border-red-200 shadow-sm bg-red-50/10" : "border-zinc-200/60 hover:border-zinc-300 shadow-sm"
-                                        )}
-                                    >
-                                        <div className="flex items-center gap-4">
-                                            <div className={cn("size-12 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110", item.color)}>
-                                                <item.icon size={22} />
-                                            </div>
-                                            <div className="text-left">
-                                                <p className="text-sm font-bold text-zinc-900">{item.label}</p>
-                                                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight">View Details</p>
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="flex items-center gap-3">
-                                            {item.count > 0 ? (
-                                                <span className={cn(
-                                                    "min-w-[28px] h-7 px-2 flex items-center justify-center rounded-xl text-xs font-black shadow-sm",
-                                                    item.critical ? "bg-red-600 text-white" : "bg-zinc-900 text-white"
+                                            <div className="w-full flex items-center justify-between md:contents">
+                                                <div className="flex items-center gap-2 text-xs font-bold text-zinc-500">
+                                                    <User2 className="size-3 text-zinc-300" />
+                                                    {d.assignedTo ? "ENGINEERING" : "WAITING"}
+                                                </div>
+                                                
+                                                <Badge className={cn("rounded-full px-3 py-1 text-[9px] font-bold border-none", 
+                                                    d.status === "FINALIZED" || d.status === "APPROVED" ? "bg-emerald-50 text-emerald-600" : 
+                                                    d.status === "IN_DEVELOPMENT" || d.status === "ACCEPTED" ? "bg-blue-50 text-blue-600" : "bg-amber-50 text-amber-600"
                                                 )}>
-                                                    {item.count}
-                                                </span>
-                                            ) : (
-                                                <span className="text-[10px] font-bold text-zinc-300 uppercase italic">Clear</span>
-                                            )}
-                                            <ChevronRight size={18} className="text-zinc-300 group-hover:text-zinc-900 group-hover:translate-x-0.5 transition-all" />
+                                                    {d.status.replace("_", " ")}
+                                                </Badge>
+
+                                                <div className="hidden md:flex justify-end">
+                                                    <ArrowRight className="size-4 text-zinc-200 group-hover:text-black group-hover:translate-x-1 transition-all" />
+                                                </div>
+                                            </div>
                                         </div>
-                                    </button>
-                                ))}
+                                    ))
+                                )}
                             </div>
-                        </div>
-
-                        {/* Empty State */}
-                        {totalAlerts === 0 && !loading && (
-                            <div className="py-20 flex flex-col items-center justify-center">
-                                <div className="size-20 bg-white rounded-full flex items-center justify-center mb-4 shadow-sm border border-zinc-100">
-                                    <Bell size={32} className="text-zinc-200" />
-                                </div>
-                                <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest italic">System Optimized • No Pending Tasks</p>
-                            </div>
-                        )}
-
-                        <div className="pt-8 text-center">
-                            <p className="text-[9px] font-bold text-zinc-300 uppercase leading-relaxed tracking-widest max-w-[240px] mx-auto">
-                                Notifications are updated live from the central engineering database.
-                            </p>
                         </div>
                     </main>
+
+                    {/* MOBILE FLOATING ACTION BUTTON */}
+                    {userDept === "sales" && (
+                        <div className="md:hidden fixed bottom-8 right-6 z-50">
+                            <Button 
+                                onClick={handleCreateRequest}
+                                className="size-16 rounded-3xl bg-black text-white shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center border border-white/10"
+                            >
+                                <Plus className="size-7 stroke-[3px]" />
+                            </Button>
+                        </div>
+                    )}
+
                 </SidebarInset>
             </SidebarProvider>
         </ProtectedPageWrapper>
+    )
+}
+
+function StatCard({ label, val, icon: Icon, isActive, onClick, isDone }: any) {
+    return (
+        <div
+            onClick={onClick}
+            className={cn(
+                "p-5 md:p-6 flex flex-col gap-3 rounded-[24px] bg-white transition-all shadow-sm border-2 cursor-pointer active:scale-95",
+                isActive ? "border-black shadow-md" : "border-transparent"
+            )}
+        >
+            <div className="flex justify-between items-start">
+                <div className={cn("p-2.5 rounded-xl", isDone ? "bg-emerald-50 text-emerald-500" : "bg-zinc-50 text-zinc-400")}>
+                    <Icon className="size-5" />
+                </div>
+                <span className="text-2xl md:text-3xl font-black text-zinc-900">{val.toString().padStart(2, '0')}</span>
+            </div>
+            <p className="text-[9px] md:text-[10px] font-bold uppercase text-zinc-400 tracking-[0.15em]">{label}</p>
+        </div>
     )
 }
