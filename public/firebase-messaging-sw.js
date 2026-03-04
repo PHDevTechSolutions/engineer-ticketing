@@ -1,6 +1,9 @@
+// public/firebase-messaging-sw.js
+
 importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-messaging-compat.js');
 
+// Configured for your Main Project (engiconnect-b15c6)
 const firebaseConfig = {
   apiKey: "AIzaSyATdZZ6p4nUwM1fXGHOambj_jhLxbGc08k",
   authDomain: "engiconnect-b15c6.firebaseapp.com",
@@ -13,32 +16,32 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
-// Background handler
+/**
+ * Background message handler:
+ * This runs when the app is minimized, the tab is closed, or the screen is OFF.
+ */
 messaging.onBackgroundMessage((payload) => {
   console.log('[sw.js] Background message received', payload);
 
   const notificationTitle = payload.notification?.title || "New Drawing Request";
   const notificationOptions = {
     body: payload.notification?.body || "A new shop drawing requires your review.",
-    icon: '/icons/icon-192x192.png', 
-    badge: '/icons/icon-192x192.png',
-    // 'tag' groups similar notifications so they don't clutter the lock screen
+    // Removed specific icon paths to avoid 404/silent failures
+    // The browser will use the default PWA/Site icon instead
     tag: 'drawing-alert', 
-    renotify: true,
+    renotify: true, // Forces phone to vibrate/sound even if a previous alert is still on screen
     data: {
-      // Dynamic URL: If the payload sends a specific link, go there, else dashboard
       url: payload.data?.url || '/dashboard'
-    },
-    // Adding 'actions' allows users to jump straight to the request from the lock screen
-    actions: [
-      { action: 'open', title: 'View Request' }
-    ]
+    }
   };
 
   return self.registration.showNotification(notificationTitle, notificationOptions);
 });
 
-// Click logic for iOS/Android
+/**
+ * Notification click handler:
+ * Ensures the user is taken to the correct page when they tap the alert.
+ */
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   
@@ -46,14 +49,14 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      // 1. If a tab is already open, focus it
+      // 1. If the dashboard is already open in a tab, focus it
       for (var i = 0; i < windowClients.length; i++) {
         var client = windowClients[i];
         if (client.url.includes(targetUrl) && 'focus' in client) {
           return client.focus();
         }
       }
-      // 2. If no tab is open, open a new one
+      // 2. If no tab is open, open a new window to the target URL
       if (clients.openWindow) {
         return clients.openWindow(targetUrl);
       }
