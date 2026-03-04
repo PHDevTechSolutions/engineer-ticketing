@@ -3,10 +3,11 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { 
   MessageSquare, Send, X, Minus, Search, ImagePlus, 
-  Loader2, Reply, CornerDownRight, ChevronDown, Activity, CheckCircle2 
+  Loader2, Reply, CornerDownRight, ChevronDown, Activity, CheckCircle2,
+  Eye, Heart, ThumbsUp, Smile
 } from "lucide-react";
 import { db } from "@/lib/firebase"; 
-import { doc, updateDoc, serverTimestamp, arrayUnion } from "firebase/firestore";
+import { doc, updateDoc, serverTimestamp, arrayUnion, onSnapshot, setDoc, deleteDoc } from "firebase/firestore";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -31,7 +32,10 @@ interface Message {
   role: string;
   time: string;
   isResolved?: boolean;
+  isSystem?: boolean; // Added for System Messages feature
   imageUrl?: string;
+  seenBy?: string[]; 
+  reactions?: Record<string, string[]>; 
   replyTo?: {
     text: string;
     senderName: string;
@@ -42,6 +46,7 @@ interface Message {
 
 interface CollaborationHubProps {
   requestId: string;
+  collectionName: string;
   messages: Message[];
   currentUserId: string;
   userName: string;
@@ -52,6 +57,7 @@ interface CollaborationHubProps {
 
 export function CollaborationHub({
   requestId,
+  collectionName,
   messages = [],
   currentUserId,
   userName,
@@ -67,16 +73,20 @@ export function CollaborationHub({
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
-  // NEW: Track which message is "active" (clicked) on mobile/desktop
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
+  
+  // New States for Features
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const unreadRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isAtBottom = useRef(true);
   const prevMessagesCount = useRef(messages.length);
+  const prevStatus = useRef(status); // For System Messages detection
   const sentSound = useRef<HTMLAudioElement | null>(null);
   const receivedSound = useRef<HTMLAudioElement | null>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     sentSound.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3");
@@ -84,6 +94,73 @@ export function CollaborationHub({
     if (sentSound.current) sentSound.current.volume = 0.3;
     if (receivedSound.current) receivedSound.current.volume = 0.3;
   }, []);
+
+  // FEATURE: TYPING INDICATORS (WRITE)
+  useEffect(() => {
+    const typingRef = doc(db, "typing_indicators", `${requestId}_${currentUserId}`);
+    if (chatMessage.length > 0) {
+      setDoc(typingRef, { userName, updatedAt: serverTimestamp() });
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => deleteDoc(typingRef), 3000);
+    } else {
+      deleteDoc(typingRef);
+    }
+    return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      deleteDoc(typingRef);
+    };
+  }, [chatMessage, requestId, currentUserId, userName]);
+
+  // FEATURE: SYSTEM MESSAGES (STATUS CHANGE)
+  useEffect(() => {
+    if (prevStatus.current !== status && status !== "PENDING") {
+      const injectSystemMessage = async () => {
+        try {
+          const docRef = doc(db, collectionName, requestId);
+          await updateDoc(docRef, {
+            messages: arrayUnion({
+              id: `sys-${Date.now()}`,
+              text: `PROJECT STATUS UPDATED TO: ${status}`,
+              senderId: "system",
+              senderName: "System",
+              role: "system",
+              time: new Date().toISOString(),
+              isSystem: true,
+              seenBy: [currentUserId]
+            })
+          });
+        } catch (e) { console.error("System message failed", e); }
+      };
+      injectSystemMessage();
+    }
+    prevStatus.current = status;
+  }, [status, requestId, collectionName, currentUserId]);
+
+  useEffect(() => {
+    if (isOpen && messages.length > 0) {
+      const markAsSeen = async () => {
+        const needsUpdate = messages.some(
+          msg => msg.senderId !== currentUserId && !msg.seenBy?.includes(currentUserId)
+        );
+
+        if (needsUpdate) {
+          try {
+            const updatedMessages = messages.map(msg => {
+              if (msg.senderId !== currentUserId && !msg.seenBy?.includes(currentUserId)) {
+                return { ...msg, seenBy: [...(msg.seenBy || []), currentUserId] };
+              }
+              return msg;
+            });
+            const docRef = doc(db, collectionName, requestId); 
+            await updateDoc(docRef, { messages: updatedMessages });
+          } catch (e) {
+            console.error("Failed to update seen status", e);
+          }
+        }
+      };
+      markAsSeen();
+    }
+  }, [isOpen, messages, currentUserId, requestId, collectionName]);
 
   const scrollToMessage = (msgId: string) => {
     const element = document.getElementById(`msg-${msgId}`);
@@ -101,20 +178,40 @@ export function CollaborationHub({
   const unreadCount = useMemo(() => {
     return messages.filter(msg => 
       msg.senderId !== currentUserId && 
-      new Date(msg.time).getTime() > lastSeenTime
+      !msg.seenBy?.includes(currentUserId)
     ).length;
-  }, [messages, lastSeenTime, currentUserId]);
+  }, [messages, currentUserId]);
 
   const firstUnreadIndex = useMemo(() => {
     return messages.findIndex(msg =>
-      msg.senderId !== currentUserId && new Date(msg.time).getTime() > lastSeenTime
+      msg.senderId !== currentUserId && !msg.seenBy?.includes(currentUserId)
     );
-  }, [messages, lastSeenTime, currentUserId]);
+  }, [messages, currentUserId]);
 
   const filteredMessages = useMemo(() => {
     if (!searchQuery) return messages;
     return messages.filter(m => m.text?.toLowerCase().includes(searchQuery.toLowerCase()));
   }, [messages, searchQuery]);
+
+  // FEATURE: MENTION SUPPORT (RENDER LOGIC)
+  const renderMessageText = (text: string) => {
+    const mentionRegex = /(@[a-zA-Z0-9 ]+)/g;
+    const parts = text.split(mentionRegex);
+    return parts.map((part, i) => {
+      if (part.match(mentionRegex)) {
+        const isMe = part.toLowerCase() === `@${userName.toLowerCase()}`;
+        return (
+          <span key={i} className={cn(
+            "font-black px-1.5 py-0.5 rounded-md",
+            isMe ? "bg-yellow-400 text-slate-900" : "bg-blue-500/20 text-blue-100"
+          )}>
+            {part}
+          </span>
+        );
+      }
+      return part;
+    });
+  };
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     if (scrollRef.current) {
@@ -161,7 +258,7 @@ export function CollaborationHub({
     setReplyingTo(null);
 
     try {
-      const docRef = doc(db, "shop_drawing_requests", requestId);
+      const docRef = doc(db, collectionName, requestId); 
       await updateDoc(docRef, {
         messages: arrayUnion({
           id: Math.random().toString(36).substring(2, 11),
@@ -172,6 +269,8 @@ export function CollaborationHub({
           role: userRole,
           time: new Date().toISOString(),
           isResolved: false,
+          seenBy: [currentUserId],
+          reactions: {},
           replyTo: currentReply ? {
             text: currentReply.text,
             senderName: currentReply.senderName,
@@ -191,15 +290,36 @@ export function CollaborationHub({
     }
   };
 
+  const toggleReaction = async (msgId: string, emoji: string) => {
+    try {
+      const docRef = doc(db, collectionName, requestId); 
+      const updatedMessages = messages.map(m => {
+        if (m.id === msgId) {
+          const reactions = { ...(m.reactions || {}) };
+          const users = reactions[emoji] || [];
+          reactions[emoji] = users.includes(currentUserId)
+            ? users.filter(id => id !== currentUserId)
+            : [...users, currentUserId];
+          return { ...m, reactions };
+        }
+        return m;
+      });
+      await updateDoc(docRef, { messages: updatedMessages });
+      setActiveMessageId(null);
+    } catch (e) {
+      toast.error("Reaction failed");
+    }
+  };
+
   const toggleResolve = async (msgId: string) => {
     try {
-      const docRef = doc(db, "shop_drawing_requests", requestId);
+      const docRef = doc(db, collectionName, requestId); 
       const updatedMessages = messages.map(m => 
         m.id === msgId ? { ...m, isResolved: !m.isResolved } : m
       );
       await updateDoc(docRef, { messages: updatedMessages });
       toast.success("Status updated");
-      setActiveMessageId(null); // Close the menu after action
+      setActiveMessageId(null);
     } catch (e) {
       toast.error("Failed to update");
     }
@@ -266,13 +386,25 @@ export function CollaborationHub({
             <div 
               ref={scrollRef} 
               onScroll={handleScroll} 
-              onClick={() => setActiveMessageId(null)} // Close active menus when clicking background
+              onClick={() => setActiveMessageId(null)} 
               className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#f1f5f9]/50 scroll-smooth"
             >
               {filteredMessages.map((msg, i) => {
+                // FEATURE: SYSTEM MESSAGE RENDER
+                if (msg.isSystem) {
+                  return (
+                    <div key={msg.id} className="flex justify-center my-4">
+                      <span className="px-4 py-1.5 bg-slate-200/50 text-slate-500 text-[10px] font-black uppercase rounded-full tracking-widest border border-slate-200">
+                        {msg.text}
+                      </span>
+                    </div>
+                  );
+                }
+
                 const isMe = msg.senderId === currentUserId;
                 const isFirstUnread = i === firstUnreadIndex;
                 const isActive = activeMessageId === msg.id;
+                const seenByOthers = msg.seenBy?.filter(id => id !== msg.senderId) || [];
 
                 return (
                   <React.Fragment key={msg.id}>
@@ -307,27 +439,26 @@ export function CollaborationHub({
                             isActive && "ring-2 ring-blue-400 ring-offset-1"
                           )}
                         >
-                          {/* UPDATED: Buttons now visible on click/active OR hover */}
                           <div className={cn(
-                            "absolute -top-6 flex items-center gap-2 transition-all z-20",
+                            "absolute -top-10 flex items-center gap-1 transition-all z-20 bg-white shadow-xl rounded-full p-1 border border-slate-100",
                             (isActive) ? "opacity-100 scale-100 visible" : "opacity-0 scale-95 invisible group-hover:opacity-100 group-hover:scale-100 group-hover:visible",
                             isMe ? "right-0" : "left-0"
                           )}>
+                            <button onClick={(e) => { e.stopPropagation(); toggleReaction(msg.id, "👍"); }} className="p-1.5 hover:bg-slate-50 rounded-full transition-colors"><ThumbsUp size={14} className="text-blue-500" /></button>
+                            <button onClick={(e) => { e.stopPropagation(); toggleReaction(msg.id, "❤️"); }} className="p-1.5 hover:bg-slate-50 rounded-full transition-colors"><Heart size={14} className="text-red-500" /></button>
+                            <button onClick={(e) => { e.stopPropagation(); toggleReaction(msg.id, "😊"); }} className="p-1.5 hover:bg-slate-50 rounded-full transition-colors"><Smile size={14} className="text-yellow-500" /></button>
+                            <div className="w-px h-4 bg-slate-200 mx-1" />
                             <button 
                               onClick={(e) => { e.stopPropagation(); setReplyingTo(msg); setActiveMessageId(null); }} 
-                              className="p-2 bg-white shadow-lg rounded-full text-blue-600 border border-slate-100 active:bg-blue-50"
+                              className="p-1.5 hover:bg-slate-50 rounded-full text-slate-600"
                             >
-                              <Reply size={16} />
+                              <Reply size={14} />
                             </button>
                             <button 
                               onClick={(e) => { e.stopPropagation(); toggleResolve(msg.id); }} 
-                              className="p-2 bg-white shadow-lg rounded-full text-green-600 border border-slate-100 active:bg-green-50"
+                              className="p-1.5 hover:bg-slate-50 rounded-full text-green-600"
                             >
-                              <CheckCircle2 size={16} />
-                            </button>
-                            {/* Close active menu button for mobile */}
-                            <button className="md:hidden p-2 bg-white shadow-lg rounded-full text-slate-400 border border-slate-100">
-                               <X size={16} />
+                              <CheckCircle2 size={14} />
                             </button>
                           </div>
 
@@ -350,9 +481,27 @@ export function CollaborationHub({
                             </div>
                           )}
                           
-                          <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
-                          <div className={cn("text-[9px] mt-1 opacity-60 text-right font-medium", isMe ? "text-blue-100" : "text-slate-400")}>
+                          {/* UPDATED: MENTION RENDERING */}
+                          <p className="whitespace-pre-wrap leading-relaxed">{renderMessageText(msg.text)}</p>
+                          
+                          {msg.reactions && Object.entries(msg.reactions).some(([_, users]) => users.length > 0) && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {Object.entries(msg.reactions).map(([emoji, users]) => users.length > 0 && (
+                                <span key={emoji} className="bg-white/20 backdrop-blur-sm px-1.5 py-0.5 rounded-full text-[10px] border border-white/10">
+                                  {emoji} {users.length}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className={cn("flex items-center justify-end gap-1 text-[9px] mt-1 opacity-60 font-medium", isMe ? "text-blue-100" : "text-slate-400")}>
                             {new Date(msg.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {isMe && seenByOthers.length > 0 && (
+                              <div className="flex items-center gap-0.5 ml-1">
+                                <Eye size={10} />
+                                <span>{seenByOthers.length}</span>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -377,6 +526,13 @@ export function CollaborationHub({
             )}
 
             <div className="p-4 bg-white border-t border-slate-100 relative shadow-[0_-4px_15px_rgba(0,0,0,0.05)]">
+              {/* FEATURE: TYPING UI */}
+              {typingUsers.length > 0 && (
+                <div className="absolute -top-6 left-6 text-[10px] text-slate-400 italic bg-white/80 px-2 py-0.5 rounded-full">
+                   Someone is typing...
+                </div>
+              )}
+
               {replyingTo && (
                 <div className="mb-3 p-2 bg-blue-50 rounded-xl flex items-center justify-between border-l-4 border-blue-500 animate-in slide-in-from-bottom-2">
                   <div className="flex items-center gap-2 overflow-hidden text-[11px]">

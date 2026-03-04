@@ -15,10 +15,11 @@ import {
     CalendarCheck, FileText, Monitor, ThumbsUp,
     ClipboardCheck, MoreHorizontal, Bell,
     Plus, Activity, CloudSun, CloudRain, Sun, CloudLightning, Cloud, Moon, CloudMoon,
+    ArrowUpRight, Clock, CheckCircle2, AlertTriangle, Layers, MessageSquare, ChevronRight
 } from "lucide-react";
 
 import { db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot } from "firebase/firestore";
+import { collection, query, where, onSnapshot, limit, orderBy } from "firebase/firestore";
 import { cn } from "@/lib/utils";
 import { isAfter } from "date-fns";
 
@@ -34,8 +35,8 @@ export default function EngiconnectDashboard() {
     const scrollRef = useRef<HTMLDivElement>(null);
 
     // Activity Tabs State
-    const [activeTab, setActiveTab] = useState("Testing");
-    const tabs = ["Testing", "Projects", "Monitoring", "Admin"];
+    const [activeTab, setActiveTab] = useState("Monitoring");
+    const tabs = ["Monitoring", "Projects", "Requests", "Admin"];
 
     const [userDetails, setUserDetails] = useState({
         Firstname: "",
@@ -45,29 +46,39 @@ export default function EngiconnectDashboard() {
 
     const [notifications, setNotifications] = useState({
         siteVisit: 0,
-        jobRequest: 0, // Live Bubble for Job Request
+        jobRequest: 0,
         shopDrawing: 0,
         testingActive: 0,
         testingOverdue: 0,
-        otherRequest: 0 // Live Bubble for Other Request
+        otherRequest: 0,
+        dialuxRequest: 0,
+        dialuxInProgress: 0,
+        dialuxCompleted: 0,
+        unreadMessages: 0,
+        unreadByService: {
+            dialux: 0,
+            jobRequest: 0,
+            siteVisit: 0,
+            shopDrawing: 0
+        }
     })
 
-    // Custom Streetlight Icon
+    const [recentActivity, setRecentActivity] = useState<any[]>([]);
+
     const StreetLightIcon = ({ size = 24, className = "" }) => (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
             <path d="M7 22h3M9 22V7c0-2 1-3 3-3h5" /><path d="M15 4h5l1 2h-7l1-2z" /><path d="M17 9v1M14 8l-.5.5M20 8l.5.5" opacity="0.5" />
         </svg>
     );
 
-    // Services Definition (Updated counts with notification states)
     const services = [
-        { label: "Site Visit Appointment", icon: CalendarCheck, count: notifications.siteVisit, path: "/appointments/site-visit" },
-        { label: "Job Request", icon: FileText, count: notifications.jobRequest, path: "/request/job" },
-        { label: "Dialux Simulation", icon: Monitor, count: 0, path: "/request/dialux" },
-        { label: "Product Recommendation", icon: ThumbsUp, count: 0, path: "/requests/recommendation" },
-        { label: "SPF Shop Drawing Request", icon: StreetLightIcon, count: notifications.shopDrawing, path: "/request/shop-drawing" },
-        { label: "Testing Monitoring", icon: ClipboardCheck, count: notifications.testingActive + notifications.testingOverdue, path: "/request/testing" },
-        { label: "Other Request", icon: MoreHorizontal, count: notifications.otherRequest, path: "/request/other" },
+        { label: "Site Visit Appointment", icon: CalendarCheck, count: notifications.siteVisit, msgCount: notifications.unreadByService.siteVisit, path: "/appointments/site-visit" },
+        { label: "Job Request", icon: FileText, count: notifications.jobRequest, msgCount: notifications.unreadByService.jobRequest, path: "/request/job" },
+        { label: "Dialux Simulation", icon: Monitor, count: notifications.dialuxRequest, msgCount: notifications.unreadByService.dialux, path: "/request/dialux" },
+        { label: "Product Recommendation", icon: ThumbsUp, count: 0, msgCount: 0, path: "/requests/recommendation" },
+        { label: "SPF Shop Drawing Request", icon: StreetLightIcon, count: notifications.shopDrawing, msgCount: notifications.unreadByService.shopDrawing, path: "/request/shop-drawing" },
+        { label: "Testing Monitoring", icon: ClipboardCheck, count: notifications.testingActive + notifications.testingOverdue, msgCount: 0, path: "/request/testing" },
+        { label: "Other Request", icon: MoreHorizontal, count: notifications.otherRequest, msgCount: 0, path: "/request/other" },
     ];
 
     const itemsPerPage = 6; 
@@ -140,25 +151,29 @@ export default function EngiconnectDashboard() {
     }, [])
 
     useEffect(() => {
-        if (!db) return;
+        if (!db || !userId) return;
         
-        // Listener for Site Visits
         const unsubSite = onSnapshot(query(collection(db, "appointments"), where("status", "==", "PENDING")),
             (snap) => setNotifications(prev => ({ ...prev, siteVisit: snap.size })));
         
-        // Listener for Shop Drawings
         const unsubShop = onSnapshot(query(collection(db, "shop_drawing_requests"), where("department", "==", "ENGINEERING"), where("status", "==", "PENDING_REVIEW")),
             (snap) => setNotifications(prev => ({ ...prev, shopDrawing: snap.size })));
         
-        // NEW: Listener for Job Requests
         const unsubJob = onSnapshot(query(collection(db, "job_requests"), where("status", "==", "PENDING")),
             (snap) => setNotifications(prev => ({ ...prev, jobRequest: snap.size })));
 
-        // NEW: Listener for Other Requests
         const unsubOther = onSnapshot(query(collection(db, "other_requests"), where("status", "==", "PENDING")),
             (snap) => setNotifications(prev => ({ ...prev, otherRequest: snap.size })));
 
-        // Listener for Testing Monitoring
+        const unsubDialuxPending = onSnapshot(query(collection(db, "dialux_requests"), where("status", "==", "PENDING")),
+            (snap) => setNotifications(prev => ({ ...prev, dialuxRequest: snap.size })));
+
+        const unsubDialuxProgress = onSnapshot(query(collection(db, "dialux_requests"), where("status", "==", "IN_PROGRESS")),
+            (snap) => setNotifications(prev => ({ ...prev, dialuxInProgress: snap.size })));
+
+        const unsubDialuxDone = onSnapshot(query(collection(db, "dialux_requests"), where("status", "==", "COMPLETED")),
+            (snap) => setNotifications(prev => ({ ...prev, dialuxCompleted: snap.size })));
+
         const unsubTesting = onSnapshot(collection(db, "testing_tracker"), (snap) => {
             let active = 0; let overdue = 0;
             const today = new Date();
@@ -173,13 +188,66 @@ export default function EngiconnectDashboard() {
             setNotifications(prev => ({ ...prev, testingActive: active, testingOverdue: overdue }));
         });
 
+        const unsubMessages = onSnapshot(collection(db, "shop_drawing_requests"), (snap) => {
+            let shopUnread = 0;
+            snap.docs.forEach(doc => {
+                const data = doc.data();
+                if (data.messages && Array.isArray(data.messages)) {
+                    // Using the map in database to compare timestamps
+                    const lastSeenValue = data.lastSeenBy?.[userId];
+                    const lastSeenTime = lastSeenValue ? new Date(lastSeenValue).getTime() : 0;
+                    
+                    const unread = data.messages.filter((m: any) => {
+                        const messageTime = new Date(m.time).getTime();
+                        return m.senderId !== userId && messageTime > lastSeenTime;
+                    }).length;
+                    shopUnread += unread;
+                }
+            });
+            setNotifications(prev => {
+                const updatedUnreadByService = { ...prev.unreadByService, shopDrawing: shopUnread };
+                const totalUnread = Object.values(updatedUnreadByService).reduce((a, b) => a + b, 0);
+                return { 
+                    ...prev, 
+                    unreadByService: updatedUnreadByService,
+                    unreadMessages: totalUnread
+                };
+            });
+        });
+
         return () => { 
-            unsubSite(); unsubShop(); unsubTesting(); unsubJob(); unsubOther();
+            unsubSite(); unsubShop(); unsubTesting(); unsubJob(); unsubOther(); 
+            unsubDialuxPending(); unsubDialuxProgress(); unsubDialuxDone();
+            unsubMessages();
         };
+    }, [userId]);
+
+    useEffect(() => {
+        if (!db) return;
+        const qDialux = query(collection(db, "dialux_requests"), orderBy("createdAt", "desc"), limit(2));
+        const qJob = query(collection(db, "job_requests"), orderBy("createdAt", "desc"), limit(2));
+        const qShop = query(collection(db, "shop_drawing_requests"), orderBy("createdAt", "desc"), limit(2));
+
+        const activitiesMap = new Map();
+        function updateActivity(type: string, docs: any[]) {
+            docs.forEach(doc => {
+                const data = doc.data();
+                activitiesMap.set(doc.id, { id: doc.id, type, ...data });
+            });
+            const sorted = Array.from(activitiesMap.values())
+                .sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0))
+                .slice(0, 5);
+            setRecentActivity(sorted);
+        }
+
+        const unsubDialux = onSnapshot(qDialux, (snap) => updateActivity('DIAlux', snap.docs));
+        const unsubJob = onSnapshot(qJob, (snap) => updateActivity('Job', snap.docs));
+        const unsubShop = onSnapshot(qShop, (snap) => updateActivity('Shop', snap.docs));
+
+        return () => { unsubDialux(); unsubJob(); unsubShop(); };
     }, []);
 
-    // Total notifications for the Bell icon
-    const totalNotifications = notifications.siteVisit + notifications.shopDrawing + notifications.testingOverdue + notifications.jobRequest + notifications.otherRequest;
+    const totalNotifications = notifications.siteVisit + notifications.shopDrawing + notifications.testingOverdue + notifications.jobRequest + notifications.otherRequest + notifications.dialuxRequest;
 
     return (
         <ProtectedPageWrapper>
@@ -187,7 +255,6 @@ export default function EngiconnectDashboard() {
                 <AppSidebar userId={userId} />
                 <SidebarInset className="bg-[#F2F4F7] relative min-h-screen font-sans pb-safe">
 
-                    {/* DESKTOP HEADER */}
                     <header className="hidden md:flex h-20 items-center justify-between px-8 bg-white border-b border-gray-100 sticky top-0 z-50">
                         <div className="flex items-center gap-6">
                             <div className="flex items-center gap-4">
@@ -211,7 +278,11 @@ export default function EngiconnectDashboard() {
                             </div>
                         </div>
                         <div className="flex items-center gap-4">
-                            <button className="p-2.5 text-gray-400 hover:text-[#E33636] hover:bg-red-50 rounded-xl transition-all relative group">
+                            <button onClick={() => router.push('/messages')} className="p-2.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all relative">
+                                <MessageSquare size={20} />
+                                {notifications.unreadMessages > 0 && <span className="absolute top-2.5 right-2.5 size-2 bg-blue-600 rounded-full border-2 border-white animate-pulse" />}
+                            </button>
+                            <button className="p-2.5 text-gray-400 hover:text-[#E33636] hover:bg-red-50 rounded-xl transition-all relative">
                                 <Bell size={20} />
                                 {totalNotifications > 0 && <span className="absolute top-2.5 right-2.5 size-2 bg-[#E33636] rounded-full border-2 border-white" />}
                             </button>
@@ -229,7 +300,6 @@ export default function EngiconnectDashboard() {
                         </div>
                     </header>
 
-                    {/* MOBILE HEADER */}
                     <header className="md:hidden bg-[#E33636] pt-14 pb-20 px-6 rounded-b-[40px] shadow-lg relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-24 -mt-24" />
                         <div className="max-w-7xl mx-auto relative z-10">
@@ -248,6 +318,10 @@ export default function EngiconnectDashboard() {
                                     </div>
                                 </div>
                                 <div className="flex gap-2">
+                                    <button onClick={() => router.push('/messages')} className="p-2.5 bg-white/10 rounded-full border border-white/10 text-white relative">
+                                        <MessageSquare size={18} />
+                                        {notifications.unreadMessages > 0 && <span className="absolute top-2 right-2.5 size-2 bg-blue-400 rounded-full border-2 border-[#E33636]" />}
+                                    </button>
                                     <button className="p-2.5 bg-white/10 rounded-full border border-white/10 text-white relative">
                                         <Bell size={18} />
                                         {totalNotifications > 0 && <span className="absolute top-2 right-2.5 size-2 bg-yellow-400 rounded-full border-2 border-[#E33636]" />}
@@ -277,52 +351,32 @@ export default function EngiconnectDashboard() {
                     </header>
 
                     <main className="px-4 -mt-8 space-y-8 pb-32 relative z-20 md:mt-0 md:px-12 md:py-10">
-                        
-                        {/* SERVICE SECTION */}
                         <section>
-                            <div className="bg-white rounded-[24px] py-1 pb-6 px-4 shadow-sm border border-gray-100">
-                                
+                            <div className="bg-white rounded-[24px] py-6 pb-6 px-4 shadow-sm border border-gray-100">
                                 <div className="md:hidden">
                                     <div 
                                         className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar py-3"
-                                        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
                                         onScroll={handleScroll}
                                         ref={scrollRef}
                                     >
                                         {[...Array(totalPages)].map((_, pageIndex) => (
                                             <div key={pageIndex} className="min-w-full grid grid-cols-3 gap-y-5 px-2 snap-center">
                                                 {services.slice(pageIndex * itemsPerPage, (pageIndex + 1) * itemsPerPage).map((service, i) => (
-                                                    <button 
-                                                        key={i} 
-                                                        onClick={() => router.push(service.path)} 
-                                                        className="flex flex-col items-center"
-                                                    >
+                                                    <button key={i} onClick={() => router.push(service.path)} className="flex flex-col items-center">
                                                         <div className="size-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-3 active:scale-95 transition-all relative">
                                                             <service.icon className="text-[#E33636]" size={28} />
-                                                            {service.count > 0 && (
-                                                                <span className="absolute -top-1 -right-1 bg-[#E33636] text-white text-[10px] size-5 rounded-full flex items-center justify-center font-bold border-2 border-white">
-                                                                    {service.count}
-                                                                </span>
-                                                            )}
+                                                            {service.count > 0 && <span className="absolute -top-1 -right-1 bg-[#E33636] text-white text-[10px] size-5 rounded-full flex items-center justify-center font-bold border-2 border-white">{service.count}</span>}
+                                                            {service.msgCount > 0 && <span className="absolute -bottom-1 -left-1 bg-blue-600 text-white text-[9px] size-5 rounded-full flex items-center justify-center font-bold border-2 border-white"><MessageSquare size={10} fill="currentColor" /></span>}
                                                         </div>
-                                                        <span className="text-[11px] font-bold text-gray-600 text-center leading-tight px-1">
-                                                            {service.label}
-                                                        </span>
+                                                        <span className="text-[11px] font-bold text-gray-600 text-center leading-tight px-1">{service.label}</span>
                                                     </button>
                                                 ))}
                                             </div>
                                         ))}
                                     </div>
-
                                     <div className="flex justify-center gap-3 mt-2">
                                         {[...Array(totalPages)].map((_, i) => (
-                                            <div 
-                                                key={i} 
-                                                className={cn(
-                                                    "h-1.5 rounded-full transition-all duration-300",
-                                                    currentPage === i ? "w-6 bg-[#E33636]" : "w-2 bg-gray-200"
-                                                )}
-                                            />
+                                            <div key={i} className={cn("h-1.5 rounded-full transition-all duration-300", currentPage === i ? "w-6 bg-[#E33636]" : "w-2 bg-gray-200")} />
                                         ))}
                                     </div>
                                 </div>
@@ -333,6 +387,7 @@ export default function EngiconnectDashboard() {
                                             <div className="size-14 bg-gray-50 rounded-xl flex items-center justify-center mb-2 group-hover:bg-red-50 transition-all relative">
                                                 <service.icon className="text-[#E33636]" size={24} />
                                                 {service.count > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[9px] size-5 rounded-full flex items-center justify-center font-bold border-2 border-white">{service.count}</span>}
+                                                {service.msgCount > 0 && <span className="absolute -bottom-1.5 -left-1.5 bg-blue-600 text-white text-[9px] size-5 rounded-full flex items-center justify-center font-bold border-2 border-white shadow-md animate-bounce"><MessageSquare size={10} fill="currentColor" /></span>}
                                             </div>
                                             <span className="text-[10px] font-bold text-gray-500 text-center">{service.label}</span>
                                         </button>
@@ -341,80 +396,146 @@ export default function EngiconnectDashboard() {
                             </div>
                         </section>
 
-                        {/* Activities Section */}
+                        <section className="grid grid-cols-3 gap-3">
+                             <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center">
+                                <span className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">Total Pending</span>
+                                <div className="flex items-baseline gap-1">
+                                    <span className="text-xl font-black text-[#E33636]">{totalNotifications}</span>
+                                    <Layers size={10} className="text-gray-300" />
+                                </div>
+                             </div>
+                             <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center">
+                                <span className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">Unread Chat</span>
+                                <div className="flex items-baseline gap-1">
+                                    <span className="text-xl font-black text-blue-600">{notifications.unreadMessages}</span>
+                                    <MessageSquare size={10} className="text-gray-300" />
+                                </div>
+                             </div>
+                             <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center">
+                                <span className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">Success</span>
+                                <span className="text-xl font-black text-green-600">{notifications.dialuxCompleted}</span>
+                             </div>
+                        </section>
+
+                        <section className="space-y-4">
+                            <div className="flex items-center justify-between">
+                                <h2 className="text-lg font-bold text-gray-900 tracking-tight">Internal Communication</h2>
+                                <button onClick={() => router.push('/messages')} className="text-[10px] font-bold text-blue-600 uppercase tracking-wider flex items-center gap-1">
+                                    Open Inbox <MessageSquare size={12} />
+                                </button>
+                            </div>
+                            <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col items-center justify-center space-y-3">
+                                <div className="flex items-center gap-6">
+                                    {Object.entries(notifications.unreadByService).map(([service, count]) => (
+                                        count > 0 && (
+                                            <div key={service} className="flex flex-col items-center">
+                                                <div className="size-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center relative mb-1">
+                                                    <MessageSquare size={20} fill="currentColor" />
+                                                    <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-[8px] size-4 rounded-full flex items-center justify-center border-2 border-white">{count}</span>
+                                                </div>
+                                                <span className="text-[8px] font-black text-gray-400 uppercase">{service}</span>
+                                            </div>
+                                        )
+                                    ))}
+                                    {notifications.unreadMessages === 0 && <p className="text-[10px] font-bold text-gray-400 uppercase italic">No new internal messages</p>}
+                                </div>
+                            </div>
+                        </section>
+
+                        <section className="space-y-4">
+                            <div className="flex items-center justify-between">
+                                <h2 className="text-lg font-bold text-gray-900 tracking-tight">Recent Activity</h2>
+                                <button onClick={() => router.push('/notifications')} className="text-[10px] font-bold text-[#E33636] uppercase tracking-wider flex items-center gap-1">
+                                    View All <ArrowUpRight size={12} />
+                                </button>
+                            </div>
+                            <div className="space-y-3">
+                                {recentActivity.length > 0 ? recentActivity.map((item) => (
+                                    <div key={item.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between group active:scale-[0.98] transition-all" 
+                                         onClick={() => {
+                                             const paths: Record<string, string> = { 'DIAlux': `/request/dialux/${item.id}`, 'Job': `/request/job/${item.id}`, 'Shop': `/request/shop-drawing/${item.id}` };
+                                             router.push(paths[item.type] || '#');
+                                         }}>
+                                        <div className="flex items-center gap-4">
+                                            <div className={cn(
+                                                "size-10 rounded-xl flex items-center justify-center",
+                                                item.type === 'DIAlux' ? "bg-indigo-50 text-indigo-600" : 
+                                                item.type === 'Job' ? "bg-orange-50 text-orange-600" : "bg-emerald-50 text-emerald-600"
+                                            )}>
+                                                {item.type === 'DIAlux' ? <Monitor size={18} /> : item.type === 'Job' ? <FileText size={18} /> : <StreetLightIcon size={18} />}
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center gap-2 mb-0.5">
+                                                    <span className="text-[8px] font-black px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded uppercase tracking-widest">{item.type}</span>
+                                                    <p className="text-xs font-bold text-gray-900 line-clamp-1">{item.projectTitle || item.requestTitle || "New Activity"}</p>
+                                                </div>
+                                                <p className="text-[10px] font-medium text-gray-400">{item.company || "General"} • {item.createdAt?.toDate().toLocaleDateString()}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            {item.status === 'PENDING' && <div className="size-2 bg-red-500 rounded-full animate-pulse" />}
+                                            <ChevronRight size={14} className="text-gray-300 group-hover:translate-x-1 transition-transform" />
+                                        </div>
+                                    </div>
+                                )) : <div className="py-8 flex flex-col items-center justify-center bg-white/50 rounded-2xl border border-dashed border-gray-200"><p className="text-[10px] font-bold text-gray-400 uppercase">System Idle</p></div>}
+                            </div>
+                        </section>
+
                         <section className="space-y-4 px-2">
                             <div className="flex flex-col gap-4">
                                 <div className="flex items-end justify-between">
-                                    <h2 className="text-lg font-bold text-gray-900 tracking-tight">Activities</h2>
-                                    <button className="text-[10px] font-bold text-[#E33636] uppercase tracking-wider">View All</button>
+                                    <h2 className="text-lg font-bold text-gray-900 tracking-tight">Overview</h2>
+                                    <button className="text-[10px] font-bold text-[#E33636] uppercase tracking-wider">Reports</button>
                                 </div>
                                 <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
                                     {tabs.map((tab) => (
-                                        <button
-                                            key={tab}
-                                            onClick={() => setActiveTab(tab)}
-                                            className={cn(
-                                                "px-6 py-1.5 rounded-full text-[10px] font-bold transition-all border whitespace-nowrap",
-                                                activeTab === tab
-                                                    ? "bg-[#E33636] text-white border-[#E33636] shadow-md"
-                                                    : "bg-white text-gray-400 border-gray-100 hover:border-gray-200"
-                                            )}
-                                        >
-                                            {tab}
-                                        </button>
+                                        <button key={tab} onClick={() => setActiveTab(tab)} className={cn("px-6 py-1.5 rounded-full text-[10px] font-bold transition-all border whitespace-nowrap", activeTab === tab ? "bg-[#E33636] text-white border-[#E33636] shadow-md" : "bg-white text-gray-400 border-gray-100 hover:border-gray-200")}>{tab}</button>
                                     ))}
                                 </div>
                             </div>
-
                             <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-6">
-                                {activeTab === "Testing" ? (
+                                {activeTab === "Monitoring" && (
                                     <>
-                                        <ActivityCard label="Upcoming" value={notifications.siteVisit} />
-                                        <ActivityCard label="Overdue" value={notifications.testingOverdue} isAlert={notifications.testingOverdue > 0} />
-                                        <ActivityCard label="Job Requests" value={notifications.jobRequest} />
-                                        <ActivityCard label="Shop Requests" value={notifications.shopDrawing} />
+                                        <ActivityCard label="In-Testing" value={notifications.testingActive} icon={ClipboardCheck} />
+                                        <ActivityCard label="Critical" value={notifications.testingOverdue} icon={AlertTriangle} isAlert={notifications.testingOverdue > 0} />
+                                        <ActivityCard label="Site Visits" value={notifications.siteVisit} icon={CalendarCheck} />
+                                        <ActivityCard label="Shop Review" value={notifications.shopDrawing} icon={StreetLightIcon} />
                                     </>
-                                ) : (
-                                    <div className="col-span-2 py-10 flex flex-col items-center justify-center bg-white/50 rounded-2xl border border-dashed border-gray-200">
-                                        <p className="text-[10px] font-bold text-gray-400 uppercase">No {activeTab} Data</p>
+                                )}
+                                {activeTab === "Requests" && (
+                                    <>
+                                        <ActivityCard label="DIAlux" value={notifications.dialuxRequest} icon={Monitor} />
+                                        <ActivityCard label="Job" value={notifications.jobRequest} icon={FileText} />
+                                        <ActivityCard label="Misc" value={notifications.otherRequest} icon={MoreHorizontal} />
+                                        <ActivityCard label="Total" value={totalNotifications} icon={Bell} />
+                                    </>
+                                )}
+                                {(activeTab === "Projects" || activeTab === "Admin") && (
+                                   <div className="col-span-2 md:col-span-4 py-10 flex flex-col items-center justify-center bg-white rounded-2xl border border-dashed border-gray-200">
+                                        <p className="text-[10px] font-bold text-gray-400 uppercase">{activeTab} Tracking Coming Soon</p>
                                     </div>
                                 )}
                             </div>
                         </section>
                     </main>
 
-                    <button
-                        onClick={() => router.push('/request/testing/add')}
-                        className="fixed bottom-8 right-6 size-14 bg-[#E33636] text-white rounded-full shadow-2xl flex items-center justify-center active:scale-90 transition-all z-50"
-                    >
+                    <button onClick={() => router.push('/request/testing/add')} className="fixed bottom-8 right-6 size-14 bg-[#E33636] text-white rounded-full shadow-2xl flex items-center justify-center active:scale-90 transition-all z-50">
                         <Plus size={24} strokeWidth={3} />
                     </button>
                 </SidebarInset>
             </SidebarProvider>
-
-            <style jsx global>{`
-                .no-scrollbar::-webkit-scrollbar {
-                    display: none;
-                }
-                .no-scrollbar {
-                    -ms-overflow-style: none;
-                    scrollbar-width: none;
-                }
-            `}</style>
+            <style jsx global>{`.no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }`}</style>
         </ProtectedPageWrapper>
     )
 }
 
-function ActivityCard({ label, value, isAlert }: { label: string, value: number, isAlert?: boolean }) {
+function ActivityCard({ label, value, icon: Icon, isAlert }: { label: string, value: number, icon?: any, isAlert?: boolean }) {
     return (
-        <div className={cn(
-            "bg-white p-4 rounded-2xl shadow-sm border flex flex-col gap-1 min-h-[100px] relative overflow-hidden transition-all",
-            isAlert ? "border-red-200 ring-1 ring-red-50" : "border-gray-50"
-        )}>
+        <div className={cn("bg-white p-4 rounded-2xl shadow-sm border flex flex-col gap-1 min-h-[100px] relative overflow-hidden transition-all", isAlert ? "border-red-200 ring-1 ring-red-50" : "border-gray-100")}>
             <p className={cn("text-[10px] font-bold uppercase tracking-tight", isAlert ? "text-red-500" : "text-gray-400")}>{label}</p>
             <p className={cn("text-3xl font-black text-gray-900", isAlert && "text-red-600")}>{value}</p>
             <div className="absolute bottom-2 right-2 opacity-10">
-                <Activity size={32} className={cn("text-[#E33636]", isAlert && "text-red-600")} />
+                {Icon ? <Icon size={32} className={cn("text-[#E33636]", isAlert && "text-red-600")} /> : <Activity size={32} className={cn("text-[#E33636]", isAlert && "text-red-600")} />}
             </div>
             {isAlert && <div className="absolute top-0 right-0 size-1.5 bg-red-500 rounded-bl-lg animate-pulse" />}
         </div>

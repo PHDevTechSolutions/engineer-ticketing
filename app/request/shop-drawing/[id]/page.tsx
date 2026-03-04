@@ -31,12 +31,12 @@ export default function EngineeringReviewPage() {
   const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  
-  const [userContext, setUserContext] = useState({ 
-    role: "", 
-    id: "", 
+
+  const [userContext, setUserContext] = useState({
+    role: "",
+    id: "",
     name: "",
-    profilePicture: "" 
+    profilePicture: ""
   });
 
   const [clarification, setClarification] = useState("");
@@ -82,7 +82,7 @@ export default function EngineeringReviewPage() {
 
         // LOGIC FIX: Check if the name is missing or literally the string "undefined"
         let finalName = user.Name || user.name || user.userName || storedName;
-        
+
         if (!finalName || finalName === "undefined") {
           finalName = "Staff Member";
         }
@@ -116,11 +116,11 @@ export default function EngineeringReviewPage() {
   }, [params.id]);
 
   const handleUpdateStatus = async (status: string, extraData = {}) => {
-    if (isUpdating) return; 
-    
+    if (isUpdating) return;
+
     setIsUpdating(true);
     const loadingToast = toast.loading(`Processing ${status.replace('_', ' ')}...`);
-    
+
     try {
       const docRef = doc(db, "shop_drawing_requests", params.id);
       await updateDoc(docRef, {
@@ -134,7 +134,7 @@ export default function EngineeringReviewPage() {
     } catch (error) {
       toast.error("Process failed.");
     } finally {
-      setIsUpdating(false); 
+      setIsUpdating(false);
     }
   };
 
@@ -293,6 +293,7 @@ export default function EngineeringReviewPage() {
 
               <CollaborationHub
                 requestId={params.id}
+                collectionName="shop_drawing_requests"
                 messages={data?.messages || []}
                 currentUserId={userContext.id}
                 userName={userContext.name}
@@ -331,11 +332,11 @@ export default function EngineeringReviewPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => handleUpdateStatus("ACCEPTED")} disabled={isUpdating}>
-                        {isUpdating ? <Loader2 size={14} className="animate-spin mr-2" /> : <Check size={14} className="mr-2" />} 
+                        {isUpdating ? <Loader2 size={14} className="animate-spin mr-2" /> : <Check size={14} className="mr-2" />}
                         {isUpdating ? "WAITING" : "ACCEPT"}
                       </Button>
                       <Button variant="destructive" onClick={() => handleUpdateStatus("REJECTED")} disabled={isUpdating}>
-                        {isUpdating ? <Loader2 size={14} className="animate-spin mr-2" /> : <X size={14} className="mr-2" />} 
+                        {isUpdating ? <Loader2 size={14} className="animate-spin mr-2" /> : <X size={14} className="mr-2" />}
                         {isUpdating ? "WAITING" : "REJECT"}
                       </Button>
                     </div>

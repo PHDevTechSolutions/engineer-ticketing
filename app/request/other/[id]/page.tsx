@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import {
   Clock, ZoomIn, ZoomOut, RefreshCcw,
   CheckCircle2, History, Loader2, ShieldCheck,
-  Cpu, ChevronLeft, User, 
+  Cpu, ChevronLeft, User,
   Download, MessageSquare,
   Check, X, Timer, FileText, Image as ImageIcon, ExternalLink
 } from "lucide-react";
@@ -28,9 +28,9 @@ export default function OtherRequestReviewPage() {
   const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  
-  const [userContext, setUserContext] = useState({ 
-    role: "", id: "", name: "", profilePicture: "" 
+
+  const [userContext, setUserContext] = useState({
+    role: "", id: "", name: "", profilePicture: ""
   });
 
   const [notes, setNotes] = useState("");
@@ -95,7 +95,7 @@ export default function OtherRequestReviewPage() {
   const handleUpdateStatus = async (status: string) => {
     setIsUpdating(true);
     const toastId = toast.loading(`Updating status to ${status}...`);
-    
+
     try {
       const docRef = doc(db, "other_requests", params.id);
       await updateDoc(docRef, {
@@ -108,7 +108,7 @@ export default function OtherRequestReviewPage() {
     } catch (error) {
       toast.error("Sync failed.");
     } finally {
-      setIsUpdating(false); 
+      setIsUpdating(false);
     }
   };
 
@@ -146,28 +146,28 @@ export default function OtherRequestReviewPage() {
         </header>
 
         <main className="p-4 md:p-8 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8 pb-32">
-          
+
           {/* LEFT CONTENT: File Viewer & Description */}
           <div className="lg:col-span-8 space-y-6">
             <div className="bg-white rounded-[24px] border border-zinc-200 shadow-sm overflow-hidden flex flex-col min-h-[500px]">
               <div className="p-4 border-b flex items-center justify-between bg-zinc-50/50">
                 <span className="text-[10px] font-black uppercase text-zinc-400 tracking-widest flex items-center gap-2">
-                   <ImageIcon size={14} /> Attachment Viewer
+                  <ImageIcon size={14} /> Attachment Viewer
                 </span>
                 {data?.attachmentUrl && (
-                    <a href={data.attachmentUrl} target="_blank" className="text-[9px] font-bold text-blue-600 uppercase flex items-center gap-1">
-                        Open Original <ExternalLink size={12} />
-                    </a>
+                  <a href={data.attachmentUrl} target="_blank" className="text-[9px] font-bold text-blue-600 uppercase flex items-center gap-1">
+                    Open Original <ExternalLink size={12} />
+                  </a>
                 )}
               </div>
-              
+
               <div className="flex-1 bg-zinc-100 flex items-center justify-center relative">
                 {data?.attachmentUrl ? (
-                   <TransformWrapper>
+                  <TransformWrapper>
                     <TransformComponent wrapperClass="!w-full !h-full">
-                       <img src={data.attachmentUrl} alt="Attachment" className="max-w-full max-h-[500px] object-contain" />
+                      <img src={data.attachmentUrl} alt="Attachment" className="max-w-full max-h-[500px] object-contain" />
                     </TransformComponent>
-                   </TransformWrapper>
+                  </TransformWrapper>
                 ) : (
                   <div className="text-center space-y-2">
                     <FileText size={40} className="mx-auto text-zinc-300" />
@@ -186,6 +186,7 @@ export default function OtherRequestReviewPage() {
 
             <CollaborationHub
               requestId={params.id}
+              collectionName="other_requests" // Explicitly tell it which collection to use
               messages={data?.messages || []}
               currentUserId={userContext.id}
               userName={userContext.name}
@@ -206,7 +207,7 @@ export default function OtherRequestReviewPage() {
                   <Timer size={12} className="animate-pulse" /> {elapsedTime}
                 </Badge>
               </div>
-              
+
               <div className="space-y-8 relative before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-0.5 before:bg-zinc-100">
                 <TimelineStep title="Submitted" date={data?.createdAt} status="completed" />
                 <TimelineStep title="Processing" status={status === 'PENDING' ? 'active' : 'completed'} />
@@ -221,7 +222,7 @@ export default function OtherRequestReviewPage() {
                   <ShieldCheck size={18} />
                   <h3 className="text-[10px] font-black uppercase tracking-widest text-white">Admin Controls</h3>
                 </div>
-                
+
                 <Textarea
                   placeholder="Internal notes or response..."
                   className="bg-white/10 border-none text-white min-h-[120px] rounded-xl placeholder:text-zinc-500 text-xs"
@@ -230,7 +231,7 @@ export default function OtherRequestReviewPage() {
                 />
 
                 <div className="grid grid-cols-1 gap-3">
-                  <Button 
+                  <Button
                     className="w-full bg-[#00C853] hover:bg-[#00B24A] font-black uppercase text-[10px] tracking-widest h-12 rounded-xl"
                     onClick={() => handleUpdateStatus("APPROVED")}
                     disabled={isUpdating}
@@ -238,8 +239,8 @@ export default function OtherRequestReviewPage() {
                     {isUpdating ? <Loader2 className="animate-spin size-4 mr-2" /> : <Check size={16} className="mr-2" />}
                     Approve & Close
                   </Button>
-                  
-                  <Button 
+
+                  <Button
                     variant="ghost"
                     className="w-full text-zinc-400 hover:text-white hover:bg-white/5 font-black uppercase text-[10px] tracking-widest h-12"
                     onClick={() => handleUpdateStatus("REJECTED")}
