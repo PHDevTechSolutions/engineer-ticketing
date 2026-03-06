@@ -1,202 +1,124 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { db, getMessagingInstance } from "@/lib/firebase"; 
-import { 
-    collection, query, where, onSnapshot, limit, 
-    doc, setDoc, serverTimestamp 
-} from "firebase/firestore";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { getToken, onMessage } from "firebase/messaging";
 import { toast } from "sonner";
-import { X, ExternalLink, BellRing, BellOff, CheckCircle2, RefreshCw } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { X, Bell, ShieldCheck, Info, Smartphone, ArrowRight } from "lucide-react";
 import { subscribeUserToPush } from "@/lib/push-subscription";
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
-    const audioRef = useRef<HTMLAudioElement | null>(null);
-    const playedIdsRef = useRef<string[]>([]);
     const pathname = usePathname();
-    
     const [isMounted, setIsMounted] = useState(false);
     const [isSubscribed, setIsSubscribed] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
-    const [debugLogs, setDebugLogs] = useState<string[]>([]);
+    const [permissionStatus, setPermissionStatus] = useState<NotificationPermission>("default");
 
-    const addLog = (msg: string) => {
-        setDebugLogs(prev => [msg, ...prev].slice(0, 5));
-        console.log(`[PushDebug] ${msg}`);
-    };
+    // --- NEW: App Ready Logic ---
+    // We check if we are currently in the middle of a "Verification" phase
+    const [isAppReady, setIsAppReady] = useState(false);
 
-    // --- 1. INITIALIZATION & FOREGROUND LISTENERS ---
     useEffect(() => {
         setIsMounted(true);
-        const department = localStorage.getItem("department")?.toUpperCase();
+        
+        // Listen for the "Verification" to end
+        // We give it a tiny delay to ensure the loading screen is fully gone
+        const checkReady = setInterval(() => {
+            if (document.body.getAttribute('data-verifying') !== 'true') {
+                setIsAppReady(true);
+                clearInterval(checkReady);
+            }
+        }, 100);
 
         if (typeof window !== "undefined" && "Notification" in window) {
-            // Check existing subscription status
+            setPermissionStatus(Notification.permission);
             navigator.serviceWorker.getRegistration().then(reg => {
                 reg?.pushManager.getSubscription().then(sub => setIsSubscribed(!!sub));
             });
 
-            // Setup Foreground Push Listener
             getMessagingInstance().then(messaging => {
                 if (messaging) {
                     onMessage(messaging, (payload) => {
-                        addLog("Foreground Push Received");
-                        toast.info(payload.notification?.title || "New Update", {
+                        toast.info(payload.notification?.title || "New Message", {
                             description: payload.notification?.body,
-                            icon: <BellRing className="size-4" />
+                            icon: <Bell className="size-4 text-[#E33636]" />,
                         });
                     });
                 }
             });
         }
-
-        if (department === "ENGINEERING" && !audioRef.current) {
-            audioRef.current = new Audio("/sounds/ticket-endorsed.mp3");
-            audioRef.current.load();
-        }
+        return () => clearInterval(checkReady);
     }, []);
 
-    // --- 2. LIVE LEDGER LISTENER (Shop Drawings) ---
-    useEffect(() => {
-        const department = localStorage.getItem("department")?.toUpperCase();
-        if (department !== "ENGINEERING") return;
-
-        addLog("Live Ledger Active");
-        const q = query(
-            collection(db, "shop_drawing_requests"),
-            where("department", "==", "ENGINEERING"),
-            where("status", "==", "PENDING_REVIEW"),
-            limit(10)
-        );
-
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            snapshot.docChanges().forEach((change) => {
-                if (change.type === "added") {
-                    const docId = change.doc.id;
-                    const data = change.doc.data();
-                    if (!playedIdsRef.current.includes(docId)) {
-                        showNewDrawingAlert(docId, data);
-                        playedIdsRef.current.push(docId);
-                    }
-                }
-            });
-        }, (err) => addLog(`Ledger Error: ${err.message}`));
-
-        return () => unsubscribe();
-    }, [pathname]);
-
-    // --- 3. UPDATED SYNC LOGIC (The Reference Strategy) ---
-    const handleSyncPush = async () => {
+    const handleSubscribe = async () => {
         const userId = localStorage.getItem("userId");
-        if (!userId) return addLog("Error: No userId. Please re-login.");
-
+        if (!userId) return toast.error("Please sign in to continue.");
         setIsSyncing(true);
-        addLog("Syncing Device...");
-
         try {
             const messaging = await getMessagingInstance();
-            if (!messaging) throw new Error("Messaging unsupported");
-
-            // Register service worker explicitly
-            const registration = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
-            
+            if (!messaging) throw new Error("This browser doesn't support notifications.");
             const permission = await Notification.requestPermission();
-            if (permission !== "granted") throw new Error("Permission denied");
-
-            // Get the FCM Token for normal operations
+            setPermissionStatus(permission);
+            if (permission !== "granted") throw new Error("Please allow notifications to get updates.");
             const fcmToken = await getToken(messaging, {
                 vapidKey: process.env.NEXT_PUBLIC_VAPID_KEY?.trim(),
             });
-
-            // Get the Full VAPID Subscription (Reference Code Strategy)
             const fullSubscription = await subscribeUserToPush();
-
-            if (!fcmToken) throw new Error("Token generation failed");
-
-            addLog("Updating Firestore Profile...");
-            
             await setDoc(doc(db, "users", userId), {
-                fcmToken,
-                // We store the full object as a string/json for maximum backup
-                pushSubscription: JSON.parse(JSON.stringify(fullSubscription)),
-                notificationsEnabled: true,
-                updatedAt: serverTimestamp(),
-                platform: "web-ios-pwa",
-                lastPushSync: new Date().toISOString()
+                fcmToken, pushSubscription: JSON.parse(JSON.stringify(fullSubscription)),
+                notificationsEnabled: true, updatedAt: serverTimestamp(), platform: "standard-web",
             }, { merge: true });
-
             setIsSubscribed(true);
-            addLog("SUCCESS: Device fully synced");
-            toast.success("Notifications Active");
+            toast.success("You're all set for updates!");
         } catch (err: any) {
-            addLog(`FAILED: ${err.message}`);
-            toast.error(`Sync Error: ${err.message}`);
-        } finally {
-            setIsSyncing(false);
-        }
-    };
-
-    const showNewDrawingAlert = (id: string, data: any) => {
-        audioRef.current?.play().catch(() => {});
-        toast.custom((t) => (
-            <div className="bg-white border border-gray-100 p-5 rounded-[1.5rem] shadow-xl flex flex-col gap-5 min-w-[340px] animate-in fade-in slide-in-from-right-4">
-                <div className="flex justify-between items-start">
-                    <div className="flex items-center gap-3">
-                        <div className="bg-[#E33636] p-2 rounded-2xl shadow-lg shadow-red-200">
-                            <BellRing size={18} className="text-white" />
-                        </div>
-                        <div className="flex flex-col">
-                            <span className="text-[#0F172A] text-xs font-black uppercase">New Drawing Request</span>
-                            <span className="text-gray-400 text-[10px]">Engineering Dept</span>
-                        </div>
-                    </div>
-                    <button onClick={() => toast.dismiss(t)} className="p-1 hover:bg-gray-50 rounded-full">
-                        <X size={18} className="text-gray-300" />
-                    </button>
-                </div>
-                <div className="bg-[#F8FAFC] p-4 rounded-2xl border border-gray-50">
-                    <span className="text-gray-400 text-[9px] font-bold uppercase tracking-widest">Project Name</span>
-                    <h4 className="text-[#0F172A] text-[16px] font-black leading-tight">{data.projectName || "Unnamed Project"}</h4>
-                </div>
-                <button 
-                    onClick={() => { toast.dismiss(t); window.location.href = `/request/shop-drawing`; }}
-                    className="w-full bg-[#0F172A] text-white text-[12px] font-bold py-4 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg"
-                >
-                    Open Requests <ExternalLink size={14} />
-                </button>
-            </div>
-        ), { duration: 8000, position: 'bottom-right' });
+            toast.error(err.message);
+        } finally { setIsSyncing(false); }
     };
 
     if (!isMounted) return <>{children}</>;
 
+    // --- FIX: Only show the alert if the App is Ready AND we aren't subscribed ---
+    const showNotice = isAppReady && !isSubscribed && pathname === "/dashboard";
+
     return (
         <>
-            {pathname === "/dashboard" && (
-                <div className="fixed bottom-6 left-6 z-50 flex flex-col gap-2">
-                    <div className={cn(
-                        "flex items-center gap-3 px-4 py-3 rounded-2xl border shadow-xl bg-white",
-                        isSubscribed ? "border-green-100" : "border-red-100"
-                    )}>
-                        <div className={cn("size-8 rounded-full flex items-center justify-center", isSubscribed ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600")}>
-                            {isSubscribed ? <CheckCircle2 size={18} /> : <BellOff size={18} />}
+            {showNotice && (
+                <div className="fixed inset-x-0 bottom-0 sm:inset-auto sm:top-8 sm:right-8 z-[100] p-4 sm:p-0 pointer-events-none">
+                    <div className="bg-white w-full sm:w-[360px] pointer-events-auto rounded-[2.5rem] p-6 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.2)] flex flex-col border border-slate-100 animate-in slide-in-from-bottom-5 sm:slide-in-from-right-5 duration-700 ease-out">
+                        
+                        <div className="flex items-center justify-between mb-6">
+                            <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 rounded-full border border-blue-100/50">
+                                <ShieldCheck size={12} className="text-blue-600" />
+                                <span className="text-[10px] font-bold uppercase tracking-wide text-blue-700">Safe & Secure</span>
+                            </div>
+                            <button onClick={() => setIsSubscribed(true)} className="p-1 text-slate-300 hover:text-slate-500"><X size={20} /></button>
                         </div>
-                        <div className="flex flex-col">
-                            <span className="text-[10px] font-black uppercase tracking-tight text-gray-900">{isSubscribed ? "Push Active" : "Push Inactive"}</span>
-                            <span className="text-[9px] font-bold text-gray-400 uppercase">Device Status</span>
+
+                        <div className="flex items-center gap-4 mb-6">
+                            <div className="bg-[#0F172A] p-4 rounded-[1.5rem] shadow-xl shrink-0"><Smartphone size={26} className="text-white" /></div>
+                            <div>
+                                <h2 className="text-[20px] font-black text-[#0F172A] tracking-tight leading-none mb-1">engi<span className="text-[#E33636]">connect</span></h2>
+                                <p className="text-slate-400 text-[11px] font-bold uppercase tracking-wider">Stay in the loop</p>
+                            </div>
                         </div>
-                        <button onClick={handleSyncPush} disabled={isSyncing} className={cn("ml-2 p-2 rounded-xl text-gray-400 transition-all", isSyncing && "animate-spin")}>
-                            <RefreshCw size={16} />
+
+                        <div className="space-y-4 mb-8">
+                            <p className="text-slate-600 text-[14px] leading-relaxed font-medium">
+                                Get a quick ping on your phone or computer whenever a <span className="text-[#0F172A] font-bold underline decoration-[#E33636] decoration-2 underline-offset-4">Site Visit</span> is approved.
+                            </p>
+                            <div className="flex items-start gap-3 text-slate-400 bg-slate-50 p-3 rounded-2xl">
+                                <Info size={16} className="shrink-0 mt-0.5" />
+                                <p className="text-[11px] leading-snug">This works even if you don&apos;t have the website open.</p>
+                            </div>
+                        </div>
+
+                        <button onClick={handleSubscribe} disabled={isSyncing} className="group w-full py-4.5 bg-[#0F172A] hover:bg-slate-800 text-white rounded-[1.2rem] font-black text-[15px] transition-all flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50">
+                            {isSyncing ? "Setting things up..." : "Turn on Alerts"}
+                            {!isSyncing && <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />}
                         </button>
                     </div>
-                    {debugLogs.length > 0 && (
-                        <div className="bg-black/90 text-[9px] text-green-400 p-3 rounded-xl font-mono border border-white/10 backdrop-blur-md max-w-xs">
-                            {debugLogs.map((log, i) => <div key={i} className="truncate">{`> ${log}`}</div>)}
-                        </div>
-                    )}
                 </div>
             )}
             {children}
