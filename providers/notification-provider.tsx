@@ -6,7 +6,7 @@ import { db, getMessagingInstance } from "@/lib/firebase";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { getToken, onMessage } from "firebase/messaging";
 import { toast } from "sonner";
-import { X, Bell, ShieldCheck, Info, ArrowRight } from "lucide-react";
+import { X, Bell, ShieldCheck, Info, ArrowRight, Loader2 } from "lucide-react";
 import { subscribeUserToPush } from "@/lib/push-subscription";
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
@@ -16,36 +16,29 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     const [isSyncing, setIsSyncing] = useState(false);
     const [permissionStatus, setPermissionStatus] = useState<NotificationPermission>("default");
     const [isAppReady, setIsAppReady] = useState(false);
+    
+    // --- NEW: Live Debugging State ---
+    const [debugStatus, setDebugStatus] = useState("");
 
     useEffect(() => {
         setIsMounted(true);
-        console.log("DEBUG: NotificationProvider mounted.");
-
         const checkReady = setInterval(() => {
             const isVerifying = document.body.getAttribute('data-verifying') === 'true';
             if (!isVerifying) {
                 setIsAppReady(true);
                 clearInterval(checkReady);
-                console.log("DEBUG: App is ready (Verification finished).");
             }
         }, 150);
 
         if (typeof window !== "undefined" && "Notification" in window) {
             setPermissionStatus(Notification.permission);
-            console.log("DEBUG: Current Notification Permission:", Notification.permission);
-
             navigator.serviceWorker.getRegistration().then(reg => {
-                console.log("DEBUG: Service Worker Registration found:", !!reg);
-                reg?.pushManager.getSubscription().then(sub => {
-                    console.log("DEBUG: Existing Push Subscription found:", !!sub);
-                    setIsSubscribed(!!sub);
-                });
+                reg?.pushManager.getSubscription().then(sub => setIsSubscribed(!!sub));
             });
 
             getMessagingInstance().then(messaging => {
                 if (messaging) {
                     onMessage(messaging, (payload) => {
-                        console.log("DEBUG: Foreground message received:", payload);
                         toast.info(payload.notification?.title || "New Message", {
                             description: payload.notification?.body,
                             icon: <Bell className="size-4 text-[#E33636]" />,
@@ -53,52 +46,40 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
                     });
                 }
             });
-        } else {
-            console.warn("DEBUG: Notifications NOT supported in this browser.");
         }
         return () => clearInterval(checkReady);
     }, []);
 
     const handleSubscribe = async () => {
         const userId = localStorage.getItem("userId");
-        if (!userId) {
-            console.error("DEBUG: No userId found in localStorage.");
-            return toast.error("Please sign in to get alerts.");
-        }
+        if (!userId) return toast.error("Please sign in to get alerts.");
 
-        console.log("DEBUG: Starting subscription for user:", userId);
         setIsSyncing(true);
-
         try {
+            setDebugStatus("Connecting to Google...");
             const messaging = await getMessagingInstance();
             if (!messaging) throw new Error("Browser doesn't support messaging.");
-            console.log("DEBUG: Messaging instance retrieved.");
-
-            console.log("DEBUG: Requesting permission...");
+            
+            setDebugStatus("Asking for permission...");
             const permission = await Notification.requestPermission();
             setPermissionStatus(permission);
-            console.log("DEBUG: Permission result:", permission);
+            if (permission !== "granted") throw new Error("Permission denied.");
 
-            if (permission !== "granted") throw new Error("Permission was not granted.");
-
-            console.log("DEBUG: Waiting for Service Worker to be ready...");
+            setDebugStatus("Starting Service Worker...");
             const registration = await navigator.serviceWorker.ready;
-            console.log("DEBUG: Service Worker is ready.");
-
-            console.log("DEBUG: Attempting to get FCM Token...");
+            
+            setDebugStatus("Generating Secure ID...");
             const fcmToken = await getToken(messaging, {
                 vapidKey: process.env.NEXT_PUBLIC_VAPID_KEY?.trim(),
                 serviceWorkerRegistration: registration,
             });
 
-            if (!fcmToken) throw new Error("FCM Token generation failed.");
-            console.log("DEBUG: FCM Token received:", fcmToken);
+            if (!fcmToken) throw new Error("FCM ID failed.");
 
-            console.log("DEBUG: Getting full push subscription object...");
+            setDebugStatus("Finalizing Sync...");
             const fullSubscription = await subscribeUserToPush();
-            console.log("DEBUG: Subscription object created.");
 
-            console.log("DEBUG: Writing to Firestore...");
+            setDebugStatus("Saving to account...");
             await setDoc(doc(db, "users", userId), {
                 fcmToken,
                 pushSubscription: JSON.parse(JSON.stringify(fullSubscription)),
@@ -106,15 +87,16 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
                 updatedAt: serverTimestamp(),
             }, { merge: true });
 
-            console.log("DEBUG: Success! Database updated.");
             setIsSubscribed(true);
             toast.success("You're all set for alerts!");
         } catch (err: any) {
-            console.error("DEBUG ERROR:", err);
+            console.error(err);
+            setDebugStatus(`Error: ${err.message}`);
             toast.error(err.message || "Something went wrong.");
+            // Reset status after 3 seconds on error so user can try again
+            setTimeout(() => setDebugStatus(""), 3000);
         } finally {
             setIsSyncing(false);
-            console.log("DEBUG: Subscription process ended.");
         }
     };
 
@@ -139,7 +121,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
                         <div className="flex items-center gap-4 mb-6">
                             <div className="bg-[#0F172A] p-1 rounded-[1.2rem] shadow-xl overflow-hidden h-14 w-14 flex items-center justify-center border border-slate-700 shrink-0">
-                                <img src="/icons/disruptive.png" alt="engiConnect Icon" className="h-full w-full object-cover" />
+                                <img src="/icons/disruptive.png" alt="Icon" className="h-full w-full object-cover" />
                             </div>
                             <div>
                                 <h2 className="text-[20px] font-black text-[#0F172A] tracking-tight leading-none mb-1">
@@ -153,6 +135,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
                             <p className="text-slate-600 text-[14px] leading-relaxed font-medium">
                                 Get a quick alert whenever a <span className="text-[#0F172A] font-bold underline decoration-[#E33636] decoration-2 underline-offset-4">Site Visit</span> is approved.
                             </p>
+                            <div className="flex items-start gap-3 text-slate-400 bg-slate-50 p-3 rounded-2xl">
+                                <Info size={16} className="shrink-0 mt-0.5" />
+                                <p className="text-[11px] leading-snug">This works even if you don&apos;t have the website open.</p>
+                            </div>
                         </div>
 
                         <button
@@ -160,8 +146,17 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
                             disabled={isSyncing}
                             className="group w-full py-4.5 bg-[#0F172A] hover:bg-slate-800 text-white rounded-[1.2rem] font-black text-[15px] transition-all flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50 shadow-lg shadow-slate-200"
                         >
-                            {isSyncing ? "Setting things up..." : "Turn on Alerts"}
-                            {!isSyncing && <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />}
+                            {isSyncing ? (
+                                <div className="flex items-center gap-3">
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    <span>{debugStatus}</span>
+                                </div>
+                            ) : (
+                                <>
+                                    <span>Turn on Alerts</span>
+                                    <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                                </>
+                            )}
                         </button>
                     </div>
                 </div>
