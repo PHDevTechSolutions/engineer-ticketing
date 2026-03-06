@@ -13,12 +13,12 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
-// Handles FCM Background Messages
+// Background listener for Firebase messages
 messaging.onBackgroundMessage((payload) => {
   return showNotification(payload);
 });
 
-// Handles Standard Web Push (VAPID)
+// Universal "Push" listener for iOS and Desktop
 self.addEventListener('push', (event) => {
   if (event.data) {
     try {
@@ -31,13 +31,15 @@ self.addEventListener('push', (event) => {
 });
 
 function showNotification(payload) {
-  const title = payload.notification?.title || "EngiConnect Update";
+  const title = payload.notification?.title || payload.title || "engiConnect Alert";
   const options = {
-    body: payload.notification?.body || "Tap to view details.",
-    tag: 'drawing-alert', // Groups notifications
-    renotify: true,       // Force vibration/sound every time
+    body: payload.notification?.body || payload.body || "Tap to see the latest update.",
+    icon: '/icons/disruptive.png', // Your custom brand icon
+    badge: '/icons/disruptive.png', 
+    tag: 'engi-alert', 
+    renotify: true,
     data: {
-      url: payload.data?.url || '/dashboard'
+      url: payload.data?.url || payload.url || '/dashboard'
     }
   };
   return self.registration.showNotification(title, options);
@@ -46,6 +48,7 @@ function showNotification(payload) {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const targetUrl = event.notification.data.url;
+  
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
       for (var i = 0; i < windowClients.length; i++) {
