@@ -13,12 +13,11 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
-// Background listener for Firebase messages
 messaging.onBackgroundMessage((payload) => {
   return showNotification(payload);
 });
 
-// Universal "Push" listener for iOS and Desktop
+// Listener for generic Push events (iOS/Desktop)
 self.addEventListener('push', (event) => {
   if (event.data) {
     try {
@@ -31,15 +30,19 @@ self.addEventListener('push', (event) => {
 });
 
 function showNotification(payload) {
-  const title = payload.notification?.title || payload.title || "engiConnect Alert";
+  const notification = payload.notification || {};
+  const data = payload.data || {};
+
+  const title = notification.title || data.title || "engiConnect Alert";
   const options = {
-    body: payload.notification?.body || payload.body || "Tap to see the latest update.",
-    icon: '/icons/disruptive.png', // Your custom brand icon
-    badge: '/icons/disruptive.png', 
-    tag: 'engi-alert', 
-    renotify: true,
+    body: notification.body || data.body || "New update received.",
+    icon: '/icons/disruptive.png',
+    badge: '/icons/disruptive.png',
+    tag: 'engi-alert', // Groups notifications
+    renotify: true,    // Vibrate/Sound even if tag is the same
+    requireInteraction: true,
     data: {
-      url: payload.data?.url || payload.url || '/dashboard'
+      url: data.url || '/dashboard'
     }
   };
   return self.registration.showNotification(title, options);
@@ -51,8 +54,8 @@ self.addEventListener('notificationclick', (event) => {
   
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      for (var i = 0; i < windowClients.length; i++) {
-        var client = windowClients[i];
+      for (let i = 0; i < windowClients.length; i++) {
+        let client = windowClients[i];
         if (client.url.includes(targetUrl) && 'focus' in client) return client.focus();
       }
       if (clients.openWindow) return clients.openWindow(targetUrl);
