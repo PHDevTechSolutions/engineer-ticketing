@@ -15,4 +15,20 @@ const nextConfig = {
   },
 } as NextConfig; // <-- type assertion to avoid error
 
+module.exports = {
+  async headers() {
+    return [
+      {
+        source: '/dashboard', // The page you are embedding
+        headers: [
+          {
+            key: 'Content-Security-Policy',
+            value: "frame-ancestors 'self' http://localhost:3000 https://your-taskflow-app.com",
+          },
+        ],
+      },
+    ]
+  },
+}
+
 export default nextConfig;
