@@ -2,9 +2,10 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ShieldCheck, Loader2, Lock } from "lucide-react";
+import { ShieldCheck, Loader2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 
+// Use a session-wide variable to prevent re-verification on every internal navigation
 let hasBeenVerifiedThisSession = false;
 
 function ProtectedContent({ children }: { children: React.ReactNode }) {
@@ -14,11 +15,13 @@ function ProtectedContent({ children }: { children: React.ReactNode }) {
   const [progress, setProgress] = useState(hasBeenVerifiedThisSession ? 100 : 0);
 
   useEffect(() => {
+    // Skip verification if already done in this browser session
     if (hasBeenVerifiedThisSession) {
       setLoading(false);
       return;
     }
 
+    // Visual progress bar animation
     const progressInterval = setInterval(() => {
       setProgress((prev) => (prev >= 95 ? 95 : prev + 5));
     }, 120);
@@ -26,46 +29,57 @@ function ProtectedContent({ children }: { children: React.ReactNode }) {
     const checkSession = async () => {
       try {
         const deviceId = localStorage.getItem("deviceId") || "";
-        
-        // ✅ 1. NULL-SAFE PARAMETER CHECK
-        // We look for userId but don't crash if it is null (Direct access)
         let delegatedUserId = null;
+
+        // 1. Extract userId from URL (handles Next.js searchParams or native URL fallback)
         try {
-            // Next.js searchParams hook
-            delegatedUserId = searchParams ? searchParams.get("userId") : null;
+          delegatedUserId = searchParams ? searchParams.get("userId") : null;
         } catch (e) {
-            // Fallback to native browser API if hook isn't ready
-            const params = new URLSearchParams(window.location.search);
-            delegatedUserId = params.get("userId");
+          const params = new URLSearchParams(window.location.search);
+          delegatedUserId = params.get("userId");
         }
 
-        const API_BASE = "https://conx.mtechsolutions.cloud";
+        // 2. ✅ TRIPLE-ENVIRONMENT API SELECTION
+        // Automatically selects the correct backend based on the current domain
+        const hostname = window.location.hostname;
+        const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
+        const isVercel = hostname.includes("vercel.app");
+
+        const API_BASE = isLocal 
+          ? "http://localhost:3001" 
+          : isVercel 
+            ? "https://engiconnect.vercel.app" 
+            : "https://conx.mtechsolutions.cloud";
+
         const headers: HeadersInit = { "x-device-id": deviceId };
 
-        // ✅ 2. ONLY attach the header if delegatedUserId actually exists
+        // 3. Attach delegated user ID to headers if present
         if (delegatedUserId && delegatedUserId !== "null") {
           headers["x-delegated-user-id"] = delegatedUserId;
         }
 
+        // 4. Verify session with the selected API_BASE
         const res = await fetch(`${API_BASE}/api/check-session`, { 
           method: "GET",
           headers 
         });
 
+        // 5. Handle Unauthorized
         if (res.status !== 200) {
-          // If the API says unauthorized, we send them to login
           router.push("/login");
           return;
         }
 
-        // ✅ 3. Sync local storage ONLY if we got a valid ID from the URL
+        // 6. Sync userId to local storage for persistence across the app
         if (delegatedUserId && delegatedUserId !== "null") {
           localStorage.setItem("userId", delegatedUserId);
         }
 
+        // Success: Mark as verified and clear loading state
         hasBeenVerifiedThisSession = true;
         setProgress(100);
         setTimeout(() => setLoading(false), 400);
+
       } catch (error) {
         console.error("Session verification failed:", error);
         router.push("/login");
@@ -76,8 +90,10 @@ function ProtectedContent({ children }: { children: React.ReactNode }) {
     return () => clearInterval(progressInterval);
   }, [router, searchParams]);
 
+  // Render children immediately if verified
   if (!loading) return <>{children}</>;
 
+  // Loading/Verification UI
   return (
     <div className="min-h-screen w-full bg-[#F8FAFC] flex flex-col items-center justify-center p-6 font-sans">
       <div className="w-full max-w-[340px] space-y-10 animate-in fade-in duration-500">
@@ -109,6 +125,9 @@ function ProtectedContent({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Main wrapper to handle Next.js Suspense requirements when using useSearchParams
+ */
 export default function ProtectedPageWrapper({ children }: { children: React.ReactNode }) {
   return (
     <Suspense fallback={<div className="min-h-screen bg-[#F8FAFC]" />}>

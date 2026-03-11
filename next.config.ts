@@ -23,7 +23,7 @@ module.exports = {
         headers: [
           {
             key: 'Content-Security-Policy',
-            value: "frame-ancestors 'self' http://localhost:3000 https://taskflow-project-five-gamma.vercel.app",
+            value: "frame-ancestors 'self' http://localhost:3000 http://localhost:3001 https://taskflow-project-five-gamma.vercel.app",
           },
         ],
       },
