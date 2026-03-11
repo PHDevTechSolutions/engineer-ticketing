@@ -10,7 +10,7 @@ import { toast } from "sonner";
 
 // UI Components
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FieldLabel } from "@/components/ui/field";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,11 +22,9 @@ import {
   collection, 
   addDoc, 
   serverTimestamp, 
+  getDocs, 
   doc, 
-  getDoc,
-  query,
-  where,
-  getDocs 
+  getDoc 
 } from "firebase/firestore";
 
 export default function AddOtherRequestPage() {
@@ -73,11 +71,10 @@ export default function AddOtherRequestPage() {
     try {
       let finalFileUrl = "";
 
-      // 1. Fetch user data for the notification metadata
+      // 1. Get Submitting User Name for the Notification body
       const userRef = doc(db, "users", userId);
       const userSnap = await getDoc(userRef);
-      const userData = userSnap.data();
-      const userName = userData?.displayName || userData?.fullName || "A Team Member";
+      const userName = userSnap.data()?.displayName || userSnap.data()?.fullName || "A Team Member";
 
       // 2. Upload if file exists
       if (attachedFile) {
@@ -95,50 +92,38 @@ export default function AddOtherRequestPage() {
         createdAt: serverTimestamp(),
       });
 
-      // --- START NOTIFICATION SECTION ---
-      try {
-        // Find users with specific roles to notify
-        const staffQuery = query(
-          collection(db, "users"), 
-          where("role", "in", ["ADMIN", "ENGINEERING"])
-        );
-        const staffDocs = await getDocs(staffQuery);
-        
-        const allTokens: string[] = [];
-        
-        // Loop through relevant staff to collect device tokens
-        for (const staffDoc of staffDocs.docs) {
-          const devicesSnap = await getDocs(collection(db, "users", staffDoc.id, "devices"));
-          devicesSnap.forEach(d => {
-            const token = d.data().fcmToken;
-            if (token && !allTokens.includes(token)) {
-              allTokens.push(token);
-            }
-          });
-        }
-
-        // Send tokens to your API route
-        if (allTokens.length > 0) {
-          await fetch("/api/send-push", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              title: `New Request: ${formData.title}`,
-              body: `${userName} just submitted a new request.`,
-              tokens: allTokens,
-              url: "/request/other" 
-            }),
-          });
-        }
-      } catch (pushError) {
-        // Log push error but don't stop the UI flow
-        console.error("Push Notification Error:", pushError);
+      // 4. NOTIFICATION LOGIC: Fetch all subscribers' tokens
+      const allTokens: string[] = [];
+      const usersSnap = await getDocs(collection(db, "users"));
+      
+      // Loop through all users to get tokens from their 'devices' sub-collection
+      for (const uDoc of usersSnap.docs) {
+        const devicesSnap = await getDocs(collection(db, "users", uDoc.id, "devices"));
+        devicesSnap.forEach((d) => {
+          const token = d.data().fcmToken;
+          if (token && !allTokens.includes(token)) {
+            allTokens.push(token);
+          }
+        });
       }
-      // --- END NOTIFICATION SECTION ---
+
+      // 5. Send Push Notification if tokens exist
+      if (allTokens.length > 0) {
+        await fetch("/api/send-push", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: `New Request: ${formData.title}`,
+            body: `${userName} just submitted a new entry.`,
+            tokens: allTokens,
+            url: "/request/other", // Redirect path for users who click the notification
+          }),
+        });
+      }
 
       toast.success("Request synced successfully.", { id: toastId });
       router.push("/request/other");
-    } catch (e: any) {
+    } catch (e) {
       console.error("Submission Error:", e);
       toast.error("System connection error.", { id: toastId });
     } finally {
@@ -168,6 +153,7 @@ export default function AddOtherRequestPage() {
           </CardHeader>
 
           <CardContent className="p-8 space-y-8">
+            {/* Subject Field */}
             <div className="space-y-1.5">
               <FieldLabel className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest ml-1">
                 Subject / Topic
@@ -180,6 +166,7 @@ export default function AddOtherRequestPage() {
               />
             </div>
 
+            {/* Description Field */}
             <div className="space-y-1.5">
               <FieldLabel className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest ml-1">
                 Details
@@ -192,6 +179,7 @@ export default function AddOtherRequestPage() {
               />
             </div>
 
+            {/* Attachment Section */}
             <div className="space-y-4">
               <FieldLabel className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest ml-1">
                 Supporting Files
@@ -241,6 +229,7 @@ export default function AddOtherRequestPage() {
             </div>
           </CardContent>
 
+          {/* Footer Actions */}
           <div className="p-6 border-t border-zinc-100 flex flex-col md:flex-row justify-between items-center bg-zinc-50/30 gap-4">
             <Button 
               variant="ghost" 
