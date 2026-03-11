@@ -9,7 +9,8 @@ import {
 } from "firebase/firestore";
 import { getToken, onMessage } from "firebase/messaging";
 import { toast } from "sonner";
-import { X, ExternalLink, BellRing, CheckCircle2, RefreshCw, Smartphone } from "lucide-react";
+import { X, ExternalLink, BellRing, BellOff, CheckCircle2, RefreshCw, Smartphone, Bell } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { subscribeUserToPush } from "@/lib/push-subscription";
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
@@ -20,7 +21,13 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     const [isMounted, setIsMounted] = useState(false);
     const [isSubscribed, setIsSubscribed] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
-    const [showPrompt, setShowPrompt] = useState(false);
+    const [showPrompt, setShowPrompt] = useState(false); // Controls the Modal
+    const [debugLogs, setDebugLogs] = useState<string[]>([]);
+
+    const addLog = (msg: string) => {
+        setDebugLogs(prev => [msg, ...prev].slice(0, 5));
+        console.log(`[PushDebug] ${msg}`);
+    };
 
     // --- 1. INITIALIZATION ---
     useEffect(() => {
@@ -28,20 +35,19 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         const department = localStorage.getItem("department")?.toUpperCase();
 
         if (typeof window !== "undefined" && "Notification" in window) {
-            // Check existing subscription status
+            // Check existing subscription
             navigator.serviceWorker.getRegistration().then(reg => {
                 reg?.pushManager.getSubscription().then(sub => {
                     const active = !!sub;
                     setIsSubscribed(active);
                     
-                    // Show popup automatically on dashboard if not subscribed
+                    // AUTO-SHOW POPUP: If on dashboard and not subscribed
                     if (!active && pathname === "/dashboard") {
-                        setTimeout(() => setShowPrompt(true), 2000);
+                        setTimeout(() => setShowPrompt(true), 1500); // Slight delay for better UX
                     }
                 });
             });
 
-            // Foreground Listener
             getMessagingInstance().then(messaging => {
                 if (messaging) {
                     onMessage(messaging, (payload) => {
@@ -60,17 +66,19 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         }
     }, [pathname]);
 
-    // --- 2. SYNC LOGIC ---
+    // --- 2. SYNC LOGIC (Triggered by Popup or Manual Button) ---
     const handleSyncPush = async () => {
         const userId = localStorage.getItem("userId");
-        if (!userId) return;
+        if (!userId) return addLog("Error: No userId. Please re-login.");
 
         setIsSyncing(true);
+        addLog("Requesting Permission...");
 
         try {
             const messaging = await getMessagingInstance();
             if (!messaging) throw new Error("Messaging unsupported");
 
+            // Register service worker
             await navigator.serviceWorker.register("/firebase-messaging-sw.js");
             
             const permission = await Notification.requestPermission();
@@ -92,11 +100,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
             }, { merge: true });
 
             setIsSubscribed(true);
-            setShowPrompt(false);
-            toast.success("Notifications Active");
+            setShowPrompt(false); // Close popup on success
+            toast.success("Notifications Enabled!");
         } catch (err: any) {
-            console.error("Sync Error:", err.message);
-            toast.error(`Sync Failed: ${err.message}`);
+            addLog(`FAILED: ${err.message}`);
+            toast.error(`Sync Error: ${err.message}`);
         } finally {
             setIsSyncing(false);
         }
@@ -106,11 +114,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
     return (
         <>
-            {/* --- CLEAN OVERLAY PROMPT --- */}
+            {/* --- NEW POPUP MODAL --- */}
             {showPrompt && !isSubscribed && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
                     <div className="bg-white w-full max-w-[380px] rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
                         <div className="relative p-8 flex flex-col items-center text-center">
+                            {/* Close Button */}
                             <button 
                                 onClick={() => setShowPrompt(false)}
                                 className="absolute top-6 right-6 p-2 hover:bg-gray-100 rounded-full transition-colors"
@@ -118,6 +127,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
                                 <X size={20} className="text-gray-400" />
                             </button>
 
+                            {/* Icon Header */}
                             <div className="relative mb-6">
                                 <div className="absolute -inset-4 bg-[#E33636]/10 rounded-full blur-xl" />
                                 <div className="h-20 w-20 rounded-[2rem] bg-white border border-gray-100 shadow-xl flex items-center justify-center relative">
@@ -127,10 +137,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
                             </div>
 
                             <h3 className="text-xl font-black text-[#0F172A] uppercase tracking-tight leading-tight mb-2">
-                                Stay Connected
+                                Never Miss <br /> An Update
                             </h3>
                             <p className="text-xs font-medium text-gray-400 leading-relaxed mb-8 px-4">
-                                Enable push notifications to receive real-time alerts for shop drawings and project updates.
+                                Enable push notifications to receive real-time alerts for shop drawings and project updates on your device.
                             </p>
 
                             <div className="w-full space-y-3">
@@ -154,20 +164,39 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
                                 </button>
                             </div>
 
+                            {/* Platform indicators */}
                             <div className="mt-6 flex items-center gap-4 pt-6 border-t border-gray-50 w-full justify-center">
-                                <div className="flex items-center gap-1.5 opacity-20">
+                                <div className="flex items-center gap-1.5 opacity-30">
                                     <Smartphone size={14} />
                                     <span className="text-[9px] font-black uppercase">iOS</span>
                                 </div>
-                                <div className="flex items-center gap-1.5 opacity-20">
+                                <div className="flex items-center gap-1.5 opacity-30">
                                     <Smartphone size={14} />
                                     <span className="text-[9px] font-black uppercase">Android</span>
                                 </div>
-                                <div className="flex items-center gap-1.5 opacity-20">
+                                <div className="flex items-center gap-1.5 opacity-30">
                                     <Smartphone size={14} />
-                                    <span className="text-[9px] font-black uppercase">Web</span>
+                                    <span className="text-[9px] font-black uppercase">Desktop</span>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Status Indicator (Bottom Left) */}
+            {pathname === "/dashboard" && (
+                <div className="fixed bottom-6 left-6 z-50 flex flex-col gap-2">
+                    <div className={cn(
+                        "flex items-center gap-3 px-4 py-3 rounded-2xl border shadow-xl bg-white cursor-pointer hover:bg-gray-50 transition-colors",
+                        isSubscribed ? "border-green-100" : "border-red-100"
+                    )} onClick={() => !isSubscribed && setShowPrompt(true)}>
+                        <div className={cn("size-8 rounded-full flex items-center justify-center", isSubscribed ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600")}>
+                            {isSubscribed ? <CheckCircle2 size={18} /> : <BellOff size={18} />}
+                        </div>
+                        <div className="flex flex-col">
+                            <span className="text-[10px] font-black uppercase tracking-tight text-gray-900">{isSubscribed ? "Push Active" : "Push Inactive"}</span>
+                            <span className="text-[9px] font-bold text-gray-400 uppercase">Device Status</span>
                         </div>
                     </div>
                 </div>
