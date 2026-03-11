@@ -159,7 +159,7 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
   const filtered = getFilteredData()
 
   return (
-    <Sidebar variant="inset" className="bg-[#F8F9FA] border-r border-gray-100" {...props}>
+    <Sidebar variant="inset" className="bg-[#F8F9FA] border-r border-gray-100 z-30" {...props}>
       <SidebarHeader className="p-0 overflow-hidden bg-white border-b border-gray-100">
         <SidebarMenu className="p-4">
           <SidebarMenuItem>
