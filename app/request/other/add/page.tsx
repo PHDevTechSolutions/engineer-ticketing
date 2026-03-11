@@ -10,7 +10,7 @@ import { toast } from "sonner";
 
 // UI Components
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldLabel } from "@/components/ui/field";
+import { FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,7 +18,16 @@ import { PageHeader } from "@/components/page-header";
 
 // Database
 import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { 
+  collection, 
+  addDoc, 
+  serverTimestamp, 
+  doc, 
+  getDoc,
+  query,
+  where,
+  getDocs 
+} from "firebase/firestore";
 
 export default function AddOtherRequestPage() {
   const router = useRouter();
@@ -33,14 +42,13 @@ export default function AddOtherRequestPage() {
     setUserId(localStorage.getItem("userId"));
   }, []);
 
-  // DIRECT CLOUDINARY UPLOAD (Matching your Profile Page style)
+  // DIRECT CLOUDINARY UPLOAD
   const handleDirectUpload = async (file: File) => {
     const data = new FormData();
     data.append("file", file);
-    data.append("upload_preset", "Xchire"); // Using your preset from the reference
+    data.append("upload_preset", "Xchire"); 
 
     try {
-      // Using your specific Cloudinary URL from the reference
       const res = await fetch("https://api.cloudinary.com/v1_1/dhczsyzcz/image/upload", {
         method: "POST",
         body: data,
@@ -65,24 +73,73 @@ export default function AddOtherRequestPage() {
     try {
       let finalFileUrl = "";
 
-      // 1. Upload if file exists
+      // 1. Fetch user data for the notification metadata
+      const userRef = doc(db, "users", userId);
+      const userSnap = await getDoc(userRef);
+      const userData = userSnap.data();
+      const userName = userData?.displayName || userData?.fullName || "A Team Member";
+
+      // 2. Upload if file exists
       if (attachedFile) {
         finalFileUrl = await handleDirectUpload(attachedFile);
         if (!finalFileUrl) throw new Error("Upload failed");
       }
 
-      // 2. Save to Firestore
+      // 3. Save to Firestore
       await addDoc(collection(db, "other_requests"), {
         ...formData,
         submittedBy: userId,
+        submittedByName: userName,
         attachmentUrl: finalFileUrl,
         status: "PENDING",
         createdAt: serverTimestamp(),
       });
 
+      // --- START NOTIFICATION SECTION ---
+      try {
+        // Find users with specific roles to notify
+        const staffQuery = query(
+          collection(db, "users"), 
+          where("role", "in", ["ADMIN", "ENGINEERING"])
+        );
+        const staffDocs = await getDocs(staffQuery);
+        
+        const allTokens: string[] = [];
+        
+        // Loop through relevant staff to collect device tokens
+        for (const staffDoc of staffDocs.docs) {
+          const devicesSnap = await getDocs(collection(db, "users", staffDoc.id, "devices"));
+          devicesSnap.forEach(d => {
+            const token = d.data().fcmToken;
+            if (token && !allTokens.includes(token)) {
+              allTokens.push(token);
+            }
+          });
+        }
+
+        // Send tokens to your API route
+        if (allTokens.length > 0) {
+          await fetch("/api/send-push", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: `New Request: ${formData.title}`,
+              body: `${userName} just submitted a new request.`,
+              tokens: allTokens,
+              url: "/request/other" 
+            }),
+          });
+        }
+      } catch (pushError) {
+        // Log push error but don't stop the UI flow
+        console.error("Push Notification Error:", pushError);
+      }
+      // --- END NOTIFICATION SECTION ---
+
       toast.success("Request synced successfully.", { id: toastId });
       router.push("/request/other");
-    } catch (e) {
+    } catch (e: any) {
+      console.error("Submission Error:", e);
       toast.error("System connection error.", { id: toastId });
     } finally {
       setIsSubmitting(false);
@@ -111,7 +168,6 @@ export default function AddOtherRequestPage() {
           </CardHeader>
 
           <CardContent className="p-8 space-y-8">
-            {/* Subject Field */}
             <div className="space-y-1.5">
               <FieldLabel className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest ml-1">
                 Subject / Topic
@@ -124,7 +180,6 @@ export default function AddOtherRequestPage() {
               />
             </div>
 
-            {/* Description Field */}
             <div className="space-y-1.5">
               <FieldLabel className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest ml-1">
                 Details
@@ -137,7 +192,6 @@ export default function AddOtherRequestPage() {
               />
             </div>
 
-            {/* Attachment Section */}
             <div className="space-y-4">
               <FieldLabel className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest ml-1">
                 Supporting Files
@@ -187,7 +241,6 @@ export default function AddOtherRequestPage() {
             </div>
           </CardContent>
 
-          {/* Footer Actions */}
           <div className="p-6 border-t border-zinc-100 flex flex-col md:flex-row justify-between items-center bg-zinc-50/30 gap-4">
             <Button 
               variant="ghost" 

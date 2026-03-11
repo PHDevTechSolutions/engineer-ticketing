@@ -7,6 +7,7 @@ if (!admin.apps.length) {
       credential: admin.credential.cert({
         projectId: "engiconnect-b15c6",
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        // Ensure private key handles newlines correctly in production
         privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
       }),
     });
@@ -17,7 +18,7 @@ if (!admin.apps.length) {
 
 export async function POST(request: Request) {
   try {
-    const { title, body, tokens } = await request.json();
+    const { title, body, tokens, url } = await request.json();
 
     if (!tokens || !Array.isArray(tokens) || tokens.length === 0) {
       return NextResponse.json({ success: false, error: "No tokens" }, { status: 400 });
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
         body: body || "Update in EngiConnect",
       },
       data: {
-        url: "/request/shop-drawing",
+        url: url || "/dashboard", // Dynamic URL from the frontend
       },
       tokens: tokens,
       apns: {
@@ -37,12 +38,12 @@ export async function POST(request: Request) {
           aps: {
             sound: "default",
             badge: 1,
-            "content-available": 1, // Critical for background wake-up
-            "mutable-content": 1,   // Allows Service Worker to modify alert
+            "content-available": 1,
+            "mutable-content": 1,
           },
         },
         headers: {
-          "apns-priority": "10",     // High priority to bypass battery saving
+          "apns-priority": "10",
           "apns-push-type": "alert",
         },
       },
@@ -56,13 +57,16 @@ export async function POST(request: Request) {
       },
     };
 
+    // sendEachForMulticast handles the multi-token array perfectly
     const response = await admin.messaging().sendEachForMulticast(message);
 
     return NextResponse.json({
       success: true,
       successCount: response.successCount,
+      failureCount: response.failureCount,
     });
   } catch (error: any) {
+    console.error("Push API Error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
