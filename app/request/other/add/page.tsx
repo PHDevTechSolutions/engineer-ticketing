@@ -10,7 +10,7 @@ import { toast } from "sonner";
 
 // UI Components
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldLabel } from "@/components/ui/field";
+import { FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,7 +33,7 @@ export default function AddOtherRequestPage() {
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
-  const [isIT, setIsIT] = useState(false); // Fix: State for safe client-side check
+  const [isIT, setIsIT] = useState(false);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const [formData, setFormData] = useState({ title: "", description: "" });
   
@@ -45,7 +45,6 @@ export default function AddOtherRequestPage() {
   };
 
   useEffect(() => {
-    // FIX: Access localStorage only after component mounts (Client-side)
     const id = localStorage.getItem("userId");
     const dept = localStorage.getItem("department");
     
@@ -70,7 +69,6 @@ export default function AddOtherRequestPage() {
     fetchUserData();
   }, []);
 
-  // DIRECT CLOUDINARY UPLOAD
   const handleDirectUpload = async (file: File) => {
     addLog("Cloudinary: Starting upload...");
     const data = new FormData();
@@ -108,7 +106,8 @@ export default function AddOtherRequestPage() {
       // 1. Get Submitting User Name
       const userRef = doc(db, "users", userId);
       const userSnap = await getDoc(userRef);
-      const userName = userSnap.data()?.displayName || userSnap.data()?.fullName || "A Team Member";
+      const userData = userSnap.data();
+      const userName = userData?.displayName || userData?.fullName || "A Team Member";
 
       // 2. Upload if file exists
       if (attachedFile) {
@@ -128,19 +127,29 @@ export default function AddOtherRequestPage() {
       });
       addLog("Firestore: Document saved");
 
-      // 4. NOTIFICATION LOGIC
+      // 4. NOTIFICATION LOGIC - UPDATED: Correct subcollection traversal
       addLog("FCM: Scanning for device tokens...");
       const allTokens: string[] = [];
-      const usersSnap = await getDocs(collection(db, "users"));
       
-      for (const uDoc of usersSnap.docs) {
-        const devicesSnap = await getDocs(collection(db, "users", uDoc.id, "devices"));
-        devicesSnap.forEach((d) => {
-          const token = d.data().fcmToken;
-          if (token && !allTokens.includes(token)) {
-            allTokens.push(token);
-          }
-        });
+      try {
+        const usersSnap = await getDocs(collection(db, "users"));
+        
+        // Use Promise.all to fetch subcollections in parallel
+        await Promise.all(usersSnap.docs.map(async (uDoc) => {
+          const devicesSnap = await getDocs(collection(db, "users", uDoc.id, "devices"));
+          devicesSnap.forEach((d) => {
+            const deviceData = d.data();
+            const token = deviceData.fcmToken;
+            // Check if token exists and if user hasn't disabled notifications
+            if (token && deviceData.notificationsEnabled !== false) {
+              if (!allTokens.includes(token)) {
+                allTokens.push(token);
+              }
+            }
+          });
+        }));
+      } catch (tokenErr: any) {
+        addLog(`FCM Error: ${tokenErr.message}`);
       }
 
       addLog(`FCM: Total unique tokens gathered: ${allTokens.length}`);
@@ -160,6 +169,8 @@ export default function AddOtherRequestPage() {
         });
         const pushData = await pushRes.json();
         addLog(`API Response: Success=${pushData.success}`);
+      } else {
+        addLog("API: Skipped push (0 tokens found).");
       }
 
       toast.success("Request synced successfully.", { id: toastId });
@@ -285,7 +296,6 @@ export default function AddOtherRequestPage() {
           </div>
         </Card>
 
-        {/* FIX: Use isIT state instead of direct localStorage check in JSX */}
         {isIT && (
           <div className="mt-10 rounded-[16px] bg-zinc-900 p-4 shadow-xl border-t-4 border-yellow-500">
             <div className="flex items-center gap-2 mb-3 text-yellow-500">
