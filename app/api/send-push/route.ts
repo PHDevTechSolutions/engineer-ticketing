@@ -8,9 +8,7 @@ const admin = require("firebase-admin");
 if (!admin.apps.length) {
   try {
     const rawKey = process.env.FIREBASE_PRIVATE_KEY;
-    
-    // 1. Vercel-specific parsing: 
-    // Removes wrapping quotes and replaces literal '\n' characters with real newlines
+    // This regex handles keys with or without quotes and fixes newline characters
     const formattedKey = rawKey 
       ? rawKey.replace(/\\n/g, '\n').replace(/^"(.*)"$/, '$1') 
       : undefined;
@@ -22,11 +20,9 @@ if (!admin.apps.length) {
         privateKey: formattedKey,
       }),
     });
-    
-    // 2. Deployment Log Check
-    console.log("✅ FIREBASE_ADMIN_INIT: Success");
+    console.log("Firebase Admin Initialized");
   } catch (error: any) {
-    console.error("❌ FIREBASE_ADMIN_INIT_ERROR:", error.message);
+    console.error("Firebase Admin Init Error:", error.message);
   }
 }
 
@@ -35,7 +31,7 @@ export async function POST(request: Request) {
     const { title, body, tokens, url } = await request.json();
 
     if (!tokens || tokens.length === 0) {
-      return NextResponse.json({ success: false, error: "No tokens provided" }, { status: 400 });
+      return NextResponse.json({ success: false, error: "No tokens" }, { status: 400 });
     }
 
     const message = {
@@ -54,13 +50,16 @@ export async function POST(request: Request) {
         notification: {
           body: body,
           requireInteraction: true,
+          icon: "/logo.png" // Make sure this exists in /public or remove it
         },
         fcm_options: { link: url || "/" },
       },
     };
 
-    // 3. Ensure the function awaits the FCM broadcast before closing
+    // CRITICAL: We MUST await this so Vercel doesn't kill the function early
     const response = await admin.messaging().sendEachForMulticast(message);
+    
+    console.log(`Vercel Push: ${response.successCount} sent, ${response.failureCount} failed`);
 
     return NextResponse.json({
       success: true,
@@ -68,7 +67,7 @@ export async function POST(request: Request) {
       failureCount: response.failureCount,
     });
   } catch (err: any) {
-    console.error("❌ PUSH_API_ERROR:", err.message);
+    console.error("Vercel API Error:", err.message);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
