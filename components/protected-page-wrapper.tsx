@@ -46,7 +46,7 @@ function ProtectedContent({ children }: { children: React.ReactNode }) {
         const isVercel = hostname.includes("vercel.app");
 
         const API_BASE = isLocal 
-          ? "http://localhost:3001" 
+          ? "http://localhost:3000" 
           : isVercel 
             ? "https://engiconnect.vercel.app" 
             : "https://conx.mtechsolutions.cloud";

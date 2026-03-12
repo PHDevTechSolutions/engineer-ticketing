@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { 
   Send, Loader2, X, Paperclip, FileText, 
-  Image as ImageIcon, MessageSquare, Save 
+  Image as ImageIcon, MessageSquare, Save, Terminal 
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -35,13 +35,39 @@ export default function AddOtherRequestPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const [formData, setFormData] = useState({ title: "", description: "" });
+  
+  // --- DEBUG STATE ---
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const addLog = (msg: string) => {
+    setDebugLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`].slice(-10));
+    console.log(msg);
+  };
 
   useEffect(() => {
-    setUserId(localStorage.getItem("userId"));
+    const fetchUserData = async () => {
+      const id = localStorage.getItem("userId");
+      setUserId(id);
+      if (id) {
+        try {
+          const userRef = doc(db, "users", id);
+          const userSnap = await getDoc(userRef);
+          if (userSnap.exists()) {
+            const role = userSnap.data()?.role;
+            // setUserRole(role);
+            addLog(`System: User ${id} loaded with role: ${role}`);
+          }
+        } catch (err) {
+          console.error("Error fetching role:", err);
+        }
+      }
+    };
+    
+    fetchUserData();
   }, []);
 
   // DIRECT CLOUDINARY UPLOAD
   const handleDirectUpload = async (file: File) => {
+    addLog("Cloudinary: Starting upload...");
     const data = new FormData();
     data.append("file", file);
     data.append("upload_preset", "Xchire"); 
@@ -52,9 +78,10 @@ export default function AddOtherRequestPage() {
         body: data,
       });
       const json = await res.json();
+      addLog("Cloudinary: Upload successful");
       return json.secure_url;
     } catch (error) {
-      console.error("Cloudinary Error:", error);
+      addLog(`Cloudinary Error: ${error}`);
       return null;
     }
   };
@@ -66,12 +93,14 @@ export default function AddOtherRequestPage() {
     }
 
     setIsSubmitting(true);
+    setDebugLogs([]); 
+    addLog("Submit: Beginning sync...");
     const toastId = toast.loading("Syncing with engiconnect...");
 
     try {
       let finalFileUrl = "";
 
-      // 1. Get Submitting User Name for the Notification body
+      // 1. Get Submitting User Name
       const userRef = doc(db, "users", userId);
       const userSnap = await getDoc(userRef);
       const userName = userSnap.data()?.displayName || userSnap.data()?.fullName || "A Team Member";
@@ -83,6 +112,7 @@ export default function AddOtherRequestPage() {
       }
 
       // 3. Save to Firestore
+      addLog("Firestore: Creating 'other_requests' doc...");
       await addDoc(collection(db, "other_requests"), {
         ...formData,
         submittedBy: userId,
@@ -91,12 +121,13 @@ export default function AddOtherRequestPage() {
         status: "PENDING",
         createdAt: serverTimestamp(),
       });
+      addLog("Firestore: Document saved");
 
-      // 4. NOTIFICATION LOGIC: Fetch all subscribers' tokens
+      // 4. NOTIFICATION LOGIC
+      addLog("FCM: Scanning for device tokens...");
       const allTokens: string[] = [];
       const usersSnap = await getDocs(collection(db, "users"));
       
-      // Loop through all users to get tokens from their 'devices' sub-collection
       for (const uDoc of usersSnap.docs) {
         const devicesSnap = await getDocs(collection(db, "users", uDoc.id, "devices"));
         devicesSnap.forEach((d) => {
@@ -107,24 +138,29 @@ export default function AddOtherRequestPage() {
         });
       }
 
-      // 5. Send Push Notification if tokens exist
+      addLog(`FCM: Total unique tokens gathered: ${allTokens.length}`);
+
+      // 5. Send Push Notification
       if (allTokens.length > 0) {
-        await fetch("/api/send-push", {
+        addLog("API: Calling /api/send-push...");
+        const pushRes = await fetch("/api/send-push", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             title: `New Request: ${formData.title}`,
             body: `${userName} just submitted a new entry.`,
             tokens: allTokens,
-            url: "/request/other", // Redirect path for users who click the notification
+            url: "/request/other",
           }),
         });
+        const pushData = await pushRes.json();
+        addLog(`API Response: Success=${pushData.success}`);
       }
 
       toast.success("Request synced successfully.", { id: toastId });
-      router.push("/request/other");
-    } catch (e) {
-      console.error("Submission Error:", e);
+      setTimeout(() => router.push("/request/other"), 2000); 
+    } catch (e: any) {
+      addLog(`Fatal Error: ${e.message}`);
       toast.error("System connection error.", { id: toastId });
     } finally {
       setIsSubmitting(false);
@@ -214,7 +250,7 @@ export default function AddOtherRequestPage() {
                   </Button>
                 </div>
               ) : (
-                <div className="flex items-center justify-between p-4 bg-zinc-900 text-white rounded-[16px] animate-in fade-in zoom-in duration-300">
+                <div className="flex items-center justify-between p-4 bg-zinc-900 text-white rounded-[16px]">
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-zinc-800 rounded-lg"><Paperclip size={16} /></div>
                     <span className="text-[10px] font-bold uppercase tracking-tight truncate max-w-[200px]">
@@ -229,26 +265,38 @@ export default function AddOtherRequestPage() {
             </div>
           </CardContent>
 
-          {/* Footer Actions */}
           <div className="p-6 border-t border-zinc-100 flex flex-col md:flex-row justify-between items-center bg-zinc-50/30 gap-4">
-            <Button 
-              variant="ghost" 
-              onClick={() => router.back()} 
-              className="font-bold uppercase text-[10px] text-zinc-400 hover:text-black"
-            >
+            <Button variant="ghost" onClick={() => router.back()} className="font-bold uppercase text-[10px] text-zinc-400 hover:text-black">
               Cancel Entry
             </Button>
-
             <Button 
               onClick={handleSubmit} 
               disabled={isSubmitting} 
               className="w-full md:w-64 h-12 rounded-[12px] bg-black text-white hover:opacity-90 font-bold uppercase text-[10px] tracking-widest gap-2 shadow-lg active:scale-95 transition-all"
             >
               {isSubmitting ? <Loader2 className="animate-spin size-4" /> : <Save size={14} />}
-              {isSubmitting ? "Syncing..." : "Submit to Engiconnect"}
+              {isSubmitting ? "Syncing..." : "Submit"}
             </Button>
           </div>
         </Card>
+
+        {localStorage.getItem("department") === "IT" && (
+          <div className="mt-10 rounded-[16px] bg-zinc-900 p-4 shadow-xl border-t-4 border-yellow-500">
+            <div className="flex items-center gap-2 mb-3 text-yellow-500">
+              <Terminal size={14} />
+              <span className="text-[9px] font-black uppercase tracking-[2px]">IT Debug Logs</span>
+            </div>
+            <div className="space-y-1 font-mono text-[10px]">
+              {debugLogs.length === 0 && <div className="text-zinc-600 italic">Awaiting action...</div>}
+              {debugLogs.map((log, i) => (
+                <div key={i} className="text-zinc-300 border-l border-zinc-700 pl-2">
+                  {log}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
       </main>
     </div>
   );
