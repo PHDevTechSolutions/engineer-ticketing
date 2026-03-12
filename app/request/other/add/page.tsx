@@ -33,6 +33,7 @@ export default function AddOtherRequestPage() {
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [isIT, setIsIT] = useState(false); // Fix: State for safe client-side check
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const [formData, setFormData] = useState({ title: "", description: "" });
   
@@ -44,16 +45,20 @@ export default function AddOtherRequestPage() {
   };
 
   useEffect(() => {
+    // FIX: Access localStorage only after component mounts (Client-side)
+    const id = localStorage.getItem("userId");
+    const dept = localStorage.getItem("department");
+    
+    setUserId(id);
+    setIsIT(dept === "IT");
+
     const fetchUserData = async () => {
-      const id = localStorage.getItem("userId");
-      setUserId(id);
       if (id) {
         try {
           const userRef = doc(db, "users", id);
           const userSnap = await getDoc(userRef);
           if (userSnap.exists()) {
             const role = userSnap.data()?.role;
-            // setUserRole(role);
             addLog(`System: User ${id} loaded with role: ${role}`);
           }
         } catch (err) {
@@ -280,7 +285,8 @@ export default function AddOtherRequestPage() {
           </div>
         </Card>
 
-        {localStorage.getItem("department") === "IT" && (
+        {/* FIX: Use isIT state instead of direct localStorage check in JSX */}
+        {isIT && (
           <div className="mt-10 rounded-[16px] bg-zinc-900 p-4 shadow-xl border-t-4 border-yellow-500">
             <div className="flex items-center gap-2 mb-3 text-yellow-500">
               <Terminal size={14} />
