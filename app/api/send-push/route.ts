@@ -1,22 +1,23 @@
 import { NextResponse } from "next/server";
 
 export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic'; // Ensures Vercel treats this as a real-time API
+export const dynamic = 'force-dynamic'; 
 
 const admin = require("firebase-admin");
 
 if (!admin.apps.length) {
   try {
-    // Vercel handling for Private Key
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY 
-      ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
+    // Robust Private Key parsing for Vercel
+    const rawKey = process.env.FIREBASE_PRIVATE_KEY;
+    const formattedKey = rawKey 
+      ? rawKey.replace(/\\n/g, '\n').replace(/^"(.*)"$/, '$1') 
       : undefined;
 
     admin.initializeApp({
       credential: admin.credential.cert({
         projectId: "engiconnect-b15c6",
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: privateKey,
+        privateKey: formattedKey,
       }),
     });
     console.log("Firebase Admin Initialized Successfully");
@@ -37,7 +38,6 @@ export async function POST(request: Request) {
       notification: { title, body },
       data: { 
         url: url || "/",
-        click_action: "FLUTTER_NOTIFICATION_CLICK" // Standard practice for web/mobile routing
       },
       tokens: tokens,
       android: {
@@ -53,8 +53,6 @@ export async function POST(request: Request) {
         },
         notification: {
           body: body,
-          icon: "/icons/icon-192x192.png", // Ensure this path exists in your public folder
-          badge: "/icons/badge-72x72.png",
           requireInteraction: true,
         },
         fcm_options: {
@@ -63,10 +61,8 @@ export async function POST(request: Request) {
       },
     };
 
-    // Await the multicast send
+    // Use await to ensure the function doesn't terminate before the push is sent
     const response = await admin.messaging().sendEachForMulticast(message);
-
-    console.log(`Push Sent: ${response.successCount} success, ${response.failureCount} failure`);
 
     return NextResponse.json({
       success: true,
@@ -77,8 +73,7 @@ export async function POST(request: Request) {
     console.error("Push API Fatal Error:", err.message);
     return NextResponse.json({ 
       success: false, 
-      error: err.message,
-      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined 
+      error: err.message 
     }, { status: 500 });
   }
 }
