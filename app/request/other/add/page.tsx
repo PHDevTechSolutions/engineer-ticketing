@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { 
-  Send, Loader2, X, Paperclip, FileText, 
+  Loader2, X, Paperclip, FileText, 
   Image as ImageIcon, MessageSquare, Save, Terminal 
 } from "lucide-react";
 import { toast } from "sonner";
@@ -24,7 +24,9 @@ import {
   serverTimestamp, 
   getDocs, 
   doc, 
-  getDoc 
+  getDoc,
+  query,
+  collectionGroup
 } from "firebase/firestore";
 
 export default function AddOtherRequestPage() {
@@ -103,13 +105,13 @@ export default function AddOtherRequestPage() {
     try {
       let finalFileUrl = "";
 
-      // 1. Get Submitting User Name
+      // 1. Get Submitting User Info
       const userRef = doc(db, "users", userId);
       const userSnap = await getDoc(userRef);
       const userData = userSnap.data();
       const userName = userData?.displayName || userData?.fullName || "A Team Member";
 
-      // 2. Upload if file exists
+      // 2. Upload Attachment if exists
       if (attachedFile) {
         finalFileUrl = await handleDirectUpload(attachedFile);
         if (!finalFileUrl) throw new Error("Upload failed");
@@ -127,43 +129,41 @@ export default function AddOtherRequestPage() {
       });
       addLog("Firestore: Document saved");
 
-      // 4. NOTIFICATION LOGIC - UPDATED: Correct subcollection traversal
-      addLog("FCM: Scanning for device tokens...");
+      // 4. NO-INDEX COLLECTION GROUP SCANNING
+      addLog("FCM: Scanning all devices (Local Filtering)...");
       const allTokens: string[] = [];
       
       try {
-        const usersSnap = await getDocs(collection(db, "users"));
+        // We remove the 'where' clause here to avoid the need for a composite index
+        const devicesQuery = query(collectionGroup(db, "devices"));
+        const devicesSnap = await getDocs(devicesQuery);
         
-        // Use Promise.all to fetch subcollections in parallel
-        await Promise.all(usersSnap.docs.map(async (uDoc) => {
-          const devicesSnap = await getDocs(collection(db, "users", uDoc.id, "devices"));
-          devicesSnap.forEach((d) => {
-            const deviceData = d.data();
-            const token = deviceData.fcmToken;
-            // Check if token exists and if user hasn't disabled notifications
-            if (token && deviceData.notificationsEnabled !== false) {
-              if (!allTokens.includes(token)) {
-                allTokens.push(token);
-              }
-            }
-          });
-        }));
+        addLog(`FCM: Found ${devicesSnap.docs.length} raw device entries.`);
+
+        devicesSnap.forEach((d) => {
+          const deviceData = d.data();
+          // We filter for 'notificationsEnabled' in code instead of the query
+          if (deviceData.fcmToken && deviceData.notificationsEnabled !== false) {
+            allTokens.push(deviceData.fcmToken);
+          }
+        });
       } catch (tokenErr: any) {
-        addLog(`FCM Error: ${tokenErr.message}`);
+        addLog(`FCM Scan Error: ${tokenErr.message}`);
       }
 
-      addLog(`FCM: Total unique tokens gathered: ${allTokens.length}`);
+      const uniqueTokens = [...new Set(allTokens)];
+      addLog(`FCM: Total unique tokens gathered: ${uniqueTokens.length}`);
 
       // 5. Send Push Notification
-      if (allTokens.length > 0) {
-        addLog("API: Calling /api/send-push...");
+      if (uniqueTokens.length > 0) {
+        addLog("API: Calling broadcast push...");
         const pushRes = await fetch("/api/send-push", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             title: `New Request: ${formData.title}`,
             body: `${userName} just submitted a new entry.`,
-            tokens: allTokens,
+            tokens: uniqueTokens,
             url: "/request/other",
           }),
         });
@@ -187,7 +187,7 @@ export default function AddOtherRequestPage() {
     <div className="min-h-screen bg-[#F4F7F7] font-sans pb-10">
       <PageHeader 
         title="OTHER REQUEST" 
-        version="V3.2" 
+        version="V3.2.2" 
         showBackButton={true} 
       />
       
@@ -205,7 +205,6 @@ export default function AddOtherRequestPage() {
           </CardHeader>
 
           <CardContent className="p-8 space-y-8">
-            {/* Subject Field */}
             <div className="space-y-1.5">
               <FieldLabel className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest ml-1">
                 Subject / Topic
@@ -218,7 +217,6 @@ export default function AddOtherRequestPage() {
               />
             </div>
 
-            {/* Description Field */}
             <div className="space-y-1.5">
               <FieldLabel className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest ml-1">
                 Details
@@ -231,7 +229,6 @@ export default function AddOtherRequestPage() {
               />
             </div>
 
-            {/* Attachment Section */}
             <div className="space-y-4">
               <FieldLabel className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest ml-1">
                 Supporting Files
@@ -312,7 +309,6 @@ export default function AddOtherRequestPage() {
             </div>
           </div>
         )}
-        
       </main>
     </div>
   );

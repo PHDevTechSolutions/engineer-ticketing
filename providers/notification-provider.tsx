@@ -4,11 +4,11 @@ import React, { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { db, getMessagingInstance } from "@/lib/firebase"; 
 import { 
-    doc, setDoc, serverTimestamp 
+    doc, setDoc, serverTimestamp, getDoc 
 } from "firebase/firestore";
 import { getToken, onMessage } from "firebase/messaging";
 import { toast } from "sonner";
-import { X, BellRing, BellOff, CheckCircle2, RefreshCw, Smartphone } from "lucide-react";
+import { X, BellRing, BellOff, CheckCircle2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { subscribeUserToPush } from "@/lib/push-subscription";
 
@@ -21,12 +21,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     const [isSyncing, setIsSyncing] = useState(false);
     const [showPrompt, setShowPrompt] = useState(false); 
 
-    // --- HELPER: Create a unique ID for this specific browser/device ---
+    // --- HELPER: Reliable Unique Device ID ---
     const getDeviceId = () => {
         if (typeof window === "undefined") return "unknown";
         const ua = navigator.userAgent;
         const screen = `${window.screen.width}x${window.screen.height}`;
-        // Create a simple hash/base64 string to act as a unique device key
         return btoa(`${ua}-${screen}`).replace(/[/+=]/g, "").slice(0, 24);
     };
 
@@ -34,15 +33,35 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         setIsMounted(true);
 
         const checkSubscription = async () => {
-            if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+            if (typeof window === "undefined") return;
+            
+            const userId = localStorage.getItem("userId");
+            const deviceId = getDeviceId();
+
+            try {
+                // 1. Check Service Worker/Browser status
                 const reg = await navigator.serviceWorker.getRegistration();
                 const sub = await reg?.pushManager.getSubscription();
-                const active = !!sub;
+                const hasBrowserSub = !!sub;
+
+                // 2. Check Firestore status for THIS specific device
+                let hasDbSub = false;
+                if (userId) {
+                    const deviceRef = doc(db, "users", userId, "devices", deviceId);
+                    const deviceSnap = await getDoc(deviceRef);
+                    hasDbSub = deviceSnap.exists() && deviceSnap.data()?.notificationsEnabled !== false;
+                }
+
+                // If browser is subbed BUT database doesn't have this device, we aren't "Synced"
+                const active = hasBrowserSub && hasDbSub;
                 setIsSubscribed(active);
 
+                // Show prompt if not fully synced and on dashboard
                 if (!active && pathname === "/dashboard") {
                     setTimeout(() => setShowPrompt(true), 1500);
                 }
+            } catch (err) {
+                console.error("Check subscription error:", err);
             }
         };
 
@@ -88,14 +107,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
             const fullSubscription = await subscribeUserToPush();
             const deviceId = getDeviceId();
 
-            // --- MULTI-DEVICE FIX ---
-            // We save to 'users/{userId}/devices/{deviceId}' 
-            // This allows many devices per user instead of just one.
+            // --- DATABASE SYNC ---
             const deviceRef = doc(db, "users", userId, "devices", deviceId);
             
             await setDoc(deviceRef, {
                 fcmToken,
-                pushSubscription: JSON.parse(JSON.stringify(fullSubscription)),
+                pushSubscription: fullSubscription ? JSON.parse(JSON.stringify(fullSubscription)) : null,
                 platform: navigator.platform,
                 userAgent: navigator.userAgent,
                 lastPushSync: serverTimestamp(),
@@ -132,9 +149,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
                                 </div>
                             </div>
 
-                            <h3 className="text-xl font-black text-[#0F172A] uppercase tracking-tight leading-tight mb-2">
-                                Sync This Device
-                            </h3>
+                            <h3 className="text-xl font-black text-[#0F172A] uppercase tracking-tight leading-tight mb-2">Sync This Device</h3>
                             <p className="text-xs font-medium text-gray-400 leading-relaxed mb-8 px-4">
                                 Enable notifications on this device to receive real-time updates along with your other logged-in devices.
                             </p>
@@ -147,7 +162,6 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
                                 >
                                     {isSyncing ? <RefreshCw size={18} className="animate-spin" /> : <>Sync Device <CheckCircle2 size={18} /></>}
                                 </button>
-                                
                                 <button onClick={() => setShowPrompt(false)} className="w-full bg-transparent text-gray-400 text-[10px] font-bold uppercase tracking-widest py-2 hover:text-gray-600">
                                     Maybe Later
                                 </button>
