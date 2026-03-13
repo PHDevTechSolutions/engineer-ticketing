@@ -4,6 +4,7 @@ const nextConfig = {
   experimental: {
     turbopack: false,
   },
+  // 2. Remote Image Whitelisting (Fixes the Cloudinary Error)
   images: {
     remotePatterns: [
       {
@@ -13,13 +14,12 @@ const nextConfig = {
       },
     ],
   },
-} as NextConfig; // <-- type assertion to avoid error
 
-module.exports = {
+  // 3. Security Headers (Fixes the Embedding/Iframe Issue)
   async headers() {
     return [
       {
-        source: '/dashboard', // The page you are embedding
+        source: '/dashboard',
         headers: [
           {
             key: 'Content-Security-Policy',
@@ -27,8 +27,8 @@ module.exports = {
           },
         ],
       },
-    ]
+    ];
   },
-}
+};
 
 export default nextConfig;
