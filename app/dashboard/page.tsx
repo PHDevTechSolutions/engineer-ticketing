@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { AppSidebar } from "@/components/app-sidebar"
 import {
@@ -15,20 +15,42 @@ import {
     CalendarCheck, FileText, Monitor, ThumbsUp,
     ClipboardCheck, MoreHorizontal, Bell,
     Plus, Activity, CloudSun, CloudRain, Sun, CloudLightning, Cloud, Moon, CloudMoon,
-    ArrowUpRight, Clock, CheckCircle2, AlertTriangle, Layers, MessageSquare, ChevronRight
+    ArrowUpRight, Clock, CheckCircle2, AlertTriangle, Layers, MessageSquare, ChevronRight,
+    LucideProps, LucideIcon
 } from "lucide-react";
 
 import { db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot, limit, orderBy } from "firebase/firestore";
+import { collection, query, where, onSnapshot, limit, orderBy, doc } from "firebase/firestore";
 import { cn } from "@/lib/utils";
 import { isAfter } from "date-fns";
+
+const StreetLightIcon = ({ size = 24, className = "", ...props }: LucideProps) => (
+    <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={className}
+        {...props}
+    >
+        <path d="M7 22h3M9 22V7c0-2 1-3 3-3h5" />
+        <path d="M15 4h5l1 2h-7l1-2z" />
+        <path d="M17 9v1M14 8l-.5.5M20 8l.5.5" opacity="0.5" />
+    </svg>
+);
 
 export default function EngiconnectDashboard() {
     const router = useRouter()
     const [userId, setUserId] = useState<string | null>(null)
+    const [userRole, setUserRole] = useState<string | null>(null)
     const [isLoading, setIsLoading] = useState<boolean>(true)
     const [currentTime, setCurrentTime] = useState(new Date())
     const [weather, setWeather] = useState({ temp: "--", condition: "Syncing...", code: 0 });
+    const [dynamicPermissions, setDynamicPermissions] = useState<any[]>([]);
 
     const [currentPage, setCurrentPage] = useState(0);
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -36,7 +58,6 @@ export default function EngiconnectDashboard() {
 
     const [activeTab, setActiveTab] = useState("Monitoring");
     const [showNotifDropdown, setShowNotifDropdown] = useState(false);
-    const tabs = ["Monitoring", "Projects", "Requests", "Admin"];
 
     const [userDetails, setUserDetails] = useState({
         Firstname: "",
@@ -65,23 +86,100 @@ export default function EngiconnectDashboard() {
 
     const [recentActivity, setRecentActivity] = useState<any[]>([]);
 
-    const StreetLightIcon = ({ size = 24, className = "" }) => (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-            <path d="M7 22h3M9 22V7c0-2 1-3 3-3h5" /><path d="M15 4h5l1 2h-7l1-2z" /><path d="M17 9v1M14 8l-.5.5M20 8l.5.5" opacity="0.5" />
-        </svg>
-    );
+    // REAL-TIME RBAC & DYNAMIC PERMISSIONS
+    useEffect(() => {
+        const storedUserId = localStorage.getItem("userId");
+        if (!storedUserId) {
+            setIsLoading(false);
+            return;
+        }
+        setUserId(storedUserId);
 
-    const services = [
-        { label: "Site Visit Appointment", icon: CalendarCheck, count: notifications.siteVisit, msgCount: notifications.unreadByService.siteVisit, path: "/appointments/site-visit" },
-        { label: "Job Request", icon: FileText, count: notifications.jobRequest, msgCount: notifications.unreadByService.jobRequest, path: "/request/job" },
-        { label: "Dialux Simulation", icon: Monitor, count: notifications.dialuxRequest, msgCount: notifications.unreadByService.dialux, path: "/request/dialux" },
-        { label: "Product Recommendation", icon: ThumbsUp, count: 0, msgCount: 0, path: "/requests/recommendation" },
-        { label: "SPF Shop Drawing Request", icon: StreetLightIcon, count: notifications.shopDrawing, msgCount: notifications.unreadByService.shopDrawing, path: "/request/shop-drawing" },
-        { label: "Testing Monitoring", icon: ClipboardCheck, count: notifications.testingActive + notifications.testingOverdue, msgCount: 0, path: "/request/testing" },
-        { label: "Other Request", icon: MoreHorizontal, count: notifications.otherRequest, msgCount: 0, path: "/request/other" },
+        // Fetch user metadata from MongoDB/API
+        fetch(`/api/user?id=${encodeURIComponent(storedUserId)}`)
+            .then(res => res.json())
+            .then(mongoData => {
+                setUserDetails({
+                    Firstname: mongoData.Firstname || "User",
+                    Position: mongoData.Position || "Member",
+                    profilePicture: mongoData.profilePicture || ""
+                });
+            })
+            .catch(err => console.error("Error fetching user details:", err));
+
+        // Listen for Real-time Role changes (Handles both "Role" and "role" fields)
+        const userDocRef = doc(db, "users", storedUserId);
+        const unsubUser = onSnapshot(userDocRef, (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                // Staff Directory saves as 'Role', legacy might be 'role'
+                const role = data.Role || data.role || "MEMBER";
+                setUserRole(role);
+                localStorage.setItem("userRole", role);
+            } else {
+                setUserRole("MEMBER");
+            }
+            setIsLoading(false);
+        });
+
+        // FETCH DYNAMIC PERMISSIONS FROM FIREBASE
+        const permissionsRef = collection(db, "role_permissions");
+        const unsubPermissions = onSnapshot(permissionsRef, (snap) => {
+            const configs = snap.docs.map(doc => ({
+                id: doc.id, // e.g., "ENGINEERING_SUPER ADMIN"
+                ...doc.data()
+            }));
+            setDynamicPermissions(configs);
+        });
+
+        return () => {
+            unsubUser();
+            unsubPermissions();
+        };
+    }, []);
+
+    // Memoized Tab Navigation based on Role
+    const tabs = useMemo(() => {
+        const baseTabs = ["Monitoring", "Projects", "Requests"];
+        return (userRole === "SUPER ADMIN" || userRole === "MANAGER")
+            ? [...baseTabs, "Admin"]
+            : baseTabs;
+    }, [userRole]);
+
+    // UPDATED: Derived Services based on dynamic Firebase permissions
+    const services = useMemo(() => {
+    const allServices = [
+        { label: "Site Visit Appointment", icon: CalendarCheck, count: notifications.siteVisit, msgCount: notifications.unreadByService.siteVisit, path: "/appointments/site-visit", key: "siteVisit" },
+        { label: "Job Request", icon: FileText, count: notifications.jobRequest, msgCount: notifications.unreadByService.jobRequest, path: "/request/job", key: "jobRequest" },
+        { label: "Dialux Simulation", icon: Monitor, count: notifications.dialuxRequest, msgCount: notifications.unreadByService.dialux, path: "/request/dialux", key: "dialux" },
+        { label: "Product Recommendation", icon: ThumbsUp, count: 0, msgCount: 0, path: "/requests/recommendation", key: "recommendation" },
+        { label: "SPF Shop Drawing Request", icon: StreetLightIcon as LucideIcon, count: notifications.shopDrawing, msgCount: notifications.unreadByService.shopDrawing, path: "/request/shop-drawing", key: "shopDrawing" },
+        { label: "Testing Monitoring", icon: ClipboardCheck, count: notifications.testingActive + notifications.testingOverdue, msgCount: 0, path: "/request/testing", key: "testing" },
+        { label: "Other Request", icon: MoreHorizontal, count: notifications.otherRequest, msgCount: 0, path: "/request/other", key: "other" },
     ];
 
-    const itemsPerPage = 6; 
+    if (!userRole || dynamicPermissions.length === 0) return [];
+
+    // 1. Find the document matching the current user's role 
+    // This looks for any document ending with the role name (e.g. "_SUPER ADMIN")
+    const userPermissionsDoc = dynamicPermissions.find(p => 
+        p.id.endsWith(`_${userRole.toUpperCase()}`)
+    );
+
+    // 2. If no config document exists for this role, default to empty
+    if (!userPermissionsDoc || !userPermissionsDoc.services) {
+        return [];
+    }
+
+    // 3. Filter services based on the boolean flags in Firestore
+    return allServices.filter(service => {
+        // Map "other" (local key) to "others" (Firestore key) if necessary
+        const dbKey = service.key === "other" ? "others" : service.key;
+        return userPermissionsDoc.services[dbKey] === true;
+    });
+}, [userRole, notifications, dynamicPermissions]);
+
+    const itemsPerPage = 6;
     const totalPages = Math.ceil(services.length / itemsPerPage);
 
     const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -147,28 +245,14 @@ export default function EngiconnectDashboard() {
     const formattedDate = currentTime.toLocaleDateString([], { month: 'short', day: '2-digit', year: 'numeric' })
 
     useEffect(() => {
-        const storedUserId = localStorage.getItem("userId")
-        setUserId(storedUserId)
-        const fetchPersonnelRecord = async () => {
-            if (!storedUserId) { setIsLoading(false); return; }
-            try {
-                const res = await fetch(`/api/user?id=${encodeURIComponent(storedUserId)}`)
-                const data = await res.json()
-                setUserDetails({ Firstname: data.Firstname || "User", Position: data.Position || "Member", profilePicture: data.profilePicture || "" })
-            } catch (error) { console.error(error) } finally { setIsLoading(false) }
-        }
-        fetchPersonnelRecord()
-    }, [])
-
-    useEffect(() => {
         if (!db || !userId) return;
-        
+
         const unsubSite = onSnapshot(query(collection(db, "appointments"), where("status", "==", "PENDING")),
             (snap) => setNotifications(prev => ({ ...prev, siteVisit: snap.size })));
-        
+
         const unsubShop = onSnapshot(query(collection(db, "shop_drawing_requests"), where("department", "==", "ENGINEERING"), where("status", "==", "PENDING_REVIEW")),
             (snap) => setNotifications(prev => ({ ...prev, shopDrawing: snap.size })));
-        
+
         const unsubJob = onSnapshot(query(collection(db, "job_requests"), where("status", "==", "PENDING")),
             (snap) => setNotifications(prev => ({ ...prev, jobRequest: snap.size })));
 
@@ -202,17 +286,14 @@ export default function EngiconnectDashboard() {
             let totalUnreadInService = 0;
             snap.docs.forEach((doc: any) => {
                 const data = doc.data();
-                // Safety check for old data structure
                 if (data.messages && Array.isArray(data.messages)) {
                     const lastSeenValue = data.lastSeenBy?.[userId];
                     const lastSeenTime = lastSeenValue ? new Date(lastSeenValue).getTime() : 0;
-                    
                     const unreadInDoc = data.messages.filter((m: any) => {
                         if (!m.time || !m.senderId) return false;
                         const messageTime = new Date(m.time).getTime();
                         return m.senderId !== userId && messageTime > lastSeenTime;
                     }).length;
-                    
                     totalUnreadInService += unreadInDoc;
                 }
             });
@@ -235,8 +316,8 @@ export default function EngiconnectDashboard() {
             setNotifications(prev => ({ ...prev, unreadByService: { ...prev.unreadByService, siteVisit: calculateUnread(snap) } }));
         });
 
-        return () => { 
-            unsubSite(); unsubShop(); unsubTesting(); unsubJob(); unsubOther(); 
+        return () => {
+            unsubSite(); unsubShop(); unsubTesting(); unsubJob(); unsubOther();
             unsubDialuxPending(); unsubDialuxProgress(); unsubDialuxDone();
             unsubMsgShop(); unsubMsgDialux(); unsubMsgJob(); unsubMsgSite();
         };
@@ -247,6 +328,7 @@ export default function EngiconnectDashboard() {
         setNotifications(prev => ({ ...prev, unreadMessages: total }));
     }, [notifications.unreadByService]);
 
+    // Recent Activity Observer
     useEffect(() => {
         if (!db) return;
         const qDialux = query(collection(db, "dialux_requests"), orderBy("createdAt", "desc"), limit(2));
@@ -312,10 +394,9 @@ export default function EngiconnectDashboard() {
                                     </span>
                                 )}
                             </button>
-                            
-                            {/* Functional Notification Bell with Bubble (Desktop) */}
+
                             <div className="relative" ref={notifRef}>
-                                <button 
+                                <button
                                     onClick={() => setShowNotifDropdown(!showNotifDropdown)}
                                     className={cn(
                                         "p-2.5 rounded-xl transition-all relative",
@@ -347,14 +428,14 @@ export default function EngiconnectDashboard() {
                                                 <>
                                                     {notifications.siteVisit > 0 && <NotifItem label="Site Visits" count={notifications.siteVisit} icon={CalendarCheck} path="/appointments/site-visit" onClick={() => setShowNotifDropdown(false)} />}
                                                     {notifications.jobRequest > 0 && <NotifItem label="Job Requests" count={notifications.jobRequest} icon={FileText} path="/request/job" onClick={() => setShowNotifDropdown(false)} />}
-                                                    {notifications.shopDrawing > 0 && <NotifItem label="Shop Drawings" count={notifications.shopDrawing} icon={StreetLightIcon} path="/request/shop-drawing" onClick={() => setShowNotifDropdown(false)} />}
+                                                    {notifications.shopDrawing > 0 && <NotifItem label="Shop Drawings" count={notifications.shopDrawing} icon={StreetLightIcon as LucideIcon} path="/request/shop-drawing" onClick={() => setShowNotifDropdown(false)} />}
                                                     {notifications.testingOverdue > 0 && <NotifItem label="Testing Critical" count={notifications.testingOverdue} icon={AlertTriangle} path="/request/testing" color="text-red-600" onClick={() => setShowNotifDropdown(false)} />}
                                                     {notifications.dialuxRequest > 0 && <NotifItem label="DIAlux Requests" count={notifications.dialuxRequest} icon={Monitor} path="/request/dialux" onClick={() => setShowNotifDropdown(false)} />}
                                                     {notifications.otherRequest > 0 && <NotifItem label="Misc Requests" count={notifications.otherRequest} icon={MoreHorizontal} path="/request/other" onClick={() => setShowNotifDropdown(false)} />}
                                                 </>
                                             )}
                                         </div>
-                                        <button 
+                                        <button
                                             onClick={() => { router.push('/notifications'); setShowNotifDropdown(false); }}
                                             className="w-full mt-2 pt-3 border-t border-gray-50 text-center text-[10px] font-bold text-[#E33636] uppercase tracking-widest hover:bg-gray-50 py-2 transition-colors"
                                         >
@@ -405,7 +486,6 @@ export default function EngiconnectDashboard() {
                                             </span>
                                         )}
                                     </button>
-                                    {/* Mobile Bell with Bubble */}
                                     <button onClick={() => router.push('/notifications')} className="p-2.5 bg-white/10 rounded-full border border-white/10 text-white relative">
                                         <Bell size={18} />
                                         {totalNotifications > 0 && (
@@ -443,7 +523,7 @@ export default function EngiconnectDashboard() {
                         <section>
                             <div className="bg-white rounded-[24px] py-6 pb-6 px-4 shadow-sm border border-gray-100">
                                 <div className="md:hidden">
-                                    <div 
+                                    <div
                                         className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar py-3"
                                         onScroll={handleScroll}
                                         ref={scrollRef}
@@ -487,24 +567,24 @@ export default function EngiconnectDashboard() {
 
                         {/* Summary Stats */}
                         <section className="grid grid-cols-3 gap-3">
-                             <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center">
+                            <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center">
                                 <span className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">Total Pending</span>
                                 <div className="flex items-baseline gap-1">
                                     <span className="text-xl font-black text-[#E33636]">{totalNotifications}</span>
                                     <Layers size={10} className="text-gray-300" />
                                 </div>
-                             </div>
-                             <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center">
+                            </div>
+                            <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center">
                                 <span className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">Unread Chat</span>
                                 <div className="flex items-baseline gap-1">
                                     <span className="text-xl font-black text-blue-600">{notifications.unreadMessages}</span>
                                     <MessageSquare size={10} className="text-gray-300" />
                                 </div>
-                             </div>
-                             <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center">
+                            </div>
+                            <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center">
                                 <span className="text-[9px] font-black text-gray-400 uppercase tracking-tighter mb-1">Success</span>
                                 <span className="text-xl font-black text-green-600">{notifications.dialuxCompleted}</span>
-                             </div>
+                            </div>
                         </section>
 
                         {/* Collaboration Clusters */}
@@ -519,9 +599,9 @@ export default function EngiconnectDashboard() {
                                 <div className="flex items-center gap-6 overflow-x-auto no-scrollbar w-full justify-center">
                                     {Object.entries(notifications.unreadByService).map(([service, count]) => (
                                         count > 0 && (
-                                            <button 
-                                                key={service} 
-                                                onClick={() => router.push(`/messages?filter=${service}`)} 
+                                            <button
+                                                key={service}
+                                                onClick={() => router.push(`/messages?filter=${service}`)}
                                                 className="flex flex-col items-center active:scale-95 transition-transform"
                                             >
                                                 <div className="size-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center relative mb-1">
@@ -549,16 +629,16 @@ export default function EngiconnectDashboard() {
                             </div>
                             <div className="space-y-3">
                                 {recentActivity.length > 0 ? recentActivity.map((item) => (
-                                    <div key={item.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between group active:scale-[0.98] transition-all cursor-pointer" 
-                                         onClick={() => {
-                                             const paths: Record<string, string> = { 'DIAlux': `/request/dialux/${item.id}`, 'Job': `/request/job/${item.id}`, 'Shop': `/request/shop-drawing/${item.id}` };
-                                             router.push(paths[item.type] || '#');
-                                         }}>
+                                    <div key={item.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between group active:scale-[0.98] transition-all cursor-pointer"
+                                        onClick={() => {
+                                            const paths: Record<string, string> = { 'DIAlux': `/request/dialux/${item.id}`, 'Job': `/request/job/${item.id}`, 'Shop': `/request/shop-drawing/${item.id}` };
+                                            router.push(paths[item.type] || '#');
+                                        }}>
                                         <div className="flex items-center gap-4">
                                             <div className={cn(
                                                 "size-10 rounded-xl flex items-center justify-center",
-                                                item.type === 'DIAlux' ? "bg-indigo-50 text-indigo-600" : 
-                                                item.type === 'Job' ? "bg-orange-50 text-orange-600" : "bg-emerald-50 text-emerald-600"
+                                                item.type === 'DIAlux' ? "bg-indigo-50 text-indigo-600" :
+                                                    item.type === 'Job' ? "bg-orange-50 text-orange-600" : "bg-emerald-50 text-emerald-600"
                                             )}>
                                                 {item.type === 'DIAlux' ? <Monitor size={18} /> : item.type === 'Job' ? <FileText size={18} /> : <StreetLightIcon size={18} />}
                                             </div>
@@ -598,7 +678,7 @@ export default function EngiconnectDashboard() {
                                         <ActivityCard label="In-Testing" value={notifications.testingActive} icon={ClipboardCheck} />
                                         <ActivityCard label="Critical" value={notifications.testingOverdue} icon={AlertTriangle} isAlert={notifications.testingOverdue > 0} />
                                         <ActivityCard label="Site Visits" value={notifications.siteVisit} icon={CalendarCheck} />
-                                        <ActivityCard label="Shop Review" value={notifications.shopDrawing} icon={StreetLightIcon} />
+                                        <ActivityCard label="Shop Review" value={notifications.shopDrawing} icon={StreetLightIcon as LucideIcon} />
                                     </>
                                 )}
                                 {activeTab === "Requests" && (
@@ -610,7 +690,7 @@ export default function EngiconnectDashboard() {
                                     </>
                                 )}
                                 {(activeTab === "Projects" || activeTab === "Admin") && (
-                                   <div className="col-span-2 md:col-span-4 py-10 flex flex-col items-center justify-center bg-white rounded-2xl border border-dashed border-gray-200">
+                                    <div className="col-span-2 md:col-span-4 py-10 flex flex-col items-center justify-center bg-white rounded-2xl border border-dashed border-gray-200">
                                         <p className="text-[10px] font-bold text-gray-400 uppercase">{activeTab} Tracking Coming Soon</p>
                                     </div>
                                 )}
@@ -618,9 +698,12 @@ export default function EngiconnectDashboard() {
                         </section>
                     </main>
 
-                    <button onClick={() => router.push('/request/testing/add')} className="fixed bottom-8 right-6 size-14 bg-[#E33636] text-white rounded-full shadow-2xl flex items-center justify-center active:scale-90 transition-all z-50">
-                        <Plus size={24} strokeWidth={3} />
-                    </button>
+                    {/* Floating Action Button */}
+                    {services.some(s => s.label.includes("Testing")) && (
+                        <button onClick={() => router.push('/request/testing/add')} className="fixed bottom-8 right-6 size-14 bg-[#E33636] text-white rounded-full shadow-2xl flex items-center justify-center active:scale-90 transition-all z-50">
+                            <Plus size={24} strokeWidth={3} />
+                        </button>
+                    )}
                 </SidebarInset>
             </SidebarProvider>
             <style jsx global>{`.no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }`}</style>
@@ -628,7 +711,8 @@ export default function EngiconnectDashboard() {
     )
 }
 
-function ActivityCard({ label, value, icon: Icon, isAlert }: { label: string, value: number, icon?: any, isAlert?: boolean }) {
+// Sub-components
+function ActivityCard({ label, value, icon: Icon, isAlert }: { label: string, value: number, icon?: LucideIcon | React.ComponentType<any>, isAlert?: boolean }) {
     return (
         <div className={cn("bg-white p-4 rounded-2xl shadow-sm border flex flex-col gap-1 min-h-[100px] relative overflow-hidden transition-all", isAlert ? "border-red-200 ring-1 ring-red-50" : "border-gray-100")}>
             <p className={cn("text-[10px] font-bold uppercase tracking-tight", isAlert ? "text-red-500" : "text-gray-400")}>{label}</p>
@@ -641,10 +725,10 @@ function ActivityCard({ label, value, icon: Icon, isAlert }: { label: string, va
     )
 }
 
-function NotifItem({ label, count, icon: Icon, path, color = "text-gray-900", onClick }: any) {
+function NotifItem({ label, count, icon: Icon, path, color = "text-gray-900", onClick }: { label: string, count: number, icon: LucideIcon | React.ComponentType<any>, path: string, color?: string, onClick: () => void }) {
     const router = useRouter();
     return (
-        <button 
+        <button
             onClick={() => { router.push(path); onClick(); }}
             className="w-full px-5 py-3 hover:bg-gray-50 flex items-center justify-between group transition-colors border-b border-gray-50 last:border-0"
         >

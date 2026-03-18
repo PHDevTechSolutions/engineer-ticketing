@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { db } from "@/lib/firebase"
-import { collection, onSnapshot, query, doc, setDoc, serverTimestamp } from "firebase/firestore"
+import { collection, onSnapshot, query, doc, setDoc, serverTimestamp, Unsubscribe } from "firebase/firestore"
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/app-sidebar"
 import { PageHeader } from "@/components/page-header"
@@ -46,9 +46,19 @@ import {
     SelectValue,
 } from "@/components/ui/select"
 
+// --- TYPES ---
+interface User {
+    _id: string;
+    Firstname: string;
+    Lastname: string;
+    Department?: string;
+    Role?: string;
+    ReferenceID?: string;
+    profilePicture?: string;
+}
+
 /**
- * ALERT POPUP (Toast)
- * A simple message that slides in to confirm success or show an error.
+ * TOAST COMPONENT
  */
 const Toast = ({ message, type, onClose }: { message: string, type: 'success' | 'error', onClose: () => void }) => {
     React.useEffect(() => {
@@ -72,12 +82,13 @@ const Toast = ({ message, type, onClose }: { message: string, type: 'success' | 
 }
 
 export default function PICAssignmentMatrixPage() {
-    // --- APP MEMORY (State) ---
-    const [salesManagers, setSalesManagers] = React.useState<any[]>([])
-    const [engineers, setEngineers] = React.useState<any[]>([])
+    // --- STATE ---
+    const [salesManagers, setSalesManagers] = React.useState<User[]>([])
+    const [engineers, setEngineers] = React.useState<User[]>([])
     const [assignments, setAssignments] = React.useState<Record<string, string[]>>({})
     const [isLoading, setIsLoading] = React.useState(true)
     const [isSaving, setIsSaving] = React.useState(false)
+    const [currentUserId, setCurrentUserId] = React.useState<string | null>(null)
 
     // --- VIEW SETTINGS ---
     const [openManager, setOpenManager] = React.useState<string | null>(null)
@@ -88,30 +99,35 @@ export default function PICAssignmentMatrixPage() {
     const [confirmAction, setConfirmAction] = React.useState<{ managerId: string, engName: string } | null>(null)
     const [toast, setToast] = React.useState<{ message: string, type: 'success' | 'error' } | null>(null)
 
-    // 1. CLOUD SYNC: Fetching and listening to engiconnect data
+    // 1. HYDRATION & INITIAL LOAD
     React.useEffect(() => {
-        let isMounted = true
-        let unsubscribeFirestore: (() => void) | undefined
+        // Safe localStorage access
+        if (typeof window !== 'undefined') {
+            setCurrentUserId(localStorage.getItem("userId"))
+        }
 
-        const loadInitialData = async () => {
+        let isMounted = true
+        let unsubscribeFirestore: Unsubscribe | undefined
+
+        const fetchData = async () => {
             try {
                 const res = await fetch('/api/user')
-                const allUsers = await res.json()
+                if (!res.ok) throw new Error("Failed to fetch users")
+                const allUsers: User[] = await res.json()
                 
                 if (!isMounted) return
 
-                // Separate users by department and role
-                const managers = allUsers.filter((u: any) =>
+                const managers = allUsers.filter(u =>
                     u.Department?.toLowerCase() === "sales" && u.Role?.toLowerCase() === "manager"
                 )
-                const engs = allUsers.filter((u: any) => 
+                const engs = allUsers.filter(u => 
                     u.Department?.toLowerCase() === "engineering"
                 )
 
                 setSalesManagers(managers)
                 setEngineers(engs)
 
-                // Listen to real-time updates from the database
+                // Firestore Sync
                 const q = query(collection(db, "pic_assignments"))
                 unsubscribeFirestore = onSnapshot(q, (snapshot) => {
                     const mapping: Record<string, string[]> = {}
@@ -121,29 +137,31 @@ export default function PICAssignmentMatrixPage() {
                     setAssignments(mapping)
                     setIsLoading(false)
                 }, (error) => {
-                    console.error("Connection Error:", error)
+                    console.error("Firestore Error:", error)
+                    setToast({ message: "Cloud Sync Interrupted", type: 'error' })
                     setIsLoading(false)
                 })
             } catch (err) { 
-                console.error("Load Error:", err)
+                console.error("Initialization Error:", err)
                 if (isMounted) setIsLoading(false)
+                setToast({ message: "Failed to load team data", type: 'error' })
             }
         }
         
-        loadInitialData()
+        fetchData()
         return () => { 
             isMounted = false
             if (unsubscribeFirestore) unsubscribeFirestore()
         }
     }, [])
 
-    // 2. SAVE HANDLER: Logic for assigning/unassigning engineers
+    // 2. SAVE LOGIC (Optimistic UI)
     const handleSaveAssignment = async () => {
         if (!confirmAction) return
         setIsSaving(true)
         
         const { managerId, engName } = confirmAction
-        const previousAssignments = { ...assignments } // Backup for safety
+        const previousAssignments = { ...assignments }
         const currentBatch = assignments[managerId] || []
         const isCurrentlyAssigned = currentBatch.includes(engName)
         
@@ -151,7 +169,7 @@ export default function PICAssignmentMatrixPage() {
             ? currentBatch.filter(n => n !== engName)
             : [...currentBatch, engName]
 
-        // Update UI instantly (Optimistic Update)
+        // Update UI immediately
         setAssignments(prev => ({ ...prev, [managerId]: newBatch }))
 
         const manager = salesManagers.find(m => m._id === managerId)
@@ -160,38 +178,40 @@ export default function PICAssignmentMatrixPage() {
             await setDoc(doc(db, "pic_assignments", managerId), {
                 assignedPics: newBatch,
                 updatedAt: serverTimestamp(),
-                managerName: `${manager?.Firstname} ${manager?.Lastname}`,
+                managerName: manager ? `${manager.Firstname} ${manager.Lastname}` : "Unknown Manager",
                 managerRole: "Sales Manager"
             }, { merge: true })
             
-            setToast({ message: "Sync Successful", type: 'success' })
+            setToast({ message: "Matrix Updated", type: 'success' })
             setConfirmAction(null)
         } catch (err) {
-            setAssignments(previousAssignments) // Revert if save fails
-            setToast({ message: "Sync Failed: Try Again", type: 'error' })
+            setAssignments(previousAssignments) // Rollback
+            setToast({ message: "Save failed. Check connection.", type: 'error' })
         } finally {
             setIsSaving(false)
         }
     }
 
-    // 3. SEARCH & PAGES: Organizing the list
+    // 3. FILTER & PAGINATION ENGINE
     const filteredManagers = React.useMemo(() => {
-        const q = searchQuery.toLowerCase()
+        const q = searchQuery.toLowerCase().trim()
+        if (!q) return salesManagers
         return salesManagers.filter(m =>
             `${m.Firstname} ${m.Lastname} ${m.ReferenceID || ''}`.toLowerCase().includes(q)
         )
     }, [salesManagers, searchQuery])
 
     const limit = parseInt(itemsPerPage)
-    const totalPages = Math.ceil(filteredManagers.length / limit)
+    const totalPages = Math.max(1, Math.ceil(filteredManagers.length / limit))
     const paginatedManagers = filteredManagers.slice((currentPage - 1) * limit, currentPage * limit)
 
+    // Reset to page 1 on search
     React.useEffect(() => { setCurrentPage(1) }, [searchQuery, itemsPerPage])
 
     return (
         <ProtectedPageWrapper>
             <SidebarProvider defaultOpen={false}>
-                <AppSidebar userId={typeof window !== 'undefined' ? localStorage.getItem("userId") : null} />
+                <AppSidebar userId={currentUserId} />
                 <SidebarInset className="bg-[#F8FAFC] min-h-screen">
                     <PageHeader
                         title="Assignment Matrix"
@@ -199,86 +219,97 @@ export default function PICAssignmentMatrixPage() {
                         trigger={<SidebarTrigger className="mr-2" />}
                     />
 
-                    <main className="flex-1 p-3 md:p-6 lg:p-8 max-w-7xl mx-auto w-full space-y-4 md:space-y-6">
+                    <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6">
 
-                        {/* HELP GUIDE */}
+                        {/* INSTRUCTIONS */}
                         <div className="w-full">
                             {showInstructions ? (
-                                <div className="bg-slate-900 p-6 md:p-8 rounded-2xl md:rounded-3xl shadow-xl border border-slate-800 relative overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300">
-                                    <button onClick={() => setShowInstructions(false)} className="absolute top-4 right-4 text-slate-500 hover:text-white transition-colors p-2">
+                                <div className="bg-slate-900 p-6 md:p-8 rounded-3xl shadow-xl border border-slate-800 relative overflow-hidden animate-in fade-in slide-in-from-top-2">
+                                    <button 
+                                        onClick={() => setShowInstructions(false)} 
+                                        className="absolute top-4 right-4 text-slate-500 hover:text-white transition-colors"
+                                    >
                                         <X className="size-5" />
                                     </button>
                                     <div className="flex items-center gap-3 mb-6">
                                         <div className="size-9 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
                                             <Info className="size-4 text-emerald-400" />
                                         </div>
-                                        <span className="text-[10px] font-black text-white uppercase tracking-widest">Guide</span>
+                                        <span className="text-[10px] font-black text-white uppercase tracking-widest">System Guide</span>
                                     </div>
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                                         {[
-                                            { title: "Expand", desc: "Click a manager to see their assigned team." },
-                                            { title: "Edit", desc: "Click any engineer's card to assign or remove them." },
-                                            { title: "Auto-Save", desc: "Changes sync automatically to engiconnect cloud." }
+                                            { title: "Team View", desc: "Select a manager to expand their current engineering squad." },
+                                            { title: "Assign PIC", desc: "Toggle engineers to assign or remove them from a manager's group." },
+                                            { title: "Real-time", desc: "All changes are synced instantly across the cloud for the whole team." }
                                         ].map((item, idx) => (
-                                            <div key={idx} className="space-y-1.5 border-l-2 border-slate-800 pl-4">
-                                                <h4 className="text-emerald-400 text-[10px] font-black uppercase tracking-tight">{item.title}</h4>
+                                            <div key={idx} className="space-y-2 border-l-2 border-slate-800 pl-5">
+                                                <h4 className="text-emerald-400 text-[10px] font-black uppercase tracking-widest">{item.title}</h4>
                                                 <p className="text-[11px] text-slate-400 font-medium leading-relaxed">{item.desc}</p>
                                             </div>
                                         ))}
                                     </div>
                                 </div>
                             ) : (
-                                <button onClick={() => setShowInstructions(true)} className="group flex items-center gap-2 text-[10px] font-bold uppercase text-slate-500 hover:text-emerald-600 transition-all tracking-widest px-2 py-1">
-                                    <Info className="size-3.5" /> Show Matrix Instructions
+                                <button onClick={() => setShowInstructions(true)} className="flex items-center gap-2 text-[10px] font-bold uppercase text-slate-400 hover:text-emerald-600 transition-colors tracking-widest px-2">
+                                    <Info className="size-3.5" /> View Matrix Instructions
                                 </button>
                             )}
                         </div>
 
-                        {/* SEARCH BAR */}
-                        <div className="flex flex-col sm:flex-row gap-3">
+                        {/* SEARCH & FILTERS */}
+                        <div className="flex flex-col md:flex-row gap-4">
                             <div className="relative flex-1">
                                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
                                 <input
-                                    placeholder="Search by name or ID..."
+                                    placeholder="Search by name or reference ID..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="w-full h-12 md:h-14 pl-11 pr-4 rounded-xl border border-slate-200 bg-white text-[13px] focus:outline-none focus:ring-4 focus:ring-emerald-500/5 focus:border-emerald-500/30 transition-all shadow-sm"
+                                    className="w-full h-14 pl-12 pr-4 rounded-2xl border border-slate-200 bg-white text-[13px] focus:outline-none focus:ring-4 focus:ring-emerald-500/5 focus:border-emerald-500/30 transition-all shadow-sm"
                                 />
                             </div>
                             <Button
                                 variant="outline"
                                 onClick={() => { setSearchQuery(""); setCurrentPage(1) }}
-                                className="rounded-xl border-slate-200 h-12 md:h-14 px-6 uppercase font-bold text-[10px] tracking-widest bg-white"
+                                className="rounded-2xl border-slate-200 h-14 px-8 uppercase font-bold text-[10px] tracking-widest bg-white hover:bg-slate-50 active:scale-95 transition-all"
                             >
-                                <RotateCcw className="mr-2 size-3.5" /> Reset
+                                <RotateCcw className="mr-2 size-4" /> Reset Filters
                             </Button>
                         </div>
 
-                        {/* MANAGER LIST */}
-                        <div className="bg-white border border-slate-200 rounded-2xl md:rounded-3xl shadow-sm overflow-hidden flex flex-col">
+                        {/* MAIN DATA CONTAINER */}
+                        <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden flex flex-col min-h-[400px]">
                             <div className="divide-y divide-slate-100">
                                 {isLoading ? (
-                                    <div className="flex flex-col items-center justify-center py-24 gap-3">
-                                        <RefreshCw className="size-8 animate-spin text-emerald-500" />
-                                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Loading Cloud Data...</p>
+                                    <div className="flex flex-col items-center justify-center py-32 gap-4">
+                                        <div className="relative">
+                                            <RefreshCw className="size-10 animate-spin text-emerald-500" />
+                                            <div className="absolute inset-0 blur-xl bg-emerald-500/20 animate-pulse" />
+                                        </div>
+                                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Syncing with Cloud</p>
                                     </div>
                                 ) : paginatedManagers.length === 0 ? (
-                                    <div className="py-24 text-center">
-                                        <Users className="size-12 text-slate-200 mx-auto mb-3" />
-                                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">No managers found</p>
+                                    <div className="py-32 text-center">
+                                        <Users className="size-16 text-slate-100 mx-auto mb-4" />
+                                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">No matching managers found</p>
                                     </div>
                                 ) : (
                                     paginatedManagers.map((manager) => {
-                                        const count = assignments[manager._id]?.length || 0
+                                        const assignedCount = assignments[manager._id]?.length || 0
                                         const isOpen = openManager === manager._id
+                                        
                                         return (
-                                            <Collapsible key={manager._id} open={isOpen} onOpenChange={() => setOpenManager(isOpen ? null : manager._id)}>
+                                            <Collapsible 
+                                                key={manager._id} 
+                                                open={isOpen} 
+                                                onOpenChange={() => setOpenManager(isOpen ? null : manager._id)}
+                                            >
                                                 <CollapsibleTrigger className={cn(
-                                                    "w-full flex items-center justify-between p-4 md:p-6 transition-all",
+                                                    "w-full flex items-center justify-between p-5 md:p-7 transition-all",
                                                     isOpen ? "bg-slate-50/80" : "hover:bg-slate-50/40"
                                                 )}>
-                                                    <div className="flex items-center gap-4">
-                                                        <div className="size-10 md:size-12 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600 text-xs font-black overflow-hidden border border-slate-200 shrink-0">
+                                                    <div className="flex items-center gap-5">
+                                                        <div className="size-12 md:size-14 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-600 text-sm font-black overflow-hidden border border-slate-200 shadow-inner shrink-0">
                                                             {manager.profilePicture ? (
                                                                 <img src={manager.profilePicture} alt="" className="size-full object-cover" />
                                                             ) : (
@@ -286,52 +317,60 @@ export default function PICAssignmentMatrixPage() {
                                                             )}
                                                         </div>
                                                         <div className="text-left">
-                                                            <h3 className="text-[11px] md:text-xs font-black text-slate-800 uppercase tracking-tight">
+                                                            <h3 className="text-xs md:text-[13px] font-black text-slate-800 uppercase tracking-tight">
                                                                 {manager.Firstname} {manager.Lastname}
                                                             </h3>
-                                                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
-                                                                <span className="text-[9px] font-bold text-slate-400 tracking-widest">{manager.ReferenceID || "ID-NEW"}</span>
+                                                            <div className="flex flex-wrap items-center gap-x-3 mt-1.5">
+                                                                <span className="text-[9px] font-bold text-slate-400 tracking-widest">{manager.ReferenceID || "ID-UNSET"}</span>
                                                                 <span className="h-1 w-1 rounded-full bg-slate-300" />
-                                                                <span className="text-[9px] font-black uppercase text-emerald-600">
-                                                                    {count} Assigned
-                                                                </span>
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <div className={cn("size-1.5 rounded-full", assignedCount > 0 ? "bg-emerald-500 animate-pulse" : "bg-slate-300")} />
+                                                                    <span className="text-[9px] font-black uppercase text-slate-600">
+                                                                        {assignedCount} {assignedCount === 1 ? 'Engineer' : 'Engineers'}
+                                                                    </span>
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     </div>
                                                     <div className={cn(
-                                                        "size-7 md:size-8 rounded-lg border flex items-center justify-center transition-all shrink-0",
-                                                        isOpen ? "bg-slate-900 border-slate-900 text-white" : "bg-white border-slate-200 text-slate-400"
+                                                        "size-8 md:size-10 rounded-xl border flex items-center justify-center transition-all shrink-0 shadow-sm",
+                                                        isOpen ? "bg-slate-900 border-slate-900 text-white rotate-0" : "bg-white border-slate-200 text-slate-400"
                                                     )}>
-                                                        {isOpen ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+                                                        {isOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
                                                     </div>
                                                 </CollapsibleTrigger>
-                                                <CollapsibleContent className="bg-white border-t border-slate-50 p-4 md:p-6 animate-in slide-in-from-top-1 duration-200">
-                                                    <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                
+                                                <CollapsibleContent className="bg-white border-t border-slate-50 p-6 md:p-8 animate-in slide-in-from-top-1">
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                                                         {engineers.map((eng) => {
-                                                            const engName = `${eng.Firstname} ${eng.Lastname}`
-                                                            const isAssigned = (assignments[manager._id] || []).includes(engName)
+                                                            const fullName = `${eng.Firstname} ${eng.Lastname}`
+                                                            const isAssigned = (assignments[manager._id] || []).includes(fullName)
+                                                            
                                                             return (
                                                                 <button
                                                                     key={eng._id}
-                                                                    onClick={() => setConfirmAction({ managerId: manager._id, engName })}
+                                                                    onClick={() => setConfirmAction({ managerId: manager._id, engName: fullName })}
                                                                     className={cn(
-                                                                        "flex items-center justify-between p-3 rounded-xl border text-[10px] font-black uppercase transition-all active:scale-[0.98]",
+                                                                        "group flex items-center justify-between p-3.5 rounded-xl border text-[10px] font-black uppercase transition-all duration-200 active:scale-95",
                                                                         isAssigned
-                                                                            ? "bg-slate-900 border-slate-900 text-white shadow-sm"
-                                                                            : "bg-white border-slate-100 text-slate-500 hover:border-slate-300"
+                                                                            ? "bg-slate-900 border-slate-900 text-white shadow-md ring-4 ring-slate-900/5"
+                                                                            : "bg-white border-slate-100 text-slate-500 hover:border-emerald-500/40 hover:bg-emerald-50/30"
                                                                     )}
                                                                 >
                                                                     <div className="flex items-center gap-3 overflow-hidden">
-                                                                        <div className={cn("size-6 rounded-md overflow-hidden shrink-0", isAssigned ? "bg-white/10" : "bg-slate-50")}>
+                                                                        <div className={cn(
+                                                                            "size-7 rounded-lg overflow-hidden shrink-0 border",
+                                                                            isAssigned ? "border-white/10" : "border-slate-100"
+                                                                        )}>
                                                                             {eng.profilePicture ? (
                                                                                 <img src={eng.profilePicture} alt="" className="size-full object-cover" />
                                                                             ) : (
-                                                                                <div className="size-full flex items-center justify-center text-[8px]">{eng.Firstname[0]}</div>
+                                                                                <div className="size-full flex items-center justify-center bg-slate-50 text-[8px]">{eng.Firstname[0]}</div>
                                                                             )}
                                                                         </div>
-                                                                        <span className="truncate">{engName}</span>
+                                                                        <span className="truncate tracking-tight">{fullName}</span>
                                                                     </div>
-                                                                    {isAssigned && <CheckCircle2 className="size-3 text-emerald-400 shrink-0" />}
+                                                                    {isAssigned && <CheckCircle2 className="size-3.5 text-emerald-400 shrink-0" />}
                                                                 </button>
                                                             )
                                                         })}
@@ -343,33 +382,46 @@ export default function PICAssignmentMatrixPage() {
                                 )}
                             </div>
 
-                            {/* TABLE FOOTER */}
-                            <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-4 bg-slate-50/50 border-t border-slate-100 gap-4 mt-auto">
-                                <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-start">
+                            {/* FOOTER & PAGINATION */}
+                            <div className="flex flex-col sm:flex-row items-center justify-between px-8 py-6 bg-slate-50/50 border-t border-slate-100 gap-6 mt-auto">
+                                <div className="flex items-center gap-6 w-full sm:w-auto">
                                     <div className="flex flex-col">
-                                        <span className="text-[9px] font-bold uppercase text-slate-400">Viewing</span>
-                                        <span className="text-[10px] font-black text-slate-900">{filteredManagers.length} Total</span>
+                                        <span className="text-[9px] font-bold uppercase text-slate-400 tracking-[0.1em]">Database</span>
+                                        <span className="text-xs font-black text-slate-900">{filteredManagers.length} Managers</span>
                                     </div>
+                                    <div className="h-8 w-[1px] bg-slate-200 hidden sm:block" />
                                     <Select value={itemsPerPage} onValueChange={setItemsPerPage}>
-                                        <SelectTrigger className="h-8 w-16 bg-white border-slate-200 text-[10px] font-black rounded-lg">
+                                        <SelectTrigger className="h-9 w-20 bg-white border-slate-200 text-[10px] font-black rounded-xl shadow-sm">
                                             <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {["5", "10", "20", "50"].map(v => <SelectItem key={v} value={v} className="text-xs">{v}</SelectItem>)}
+                                            {["5", "10", "20", "50"].map(v => <SelectItem key={v} value={v} className="text-xs">{v} Per Page</SelectItem>)}
                                         </SelectContent>
                                     </Select>
                                 </div>
 
-                                <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
-                                    <span className="text-[9px] font-bold uppercase text-slate-400">
-                                        Page {currentPage} of {totalPages || 1}
+                                <div className="flex items-center gap-6 w-full sm:w-auto justify-between sm:justify-end">
+                                    <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">
+                                        Page <span className="text-slate-900">{currentPage}</span> of {totalPages}
                                     </span>
-                                    <div className="flex gap-1">
-                                        <Button variant="outline" size="icon" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="size-9 rounded-lg bg-white shadow-sm">
-                                            <ChevronLeft className="size-4" />
+                                    <div className="flex gap-2">
+                                        <Button 
+                                            variant="outline" 
+                                            size="icon" 
+                                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
+                                            disabled={currentPage === 1} 
+                                            className="size-10 rounded-xl bg-white shadow-sm hover:bg-slate-50 disabled:opacity-30"
+                                        >
+                                            <ChevronLeft className="size-5" />
                                         </Button>
-                                        <Button variant="outline" size="icon" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages || totalPages === 0} className="size-9 rounded-lg bg-white shadow-sm">
-                                            <ChevronRight className="size-4" />
+                                        <Button 
+                                            variant="outline" 
+                                            size="icon" 
+                                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
+                                            disabled={currentPage === totalPages} 
+                                            className="size-10 rounded-xl bg-white shadow-sm hover:bg-slate-50 disabled:opacity-30"
+                                        >
+                                            <ChevronRight className="size-5" />
                                         </Button>
                                     </div>
                                 </div>
@@ -377,36 +429,42 @@ export default function PICAssignmentMatrixPage() {
                         </div>
                     </main>
 
-                    {/* CONFIRMATION POPUP */}
+                    {/* MODALS & NOTIFICATIONS */}
                     <AlertDialog open={!!confirmAction} onOpenChange={() => !isSaving && setConfirmAction(null)}>
-                        <AlertDialogContent className="bg-white rounded-[2rem] border-none shadow-2xl max-w-[90vw] sm:max-w-[340px] p-8">
+                        <AlertDialogContent className="bg-white rounded-[2.5rem] border-none shadow-2xl max-w-[90vw] sm:max-w-[380px] p-10">
                             <AlertDialogHeader className="items-center text-center">
-                                <div className="size-16 bg-emerald-50 rounded-2xl flex items-center justify-center mb-4">
-                                    {isSaving ? <RefreshCw className="size-7 text-emerald-600 animate-spin" /> : <ShieldCheck className="size-7 text-emerald-600" />}
+                                <div className="size-20 bg-emerald-50 rounded-[2rem] flex items-center justify-center mb-6 relative">
+                                    {isSaving ? (
+                                        <RefreshCw className="size-8 text-emerald-600 animate-spin" />
+                                    ) : (
+                                        <>
+                                            <ShieldCheck className="size-8 text-emerald-600" />
+                                            <div className="absolute inset-0 bg-emerald-500/10 animate-ping rounded-[2rem] -z-10" />
+                                        </>
+                                    )}
                                 </div>
-                                <AlertDialogTitle className="font-black uppercase tracking-tight text-sm text-slate-900">
-                                    Confirm Change
+                                <AlertDialogTitle className="font-black uppercase tracking-widest text-base text-slate-900">
+                                    Sync Update?
                                 </AlertDialogTitle>
-                                <AlertDialogDescription className="text-[10px] font-medium leading-relaxed text-slate-500 uppercase px-2">
-                                    Update <span className="text-slate-900 font-black">{confirmAction?.engName}</span> in this group?
+                                <AlertDialogDescription className="text-[11px] font-bold leading-relaxed text-slate-400 uppercase tracking-tight px-4 mt-2">
+                                    Confirming this will update the PIC list for <span className="text-emerald-600 font-black">{confirmAction?.engName}</span> in the matrix.
                                 </AlertDialogDescription>
                             </AlertDialogHeader>
-                            <AlertDialogFooter className="flex flex-row gap-2 mt-8 w-full">
-                                <AlertDialogCancel disabled={isSaving} className="flex-1 rounded-xl border-slate-100 bg-slate-50 text-[10px] font-black uppercase h-12 m-0">
-                                    Back
+                            <AlertDialogFooter className="flex flex-col sm:flex-row gap-3 mt-10 w-full">
+                                <AlertDialogCancel disabled={isSaving} className="flex-1 rounded-2xl border-none bg-slate-50 text-[10px] font-black uppercase h-14 hover:bg-slate-100 transition-all">
+                                    Discard
                                 </AlertDialogCancel>
                                 <AlertDialogAction
                                     onClick={(e) => { e.preventDefault(); handleSaveAssignment(); }}
                                     disabled={isSaving}
-                                    className="flex-1 rounded-xl bg-slate-900 text-[10px] font-black uppercase text-white h-12 hover:bg-black transition-all m-0"
+                                    className="flex-1 rounded-2xl bg-slate-900 text-[10px] font-black uppercase text-white h-14 hover:bg-black shadow-lg hover:shadow-xl transition-all"
                                 >
-                                    {isSaving ? "Saving..." : "Confirm"}
+                                    {isSaving ? "Syncing..." : "Confirm"}
                                 </AlertDialogAction>
                             </AlertDialogFooter>
                         </AlertDialogContent>
                     </AlertDialog>
 
-                    {/* TOAST SYSTEM */}
                     {toast && (
                         <Toast 
                             message={toast.message} 
@@ -418,4 +476,4 @@ export default function PICAssignmentMatrixPage() {
             </SidebarProvider>
         </ProtectedPageWrapper>
     )
-}
+}   

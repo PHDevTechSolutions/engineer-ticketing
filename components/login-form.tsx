@@ -17,7 +17,7 @@ import {
 import { v4 as uuidv4 } from "uuid";
 
 // Logic Imports
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { addDoc, collection, serverTimestamp, doc, getDoc } from "firebase/firestore";
 import { db, logsDb } from "@/lib/firebase"; 
 import { supabase } from "@/utils/supabase-ticket";
 
@@ -29,7 +29,6 @@ type TicketSummary = {
 };
 
 export default function LoginForm({ className, ...props }: React.ComponentProps<"div">) {
-  // --- STATE MANAGEMENT ---
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -49,7 +48,6 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
   const [resetEmail, setResetEmail] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
 
-  // --- PIN PAD STATE ---
   const [showPinDialog, setShowPinDialog] = useState(false);
   const [pinValue, setPinValue] = useState("");
   const [pinLoading, setPinLoading] = useState(false);
@@ -57,7 +55,6 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
 
   const router = useRouter();
 
-  // --- HELPERS ---
   const getDeviceId = useCallback(() => {
     if (typeof window === "undefined") return "";
     let deviceId = localStorage.getItem("deviceId");
@@ -95,8 +92,6 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
     return `${prefix}-${datePart}-${nextSeq}`;
   };
 
-  // --- ACTIONS: LOGIN FLOWS ---
-
   const handlePostLogin = async (location: any) => {
     if (!pendingLoginData) return;
     setShowLocationDialog(false);
@@ -105,37 +100,66 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
     const { email, deviceId, result } = pendingLoginData;
 
     try {
+      // 1. Fetch from Firestore for Permissions
+      const userDocRef = doc(db, "users", result.userId);
+      const userDocSnap = await getDoc(userDocRef);
+      
+      let firestoreRole = "GUEST"; 
+      if (userDocSnap.exists()) {
+        firestoreRole = userDocSnap.data().Role?.toUpperCase() || "GUEST";
+      }
+
+      console.log(firestoreRole);
+
+      // 2. Define user details and Save to LocalStorage
+      const displayName = result.Firstname || email?.split('@')[0] || "Staff Member";
+      const userDept = result.Department?.toUpperCase() || "";
+
+      localStorage.setItem("userId", result.userId);
+      localStorage.setItem("userName", displayName);
+      localStorage.setItem("userRole", firestoreRole);
+      localStorage.setItem("department", userDept);
+
+      // 3. Log the activity
       await addDoc(collection(logsDb, "activity_logs"), {
         email: email || result.Email || "System User",
         status: "login",
         deviceId,
         location,
-        browser: navigator.userAgent,
-        os: navigator.platform,
         userId: result.userId,
         project: "engiconnect",
         date_created: serverTimestamp(),
       });
-    } catch (err) { console.error("Log error", err); }
 
-    // --- FIX: USE FIRSTNAME FROM MONGODB DATA ---
-    // If Firstname is missing, it will use the part of the email before the "@" 
-    const displayName = result.Firstname || email?.split('@')[0] || "Staff Member";
+      // 4. Progress bar animation before routing
+      let value = 0;
+      const interval = setInterval(() => {
+        value += 20;
+        setProgress(value);
+        if (value >= 100) {
+          clearInterval(interval);
+          
+          // --- IT BYPASS LOGIC ---
+          // Kung IT ang department, bypass na agad (Always Allowed)
+          // Kung hindi IT, i-check kung GUEST (Restricted)
+          const isIT = userDept === "IT";
 
-    localStorage.setItem("userId", result.userId);
-    localStorage.setItem("userName", displayName);
-    localStorage.setItem("department", result.Department || "IT");
+          if (isIT || firestoreRole !== "GUEST") {
+            toast.success(`Identity Verified: Welcome ${displayName}`);
+            router.push(`/dashboard?id=${result.userId}`);
+          } else {
+            toast.error("Access Denied: Your account is currently restricted (GUEST).");
+            setIsAuthorizing(false);
+            setProgress(0);
+          }
+        }
+      }, 60);
 
-    let value = 0;
-    const interval = setInterval(() => {
-      value += 20;
-      setProgress(value);
-      if (value >= 100) {
-        clearInterval(interval);
-        toast.success(`Identity Verified: Welcome ${displayName}`);
-        router.push(`/dashboard?id=${result.userId}`);
-      }
-    }, 60);
+    } catch (err) { 
+      console.error("Auth sync error", err);
+      toast.error("Security verification failed. Contact IT.");
+      setIsAuthorizing(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -181,12 +205,7 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
       const response = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-            pin: pinValue, 
-            savedPin: savedPin, 
-            deviceId, 
-            mode: "pin" 
-        }),
+        body: JSON.stringify({ pin: pinValue, savedPin: savedPin, deviceId, mode: "pin" }),
       });
       const result = await response.json();
 
@@ -254,12 +273,8 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
 
   return (
     <div className="min-h-screen w-full flex bg-[#F9FAFA] relative font-sans">
-      
-      {/* LEFT SIDE: LOGIN FORM */}
       <div className="flex-[1] flex flex-col justify-center items-center px-6 md:px-12 lg:px-20 z-10 bg-white relative shadow-2xl">
         <div className="w-full max-w-[400px] space-y-8">
-          
-          {/* Header Section */}
           <div className="space-y-4">
             <div className="flex items-center gap-3">
               <div className="bg-[#121212] p-2 rounded-xl shadow-lg rotate-[-2deg]">
