@@ -180,13 +180,14 @@ export default function PermissionsPage() {
     }))
   }
 
-  const departments = ["ALL", "IT", "ENGINEERING", "SALES", "PROCUREMENT"]
+  // UPDATED: Added WAREHOUSE OPERATIONS
+  const departments = ["ALL", "IT", "ENGINEERING", "SALES", "PROCUREMENT", "WAREHOUSE OPERATIONS"]
 
   const roles: PermissionRole[] = React.useMemo(() => [
-    { id: "1", roleName: "SUPER ADMIN", description: "Full system authority. Manages global configurations.", status: "ACTIVE", departments: ["IT", "ENGINEERING", "SALES", "PROCUREMENT"] },
-    { id: "2", roleName: "MANAGER", description: "Departmental head. Project approvals and reporting.", status: "ACTIVE", departments: ["IT", "ENGINEERING", "SALES", "PROCUREMENT"] },
-    { id: "3", roleName: "LEADER", description: "Team supervisor. Daily task distribution.", status: "ACTIVE", departments: ["IT", "ENGINEERING", "SALES", "PROCUREMENT"] },
-    { id: "4", roleName: "MEMBER", description: "Standard operational access. Creates tickets.", status: "ACTIVE", departments: ["IT", "ENGINEERING", "SALES", "PROCUREMENT"] },
+    { id: "1", roleName: "SUPER ADMIN", description: "Full system authority. Manages global configurations.", status: "ACTIVE", departments: ["IT", "ENGINEERING", "SALES", "PROCUREMENT", "WAREHOUSE OPERATIONS"] },
+    { id: "2", roleName: "MANAGER", description: "Departmental head. Project approvals and reporting.", status: "ACTIVE", departments: ["IT", "ENGINEERING", "SALES", "PROCUREMENT", "WAREHOUSE OPERATIONS"] },
+    { id: "3", roleName: "LEADER", description: "Team supervisor. Daily task distribution.", status: "ACTIVE", departments: ["IT", "ENGINEERING", "SALES", "PROCUREMENT", "WAREHOUSE OPERATIONS"] },
+    { id: "4", roleName: "MEMBER", description: "Standard operational access. Creates tickets.", status: "ACTIVE", departments: ["IT", "ENGINEERING", "SALES", "PROCUREMENT", "WAREHOUSE OPERATIONS"] },
     { id: "5", roleName: "GUEST", description: "Restricted visibility. Limited viewing only.", status: "RESTRICTED", departments: ["ALL"] },
   ], [])
 
@@ -217,14 +218,12 @@ export default function PermissionsPage() {
           />
 
           <main className="p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6">
-            {/* Stats Section */}
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
               <StatCard icon={<ShieldCheck />} label="Active Roles" value={roles.filter(r => r.status === "ACTIVE").length} color="emerald" />
               <StatCard icon={<Users2 />} label="Total Staff" value={staff.length} color="zinc" loading={isFetching} />
               <StatCard icon={<Lock />} label="Restricted" value={roles.filter(r => r.status === "RESTRICTED").length} color="orange" className="hidden md:flex" />
             </div>
 
-            {/* Filters Section */}
             <div className="bg-white p-2 rounded-[24px] md:rounded-[28px] border border-zinc-200 shadow-sm flex flex-col md:flex-row gap-2 sticky top-4 z-30">
                 <div className="relative flex-1 group">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-zinc-400 group-focus-within:text-black transition-colors" />
@@ -252,9 +251,7 @@ export default function PermissionsPage() {
                 </div>
             </div>
 
-            {/* Roles Container */}
             <div className="bg-white rounded-[32px] border border-zinc-200/60 overflow-hidden shadow-sm">
-              {/* Header - Desktop Only */}
               <div className="hidden md:grid grid-cols-12 bg-zinc-50/50 p-6 border-b border-zinc-100 text-[10px] font-bold uppercase tracking-widest text-zinc-400">
                 <span className="col-span-4">Role Identity</span>
                 <span className="col-span-4">Permissions Overview</span>
@@ -297,7 +294,6 @@ export default function PermissionsPage() {
                         {role.description}
                       </div>
                       
-                      {/* Mobile Row for Count & Status */}
                       <div className="flex items-center justify-between md:contents">
                         <div className="col-span-2 text-center md:text-center">
                             <span className="text-sm font-black text-zinc-900">{getRoleUserCount(role.roleName).toString().padStart(2, '0')}</span>
@@ -325,7 +321,6 @@ export default function PermissionsPage() {
             </div>
           </main>
 
-          {/* Configuration Sheet */}
           <Sheet open={!!selectedRole} onOpenChange={() => !isSaving && setSelectedRole(null)}>
             <SheetContent className="w-full sm:max-w-md md:rounded-l-[40px] border-l-zinc-200 shadow-2xl p-0 overflow-hidden flex flex-col">
               
@@ -415,8 +410,6 @@ export default function PermissionsPage() {
     </ProtectedPageWrapper>
   )
 }
-
-// --- SUB-COMPONENTS ---
 
 function StatCard({ icon, label, value, color, loading, className }: any) {
   const colors: any = { 
