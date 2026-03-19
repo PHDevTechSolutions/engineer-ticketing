@@ -8,7 +8,8 @@ import {
   CheckCircle2, AlertCircle, XCircle, Info, Settings2,
   SlidersHorizontal, LayoutDashboard, Database, 
   Terminal, Globe, HardDrive, CalendarCheck, FileText, 
-  Monitor, ThumbsUp, ClipboardCheck, MoreHorizontal, Plus
+  Monitor, ThumbsUp, ClipboardCheck, MoreHorizontal, Plus,
+  Package // Added for Product Request
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -68,6 +69,7 @@ export default function PermissionsPage() {
     recommendation: false,
     shopDrawing: false,
     testing: false,
+    productRequest: false, // Added for SPF Product Request
     others: false
   })
 
@@ -130,6 +132,7 @@ export default function PermissionsPage() {
             recommendation: true,
             shopDrawing: ["SUPER ADMIN", "MANAGER"].includes(selectedRole.roleName),
             testing: isHighLevel,
+            productRequest: isHighLevel, // Added default
             others: true
           });
         }
@@ -180,7 +183,6 @@ export default function PermissionsPage() {
     }))
   }
 
-  // UPDATED: Added WAREHOUSE OPERATIONS
   const departments = ["ALL", "IT", "ENGINEERING", "SALES", "PROCUREMENT", "WAREHOUSE OPERATIONS"]
 
   const roles: PermissionRole[] = React.useMemo(() => [
@@ -376,6 +378,10 @@ export default function PermissionsPage() {
                                 <ServiceAccessItem icon={<ThumbsUp size={16} />} label="Product Reco" checked={servicePermissions.recommendation} onCheckedChange={() => toggleService('recommendation')} />
                                 <ServiceAccessItem icon={<StreetLightIcon size={16} />} label="Shop Drawing" checked={servicePermissions.shopDrawing} onCheckedChange={() => toggleService('shopDrawing')} />
                                 <ServiceAccessItem icon={<ClipboardCheck size={16} />} label="Testing Lab" checked={servicePermissions.testing} onCheckedChange={() => toggleService('testing')} />
+                                
+                                {/* NEW: SPF Product Request Toggle */}
+                                <ServiceAccessItem icon={<Package size={16} />} label="Product Request" checked={servicePermissions.productRequest} onCheckedChange={() => toggleService('productRequest')} />
+                                
                                 <ServiceAccessItem icon={<MoreHorizontal size={16} />} label="Misc Services" checked={servicePermissions.others} onCheckedChange={() => toggleService('others')} />
                             </div>
                         </div>

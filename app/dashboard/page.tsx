@@ -16,7 +16,8 @@ import {
     ClipboardCheck, MoreHorizontal, Bell,
     Plus, Activity, CloudSun, CloudRain, Sun, CloudLightning, Cloud, Moon, CloudMoon,
     ArrowUpRight, Clock, CheckCircle2, AlertTriangle, Layers, MessageSquare, ChevronRight,
-    LucideProps, LucideIcon
+    LucideProps, LucideIcon,
+    Package
 } from "lucide-react";
 
 import { db } from "@/lib/firebase";
@@ -60,9 +61,13 @@ export default function EngiconnectDashboard() {
     const [activeTab, setActiveTab] = useState("Monitoring");
     const [showNotifDropdown, setShowNotifDropdown] = useState(false);
 
+    // This state is populated by the MongoDB fetch
+    const [userDept, setUserDept] = useState<string | null>(null);
+
     const [userDetails, setUserDetails] = useState({
         Firstname: "",
         Position: "",
+        Department: "",
         profilePicture: ""
     })
 
@@ -81,8 +86,10 @@ export default function EngiconnectDashboard() {
             dialux: 0,
             jobRequest: 0,
             siteVisit: 0,
-            shopDrawing: 0
-        }
+            shopDrawing: 0,
+            product: 0
+        },
+        productRequest: 0
     })
 
     const [recentActivity, setRecentActivity] = useState<any[]>([]);
@@ -96,17 +103,25 @@ export default function EngiconnectDashboard() {
         }
         setUserId(storedUserId);
 
+        // 1. Fetch Department and Profile details from MongoDB API
         fetch(`/api/user?id=${encodeURIComponent(storedUserId)}`)
             .then(res => res.json())
             .then(mongoData => {
+                const dept = mongoData.Department || mongoData.department || "";
+                
                 setUserDetails({
                     Firstname: mongoData.Firstname || "User",
                     Position: mongoData.Position || "Member",
+                    Department: dept,
                     profilePicture: mongoData.profilePicture || ""
                 });
+
+                // Update the state that the 'services' filtering depends on
+                setUserDept(dept); 
             })
             .catch(err => console.error("Error fetching user details:", err));
 
+        // 2. Real-time Role Listener from Firebase
         const userDocRef = doc(db, "users", storedUserId);
         const unsubUser = onSnapshot(userDocRef, (docSnap) => {
             if (docSnap.exists()) {
@@ -114,9 +129,12 @@ export default function EngiconnectDashboard() {
                 const role = data.Role || data.role || "MEMBER";
                 setUserRole(role);
                 localStorage.setItem("userRole", role);
+            } else {
+                setUserRole("MEMBER");
             }
         });
 
+        // 3. Real-time Permissions Configuration Listener
         const permissionsRef = collection(db, "role_permissions");
         const unsubPermissions = onSnapshot(permissionsRef, (snap) => {
             const configs = snap.docs.map(doc => ({
@@ -148,22 +166,39 @@ export default function EngiconnectDashboard() {
             { label: "Product Recommendation", icon: ThumbsUp, count: 0, msgCount: 0, path: "/requests/recommendation", key: "recommendation" },
             { label: "SPF Shop Drawing Request", icon: StreetLightIcon as LucideIcon, count: notifications.shopDrawing, msgCount: notifications.unreadByService.shopDrawing, path: "/request/shop-drawing", key: "shopDrawing" },
             { label: "Testing Monitoring", icon: ClipboardCheck, count: notifications.testingActive + notifications.testingOverdue, msgCount: 0, path: "/request/testing", key: "testing" },
+            { 
+                label: "SPF Product Request", 
+                icon: Package, // Changed from MoreHorizontal for better recognition
+                count: notifications.productRequest || 0, // Ensure you have a specific notification tracker
+                msgCount: notifications.unreadByService.product || 0, 
+                path: "/request/product", 
+                key: "productRequest" 
+            },
             { label: "Other Request", icon: MoreHorizontal, count: notifications.otherRequest, msgCount: 0, path: "/request/other", key: "other" },
         ];
 
         if (!userRole || dynamicPermissions.length === 0) return [];
 
-        const userPermissionsDoc = dynamicPermissions.find(p => 
-            p.id.endsWith(`_${userRole.toUpperCase()}`)
-        );
+        // Normalize strings to uppercase to match Firestore Document IDs (e.g., SALES_MEMBER)
+        const roleKey = userRole.toUpperCase();
+        const deptKey = userDept ? userDept.toUpperCase().trim() : "";
+        
+        // Construct the expected ID
+        const targetPermissionId = deptKey ? `${deptKey}_${roleKey}` : `_${roleKey}`;
 
-        if (!userPermissionsDoc || !userPermissionsDoc.services) return [];
+        console.log("targetPermissionId: "+ targetPermissionId);
+
+        // Find match: Exact ID first, then fallback to any document ending in the role
+        const finalPermissions = dynamicPermissions.find(p => p.id === targetPermissionId) || 
+                                 dynamicPermissions.find(p => p.id.endsWith(`_${roleKey}`));
+
+        if (!finalPermissions || !finalPermissions.services) return [];
 
         return allServices.filter(service => {
             const dbKey = service.key === "other" ? "others" : service.key;
-            return userPermissionsDoc.services[dbKey] === true;
+            return finalPermissions.services[dbKey] === true;
         });
-    }, [userRole, notifications, dynamicPermissions]);
+    }, [userRole, userDept, notifications, dynamicPermissions]);
 
     const itemsPerPage = 6;
     const totalPages = Math.ceil(services.length / itemsPerPage);
