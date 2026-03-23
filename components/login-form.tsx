@@ -25,16 +25,23 @@ export const dynamic = "force-dynamic";
 
 /* ─────────────────────────────────────────────
    CONSTANTS
-   Keys match security settings page exactly
 ───────────────────────────────────────────── */
-const APP_NAME         = "DSI Connect"
-const APP_SUBTITLE     = "Enterprise Resource Platform"
-const APP_PROJECT_KEY  = "dsi-connect"
-const PIN_STORAGE_KEY  = "engiconnect_user_pin"      // ← matches security settings page
-const BIO_ENABLED_KEY  = "engiconnect_bio_enabled"   // ← matches security settings page
-const BIO_CRED_KEY     = "engiconnect_webauthn_credId"
-const COMPANY_NAME     = "Disruptive Solutions Inc."
-const WALLPAPER_SRC    = "/engineer_wallpaper.png"
+const APP_NAME        = "DSI Connect"
+const APP_SUBTITLE    = "Enterprise Resource Platform"
+const APP_PROJECT_KEY = "dsi-connect"
+const COMPANY_NAME    = "Disruptive Solutions Inc."
+const WALLPAPER_SRC   = "/engineer_wallpaper.png"
+
+/* ─────────────────────────────────────────────
+   KEY HELPERS — must match security-page.tsx exactly
+   All keys are scoped to userId to prevent one user's
+   credentials from being used to log in as another.
+───────────────────────────────────────────── */
+const scopedPinKey  = (uid: string) => `engiconnect_user_pin_${uid}`
+const scopedBioKey  = (uid: string) => `engiconnect_bio_enabled_${uid}`
+const scopedCredKey = (uid: string) => `engiconnect_webauthn_credId_${uid}`
+// Reverse map: credentialId → userId (set during registration in security page)
+const bioUserKey    = (credId: string) => `engiconnect_bio_userId_${credId}`
 
 type AuthTab  = "password" | "pin" | "biometric"
 type BioState = "idle" | "scanning" | "success" | "failed" | "not_registered" | "unsupported"
@@ -53,23 +60,15 @@ function PinKeypad({ onInput, onDelete, onClear, disabled }: {
   return (
     <div className="grid grid-cols-3 gap-2.5 w-full max-w-[264px] mx-auto">
       {keys.map(k => (
-        <button
-          key={k}
-          type="button"
-          disabled={disabled}
-          onClick={() => {
-            if (k === "⌫") onDelete()
-            else if (k === "C") onClear()
-            else onInput(k)
-          }}
+        <button key={k} type="button" disabled={disabled}
+          onClick={() => { if (k === "⌫") onDelete(); else if (k === "C") onClear(); else onInput(k) }}
           className={cn(
             "h-14 rounded-2xl font-black text-base transition-all duration-100 select-none",
             "active:scale-90 disabled:opacity-40 disabled:cursor-not-allowed",
             k === "C"  ? "bg-red-50 text-red-500 border border-red-100 hover:bg-red-100" :
             k === "⌫" ? "bg-zinc-100 text-zinc-600 border border-zinc-200 hover:bg-zinc-200" :
                         "bg-white border border-zinc-200 text-zinc-900 hover:border-zinc-900 shadow-sm hover:shadow"
-          )}
-        >
+          )}>
           {k === "⌫" ? <Delete className="mx-auto size-4" /> : k}
         </button>
       ))}
@@ -95,9 +94,6 @@ function PinDots({ value, total = 6 }: { value: string; total?: number }) {
   )
 }
 
-/* ─────────────────────────────────────────────
-   GREETING HELPER
-───────────────────────────────────────────── */
 function getGreeting() {
   const h = new Date().getHours()
   if (h < 12) return "Good Morning"
@@ -127,15 +123,14 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
   const [showTicketDialog, setShowTicketDialog]     = useState(false)
   const [showResetDialog, setShowResetDialog]       = useState(false)
 
-  const [remarks, setRemarks]                     = useState("")
-  const [ticketSubmitting, setTicketSubmitting]   = useState(false)
-  const [existingTickets, setExistingTickets]     = useState<TicketSummary[]>([])
-  const [resetEmail, setResetEmail]               = useState("")
-  const [resetLoading, setResetLoading]           = useState(false)
+  const [remarks, setRemarks]                   = useState("")
+  const [ticketSubmitting, setTicketSubmitting] = useState(false)
+  const [existingTickets, setExistingTickets]   = useState<TicketSummary[]>([])
+  const [resetEmail, setResetEmail]             = useState("")
+  const [resetLoading, setResetLoading]         = useState(false)
 
   const router = useRouter()
 
-  /* ── Device ID ── */
   const getDeviceId = useCallback(() => {
     if (typeof window === "undefined") return ""
     let id = localStorage.getItem("deviceId")
@@ -143,7 +138,6 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
     return id
   }, [])
 
-  /* ── Geolocation ── */
   const getLocation = async () => {
     if (typeof window === "undefined" || !navigator.geolocation) return null
     try {
@@ -154,7 +148,6 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
     } catch { return null }
   }
 
-  /* ── Fetch tickets ── */
   const fetchTickets = useCallback(async () => {
     try {
       const { data, error } = await supabase.from("tickets").select("ticket_id, date_created")
@@ -170,50 +163,7 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
     return `${prefix}-${datePart}-${String(todayIds.length + 1).padStart(3, "0")}`
   }
 
-  /* ── WebAuthn helpers ── */
-  const isWebAuthnSupported = () =>
-    typeof window !== "undefined" &&
-    window.PublicKeyCredential !== undefined &&
-    typeof window.PublicKeyCredential === "function"
-
-  const registerBiometric = async (userId: string): Promise<boolean> => {
-    if (!isWebAuthnSupported()) return false
-    try {
-      const challenge = crypto.getRandomValues(new Uint8Array(32))
-      const credential = await navigator.credentials.create({
-        publicKey: {
-          challenge,
-          rp: { name: COMPANY_NAME, id: window.location.hostname },
-          user: {
-            id: new TextEncoder().encode(userId),
-            name: userId,
-            displayName: "DSI Connect User",
-          },
-          pubKeyCredParams: [
-            { type: "public-key", alg: -7   }, // ES256
-            { type: "public-key", alg: -257 }, // RS256
-          ],
-          authenticatorSelection: {
-            authenticatorAttachment: "platform", // device built-in: FaceID / TouchID / Windows Hello
-            userVerification: "required",
-          },
-          timeout: 60000,
-        },
-      }) as PublicKeyCredential | null
-
-      if (credential) {
-        localStorage.setItem(BIO_CRED_KEY, credential.id)
-        localStorage.setItem(BIO_ENABLED_KEY, "true")
-        return true
-      }
-      return false
-    } catch (err: any) {
-      console.error("Biometric registration error:", err)
-      return false
-    }
-  }
-
-  /* ── Post-login flow ── */
+  /* ── Post-login: fetch role, store session, route ── */
   const handlePostLogin = async (location: any) => {
     if (!pendingLoginData) return
     setShowLocationDialog(false)
@@ -227,11 +177,11 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
       const displayName = result.Firstname || loginEmail?.split("@")[0] || "Staff Member"
       const userDept    = result.Department?.toUpperCase() || ""
 
-      localStorage.setItem("userId",         result.userId)
-      localStorage.setItem("userName",        displayName)
-      localStorage.setItem("userRole",        firestoreRole)
-      localStorage.setItem("userDepartment",  userDept)
-      localStorage.setItem("department",      userDept) // backward compat
+      localStorage.setItem("userId",        result.userId)
+      localStorage.setItem("userName",       displayName)
+      localStorage.setItem("userRole",       firestoreRole)
+      localStorage.setItem("userDepartment", userDept)
+      localStorage.setItem("department",     userDept)
 
       await addDoc(collection(logsDb, "activity_logs"), {
         email: loginEmail || result.Email || "System User",
@@ -249,12 +199,6 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
           clearInterval(interval)
           if (userDept === "IT" || firestoreRole !== "GUEST") {
             toast.success(`${getGreeting()}, ${displayName}!`)
-            // Silently offer biometric registration after first successful login
-            if (isWebAuthnSupported() && !localStorage.getItem(BIO_CRED_KEY)) {
-              registerBiometric(result.userId)
-                .then(ok => { if (ok) toast.success("Biometric set up! Use Face/Touch ID next time.") })
-                .catch(() => {})
-            }
             router.push(`/dashboard?id=${result.userId}`)
           } else {
             toast.error("Access Denied: Account restricted.")
@@ -270,7 +214,7 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
     }
   }
 
-  /* ── Email / password submit ── */
+  /* ── Email / password ── */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMessage(null)
@@ -296,13 +240,19 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
     finally { setLoading(false) }
   }
 
-  /* ── PIN submit ── */
+  /* ── PIN login — reads scoped PIN key ── */
   const handlePinSubmit = async (pin?: string) => {
     const val = pin || pinValue
     if (val.length < 6) return
     setPinLoading(true)
     const deviceId = getDeviceId()
-    const savedPin = localStorage.getItem(PIN_STORAGE_KEY)
+
+    // Read PIN from scoped key if userId is known, fallback to unscoped
+    const storedUserId = localStorage.getItem("userId")
+    const savedPin = storedUserId
+      ? localStorage.getItem(scopedPinKey(storedUserId))
+      : null
+
     try {
       const response = await fetch("/api/login", {
         method: "POST",
@@ -322,65 +272,102 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
     finally { setPinLoading(false) }
   }
 
-  /* PIN auto-submit on 6th digit */
   useEffect(() => {
     if (pinValue.length === 6 && activeTab === "pin" && !pinLoading) handlePinSubmit(pinValue)
   }, [pinValue])
 
-  /* ── Biometric login — real WebAuthn ── */
+  /* ─────────────────────────────────────────────
+     BIOMETRIC LOGIN — fixed account resolution
+
+     The bug before: after WebAuthn passes, the code called
+     /api/login with mode:"pin" + deviceId, which resolved to
+     whatever user last logged in on that device — WRONG.
+
+     The fix: during registration (security-page.tsx) we stored:
+       engiconnect_bio_userId_{credId} = userId
+
+     So now we:
+     1. Run WebAuthn get() to verify the person is physically present
+     2. Read the credId from the assertion
+     3. Look up which userId registered that credId
+     4. Call /api/login with mode:"biometric" + that specific userId
+     5. Server fetches user by _id directly — always the right account
+  ───────────────────────────────────────────── */
+  const isWebAuthnSupported = () =>
+    typeof window !== "undefined" && typeof window.PublicKeyCredential === "function"
+
   const handleBiometricLogin = async () => {
-    // 1. Browser/device support check
-    if (!isWebAuthnSupported()) {
-      setBioState("unsupported")
-      return
-    }
-    // 2. Must be enabled in security settings AND credential must exist
-    const bioEnabled  = localStorage.getItem(BIO_ENABLED_KEY) === "true"
-    const storedCredId = localStorage.getItem(BIO_CRED_KEY)
-    if (!bioEnabled || !storedCredId) {
-      setBioState("not_registered")
-      return
+    if (!isWebAuthnSupported()) { setBioState("unsupported"); return }
+
+    // Find any registered credential on this device
+    // We scan localStorage for any key matching our pattern
+    const credKeys = Object.keys(localStorage).filter(k => k.startsWith("engiconnect_webauthn_credId_"))
+    if (credKeys.length === 0) { setBioState("not_registered"); return }
+
+    // Also check if the last logged-in user has bio enabled
+    const lastUid = localStorage.getItem("userId")
+    if (lastUid) {
+      const bioEnabled = localStorage.getItem(scopedBioKey(lastUid)) === "true"
+      const hasCred    = !!localStorage.getItem(scopedCredKey(lastUid))
+      if (!bioEnabled || !hasCred) { setBioState("not_registered"); return }
     }
 
     setBioState("scanning")
     try {
       const challenge = crypto.getRandomValues(new Uint8Array(32))
-      // Convert base64url → ArrayBuffer
-      const credIdBytes = Uint8Array.from(
-        atob(storedCredId.replace(/-/g, "+").replace(/_/g, "/")),
-        c => c.charCodeAt(0)
-      )
+
+      // Build allowCredentials from all registered creds on this device
+      const allowCredentials = credKeys.map(key => {
+        const credId = localStorage.getItem(key)!
+        const credIdBytes = Uint8Array.from(
+          atob(credId.replace(/-/g, "+").replace(/_/g, "/")),
+          c => c.charCodeAt(0)
+        )
+        return { id: credIdBytes, type: "public-key" as const, transports: ["internal" as AuthenticatorTransport] }
+      })
 
       const assertion = await navigator.credentials.get({
         publicKey: {
           challenge,
-          allowCredentials: [{ id: credIdBytes, type: "public-key", transports: ["internal"] }],
+          allowCredentials,
           userVerification: "required",
           timeout: 60000,
         },
       }) as PublicKeyCredential | null
 
-      if (assertion) {
-        setBioState("success")
-        // Device-level biometric passed → authenticate via device PIN flow
-        const deviceId = getDeviceId()
-        const savedPin = localStorage.getItem(PIN_STORAGE_KEY)
-        const response = await fetch("/api/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode: "pin", pin: savedPin || "", savedPin: savedPin || "", deviceId }),
-        })
-        const result = await response.json()
-        if (!response.ok) {
-          setBioState("failed")
-          toast.error("Biometric passed but account lookup failed. Use password.")
-          return
-        }
-        setPendingLoginData({ email: result.Email, deviceId, result })
-        setShowLocationDialog(true)
-      } else {
-        setBioState("failed")
+      if (!assertion) { setBioState("failed"); return }
+
+      // ── Key fix: resolve userId from the credential that was used ──
+      const usedCredId = assertion.id
+      const resolvedUserId = localStorage.getItem(bioUserKey(usedCredId))
+
+      if (!resolvedUserId) {
+        // Credential exists but no userId mapping — corrupted state
+        setBioState("not_registered")
+        toast.error("Biometric credential is incomplete. Please re-register in Settings → Security.")
+        return
       }
+
+      setBioState("success")
+      const deviceId = getDeviceId()
+
+      // Call login API with the resolved userId directly — no deviceId guessing
+      const response = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "biometric", userId: resolvedUserId, deviceId }),
+      })
+      const result = await response.json()
+
+      if (!response.ok) {
+        setBioState("failed")
+        toast.error("Biometric verified but account lookup failed. Use password.")
+        return
+      }
+
+      setPendingLoginData({ email: result.Email, deviceId, result })
+      setShowLocationDialog(true)
+
     } catch (err: any) {
       console.error("Biometric auth error:", err)
       if (err.name === "NotAllowedError") {
@@ -394,7 +381,6 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
     }
   }
 
-  /* Auto-trigger on tab switch */
   useEffect(() => {
     if (activeTab === "biometric" && bioState === "idle") handleBiometricLogin()
     if (activeTab !== "biometric") setBioState("idle")
@@ -418,20 +404,20 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
     finally { setResetLoading(false) }
   }
 
-  /* ── Submit locked-account ticket ── */
+  /* ── Locked account ticket ── */
   const submitTicket = async () => {
     if (!remarks.trim()) return
     setTicketSubmitting(true)
     try {
       const { error } = await supabase.from("tickets").insert([{
-        ticket_id:       generateTicketID(),
-        department:      pendingLoginData?.result?.Department || "SYSTEM",
-        requestor_name:  email || "System User",
-        mode:            "System Directory",
-        status:          "Pending",
-        ticket_subject:  `Account Locked - ${email}`,
+        ticket_id:      generateTicketID(),
+        department:     pendingLoginData?.result?.Department || "SYSTEM",
+        requestor_name: email || "System User",
+        mode:           "System Directory",
+        status:         "Pending",
+        ticket_subject: `Account Locked - ${email}`,
         remarks,
-        date_created:    new Date().toISOString(),
+        date_created:   new Date().toISOString(),
       }])
       if (error) throw error
       toast.success("Ticket submitted. IT will contact you shortly.")
@@ -443,14 +429,12 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
   }
 
   /* ─────────────────────────────────────────────
-     RENDER  — same visual as preferred version
+     RENDER
   ───────────────────────────────────────────── */
   return (
     <div className={cn("min-h-screen w-full flex font-sans antialiased", className)} {...props}>
 
-      {/* ════════════════════════════════════════
-          LEFT PANEL
-      ════════════════════════════════════════ */}
+      {/* ── LEFT PANEL ── */}
       <div className="flex-1 flex flex-col bg-white lg:max-w-[520px] min-h-screen">
 
         {/* Top bar */}
@@ -470,11 +454,11 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
           </button>
         </div>
 
-        {/* Form content */}
+        {/* Form area */}
         <div className="flex-1 flex flex-col justify-center px-6 md:px-10 pb-10">
           <div className="w-full max-w-[400px] mx-auto">
 
-            {/* Heading — greeting from dashboard */}
+            {/* Heading */}
             <div className="mb-8">
               <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1.5">
                 {getGreeting()}
@@ -495,24 +479,19 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
                 { id: "pin",       label: "PIN",        icon: Grid3X3 },
                 { id: "biometric", label: "Biometric",  icon: Fingerprint },
               ] as { id: AuthTab; label: string; icon: any }[]).map(tab => (
-                <button
-                  key={tab.id}
-                  type="button"
+                <button key={tab.id} type="button"
                   onClick={() => { setActiveTab(tab.id); setErrorMessage(null); setPinValue("") }}
                   className={cn(
                     "flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all",
-                    activeTab === tab.id
-                      ? "bg-white text-[#121212] shadow-sm"
-                      : "text-zinc-400 hover:text-zinc-500"
-                  )}
-                >
+                    activeTab === tab.id ? "bg-white text-[#121212] shadow-sm" : "text-zinc-400 hover:text-zinc-500"
+                  )}>
                   <tab.icon size={14} strokeWidth={2.5} />
                   {tab.label}
                 </button>
               ))}
             </div>
 
-            {/* ── PASSWORD TAB ── */}
+            {/* ── PASSWORD ── */}
             {activeTab === "password" && (
               <form onSubmit={handleSubmit} className="space-y-4">
                 {errorMessage && (
@@ -521,22 +500,16 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
                     <p className="text-xs font-medium text-red-700">{errorMessage}</p>
                   </div>
                 )}
-
                 <div className="space-y-1.5">
                   <Label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Work Email</Label>
                   <div className="relative">
                     <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-300" />
-                    <Input
-                      type="email"
-                      placeholder="you@disruptivesolutionsinc.com"
+                    <Input type="email" placeholder="you@disruptivesolutionsinc.com"
                       className="pl-10 h-12 rounded-xl border border-zinc-200 bg-zinc-50 focus-visible:ring-0 focus-visible:border-zinc-900 text-sm font-medium transition-colors"
-                      value={email}
-                      onChange={e => { setEmail(e.target.value); setErrorMessage(null) }}
-                      autoComplete="email"
-                    />
+                      value={email} onChange={e => { setEmail(e.target.value); setErrorMessage(null) }}
+                      autoComplete="email" />
                   </div>
                 </div>
-
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <Label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Password</Label>
@@ -547,34 +520,22 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
                   </div>
                   <div className="relative">
                     <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-300" />
-                    <Input
-                      type={showPassword ? "text" : "password"}
-                      placeholder="••••••••"
+                    <Input type={showPassword ? "text" : "password"} placeholder="••••••••"
                       className="pl-10 pr-11 h-12 rounded-xl border border-zinc-200 bg-zinc-50 focus-visible:ring-0 focus-visible:border-zinc-900 text-sm font-medium transition-colors"
-                      value={password}
-                      onChange={e => { setPassword(e.target.value); setErrorMessage(null) }}
-                      autoComplete="current-password"
-                    />
+                      value={password} onChange={e => { setPassword(e.target.value); setErrorMessage(null) }}
+                      autoComplete="current-password" />
                     <button type="button" onClick={() => setShowPassword(!showPassword)}
                       className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 p-0.5 transition-colors">
                       {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                   </div>
                 </div>
-
-                <Button
-                  type="submit"
-                  disabled={loading || isAuthorizing}
-                  className="w-full h-12 bg-[#121212] hover:bg-zinc-800 text-white rounded-xl font-black uppercase tracking-widest text-xs relative overflow-hidden transition-all active:scale-[0.98] shadow-lg shadow-black/5 mt-2"
-                >
+                <Button type="submit" disabled={loading || isAuthorizing}
+                  className="w-full h-12 bg-[#121212] hover:bg-zinc-800 text-white rounded-xl font-black uppercase tracking-widest text-xs relative overflow-hidden transition-all active:scale-[0.98] shadow-lg shadow-black/5 mt-2">
                   <div className="relative z-10 flex items-center justify-center gap-2">
                     {loading       && <Loader2 className="h-4 w-4 animate-spin" />}
                     {isAuthorizing && <ShieldCheck className="h-4 w-4 animate-pulse" />}
-                    <span>
-                      {isAuthorizing ? `Authorizing ${progress}%`
-                       : loading     ? "Verifying..."
-                       :               "Continue"}
-                    </span>
+                    <span>{isAuthorizing ? `Authorizing ${progress}%` : loading ? "Verifying..." : "Continue"}</span>
                     {!loading && !isAuthorizing && <ChevronRight size={14} />}
                   </div>
                   {isAuthorizing && (
@@ -585,42 +546,32 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
               </form>
             )}
 
-            {/* ── PIN TAB ── */}
+            {/* ── PIN ── */}
             {activeTab === "pin" && (
               <div className="space-y-5">
                 <div className="text-center space-y-3">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
-                    Enter 6-digit terminal PIN
-                  </p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Enter 6-digit terminal PIN</p>
                   <PinDots value={pinValue} total={6} />
                 </div>
-
-                <PinKeypad
-                  disabled={pinLoading}
+                <PinKeypad disabled={pinLoading}
                   onInput={d => { if (pinValue.length < 6) setPinValue(p => p + d) }}
                   onDelete={() => setPinValue(p => p.slice(0, -1))}
-                  onClear={() => setPinValue("")}
-                />
-
+                  onClear={() => setPinValue("")} />
                 {pinLoading ? (
                   <div className="flex items-center justify-center gap-2 text-zinc-400">
                     <Loader2 className="size-4 animate-spin" />
                     <span className="text-[10px] font-black uppercase tracking-widest">Verifying...</span>
                   </div>
                 ) : (
-                  <Button
-                    type="button"
-                    onClick={() => handlePinSubmit()}
-                    disabled={pinValue.length < 6}
-                    className="w-full h-12 bg-[#121212] text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg shadow-black/5 active:scale-[0.98] transition-all"
-                  >
+                  <Button type="button" onClick={() => handlePinSubmit()} disabled={pinValue.length < 6}
+                    className="w-full h-12 bg-[#121212] text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg active:scale-[0.98] transition-all">
                     Verify PIN
                   </Button>
                 )}
               </div>
             )}
 
-            {/* ── BIOMETRIC TAB ── */}
+            {/* ── BIOMETRIC ── */}
             {activeTab === "biometric" && (
               <div className="text-center space-y-6 py-2">
                 <div className="relative mx-auto w-fit">
@@ -639,8 +590,7 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
                       bioState === "success"        ? "text-emerald-500" :
                       bioState === "failed"         ? "text-red-400" :
                       bioState === "not_registered" ? "text-amber-400" :
-                      bioState === "unsupported"    ? "text-zinc-300" :
-                                                     "text-zinc-400"
+                      bioState === "unsupported"    ? "text-zinc-300" : "text-zinc-400"
                     )} />
                   </div>
                   {bioState === "scanning" && (
@@ -664,7 +614,7 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
                       : bioState === "failed"
                       ? "Scan not recognised or cancelled. Try again or use another method."
                       : bioState === "not_registered"
-                      ? "Biometrics not enabled. Sign in with password first, then enable it in Settings → Security."
+                      ? "Biometrics not enabled. Sign in with password, then go to Settings → Security to enable it."
                       : bioState === "unsupported"
                       ? "This browser or device doesn't support biometric login. Use PIN or Password instead."
                       : "Use Face ID, Touch ID, Windows Hello, or your fingerprint sensor."}
@@ -679,8 +629,7 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
                         Try Again
                       </Button>
                     )}
-                    <Button type="button"
-                      onClick={() => { setActiveTab("pin"); setPinValue("") }}
+                    <Button type="button" onClick={() => { setActiveTab("pin"); setPinValue("") }}
                       className={cn(
                         "w-full h-12 rounded-xl font-black text-xs uppercase tracking-widest active:scale-[0.98]",
                         bioState === "failed"
@@ -689,21 +638,18 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
                       )}>
                       Use PIN Instead
                     </Button>
-                    <Button type="button" variant="outline"
-                      onClick={() => setActiveTab("password")}
+                    <Button type="button" variant="outline" onClick={() => setActiveTab("password")}
                       className="w-full h-12 rounded-xl font-black text-xs uppercase tracking-widest border border-zinc-200">
                       Use Password
                     </Button>
                   </div>
                 )}
-
                 {bioState === "idle" && (
                   <Button type="button" onClick={handleBiometricLogin}
                     className="w-full h-12 bg-[#121212] text-white rounded-xl font-black text-xs uppercase tracking-widest active:scale-[0.98]">
                     Start Scan
                   </Button>
                 )}
-
                 {bioState === "success" && (
                   <div className="flex items-center justify-center gap-2 text-emerald-600">
                     <div className="size-2 bg-emerald-500 rounded-full animate-pulse" />
@@ -713,7 +659,6 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
               </div>
             )}
 
-            {/* Footer */}
             <p className="text-[10px] text-zinc-300 font-medium text-center mt-8">
               © {new Date().getFullYear()} {COMPANY_NAME} · All rights reserved.
             </p>
@@ -721,17 +666,13 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
         </div>
       </div>
 
-      {/* ════════════════════════════════════════
-          RIGHT PANEL — desktop only
-      ════════════════════════════════════════ */}
+      {/* ── RIGHT PANEL (desktop) ── */}
       <div className="hidden lg:flex flex-1 relative bg-[#0a0a0a] overflow-hidden flex-col">
-        <img src={WALLPAPER_SRC} alt=""
-          className="absolute inset-0 h-full w-full object-cover opacity-30" />
+        <img src={WALLPAPER_SRC} alt="" className="absolute inset-0 h-full w-full object-cover opacity-30" />
         <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-transparent to-[#0a0a0a]/60" />
         <div className="absolute inset-0 bg-gradient-to-r from-[#0a0a0a]/20 to-transparent" />
         <div className="absolute inset-0 opacity-[0.04]"
           style={{ backgroundImage: "linear-gradient(white 1px,transparent 1px),linear-gradient(90deg,white 1px,transparent 1px)", backgroundSize: "40px 40px" }} />
-
         <div className="relative z-10 flex flex-col h-full p-12 justify-between">
           <div className="flex items-center gap-2.5">
             <div className="bg-white/10 backdrop-blur-sm p-1.5 rounded-xl border border-white/10">
@@ -742,12 +683,10 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
               <p className="text-[8px] font-bold text-white/30 uppercase tracking-[0.2em] mt-0.5">{APP_SUBTITLE}</p>
             </div>
           </div>
-
           <div className="space-y-8">
             <div className="space-y-4">
               <h2 className="text-5xl font-black text-white tracking-tighter leading-[1.05]">
-                One platform.<br />
-                <span className="text-white/40">Every department.</span>
+                One platform.<br /><span className="text-white/40">Every department.</span>
               </h2>
               <p className="text-sm text-white/40 font-medium leading-relaxed max-w-[340px]">
                 A unified operations hub connecting Engineering, Sales, Procurement, Warehouse, and IT — designed for growing teams.
@@ -759,12 +698,9 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
                   {d}
                 </span>
               ))}
-              <span className="text-[10px] font-black uppercase tracking-wide px-3 py-1.5 rounded-full bg-white/[0.05] text-white/30 border border-white/[0.08]">
-                + More
-              </span>
+              <span className="text-[10px] font-black uppercase tracking-wide px-3 py-1.5 rounded-full bg-white/[0.05] text-white/30 border border-white/[0.08]">+ More</span>
             </div>
           </div>
-
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <div className="size-1.5 bg-emerald-400 rounded-full animate-pulse" />
@@ -776,11 +712,8 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
         </div>
       </div>
 
-      {/* ════════════════════════════════════════
-          DIALOGS
-      ════════════════════════════════════════ */}
+      {/* ── DIALOGS ── */}
 
-      {/* Location */}
       <Dialog open={showLocationDialog} onOpenChange={setShowLocationDialog}>
         <DialogContent className="w-[92vw] sm:max-w-sm bg-white border-none rounded-[24px] shadow-2xl text-center">
           <DialogHeader className="items-center space-y-3 pt-2">
@@ -789,9 +722,7 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
             </div>
             <div>
               <DialogTitle className="font-black text-[#121212] text-lg">Location Check</DialogTitle>
-              <DialogDescription className="text-xs text-zinc-400 mt-1">
-                Allow location access for security compliance.
-              </DialogDescription>
+              <DialogDescription className="text-xs text-zinc-400 mt-1">Allow location access for security compliance.</DialogDescription>
             </div>
           </DialogHeader>
           <DialogFooter className="flex flex-row gap-2 mt-2 pb-1">
@@ -803,7 +734,6 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
         </DialogContent>
       </Dialog>
 
-      {/* Locked → ticket */}
       <Dialog open={showTicketDialog} onOpenChange={setShowTicketDialog}>
         <DialogContent className="w-[92vw] sm:max-w-sm bg-white border-none rounded-[24px] shadow-2xl">
           <DialogHeader>
@@ -826,16 +756,13 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
             </div>
             <Button onClick={submitTicket} disabled={ticketSubmitting || !remarks.trim()}
               className="w-full h-11 bg-red-600 hover:bg-red-700 text-white rounded-xl font-black text-xs uppercase tracking-widest">
-              {ticketSubmitting
-                ? <><Loader2 className="animate-spin h-4 w-4 mr-2" />Submitting...</>
-                : "Submit Ticket"}
+              {ticketSubmitting ? <><Loader2 className="animate-spin h-4 w-4 mr-2" />Submitting...</> : "Submit Ticket"}
             </Button>
             <p className="text-[9px] text-center text-zinc-300 font-medium">Response within 24 hours</p>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Recovery */}
       <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
         <DialogContent className="w-[92vw] sm:max-w-sm bg-white border-none rounded-[24px] shadow-2xl">
           <DialogHeader>
@@ -856,9 +783,7 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
             </div>
             <Button onClick={handleRequestReset} disabled={resetLoading || !resetEmail}
               className="w-full h-11 bg-[#121212] text-white rounded-xl font-black text-xs uppercase tracking-widest">
-              {resetLoading
-                ? <><Loader2 className="animate-spin h-4 w-4 mr-2" />Processing...</>
-                : "Send Recovery Link"}
+              {resetLoading ? <><Loader2 className="animate-spin h-4 w-4 mr-2" />Processing...</> : "Send Recovery Link"}
             </Button>
           </div>
         </DialogContent>
