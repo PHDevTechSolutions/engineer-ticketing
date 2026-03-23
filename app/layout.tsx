@@ -15,26 +15,25 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "engiconnect Portal",
-  description: "Engineering Ticketing and Site Visit Management",
+  title: "DSI Connect",
+  description: "Enterprise Resource Platform — Disruptive Solutions Inc.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    title: "engiconnect",
-    statusBarStyle: "default", 
+    title: "DSI Connect",
+    statusBarStyle: "default",
   },
   icons: {
-    // This provides the metadata link
-    apple: "/icons/disruptive.png", 
+    apple: "/icons/disruptive.png",
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0F172A",
+  themeColor: "#E33636",   // matches mobile header + brand color
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1, 
-  userScalable: false, 
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({
@@ -45,32 +44,32 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        {/* iOS ICON FIX: The explicit link tag Safari looks for first */}
+        {/* iOS icon — explicit link tags Safari reads first */}
         <link rel="apple-touch-icon" href="/icons/disruptive.png" />
         <link rel="apple-touch-icon" sizes="180x180" href="/icons/disruptive.png" />
-        
-        {/* Forces the app to hide browser bars when opened from Home Screen */}
+
+        {/* PWA: hide browser chrome when launched from home screen */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-title" content="engiconnect" />
+        <meta name="apple-mobile-web-app-title" content="DSI Connect" />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#F8FAFC]`}
       >
         <NotificationProvider>
           {children}
-          <Toaster 
-            position="top-right" 
-            expand={false} 
+          <Toaster
+            position="top-right"
+            expand={false}
             theme="light"
             className="font-sans"
             toastOptions={{
               style: {
-                background: '#FFFFFF',
-                border: '1px solid #F1F5F9',
-                color: '#0F172A',
-                borderRadius: '1rem', 
-                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
-              }
+                background: "#FFFFFF",
+                border: "1px solid #F1F5F9",
+                color: "#0F172A",
+                borderRadius: "1rem",
+                boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
+              },
             }}
           />
         </NotificationProvider>
