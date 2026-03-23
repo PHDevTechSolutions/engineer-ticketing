@@ -2,7 +2,8 @@
 
 import * as React from "react"
 import { type LucideIcon } from "lucide-react"
-
+import Link from "next/link"
+import { cn } from "@/lib/utils"
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -18,26 +19,33 @@ export function NavSecondary({
   items: {
     title: string
     url: string
-    icon: LucideIcon
+    icon?: LucideIcon  // ← was required, now optional — matches NavItem type
   }[]
 } & React.ComponentPropsWithoutRef<typeof SidebarGroup>) {
+  if (!items || items.length === 0) return null
+
   return (
     <SidebarGroup {...props}>
       <SidebarGroupContent>
         <SidebarMenu className="gap-0.5 px-2">
           {items.map((item) => (
             <SidebarMenuItem key={item.title}>
-              <SidebarMenuButton 
-                asChild 
+              <SidebarMenuButton
+                asChild
                 size="sm"
-                className="hover:bg-gray-100/50 transition-colors group"
+                className="hover:bg-zinc-100 transition-colors group rounded-xl h-9"
               >
-                <a href={item.url} className="flex items-center gap-3 px-3 py-2">
-                  <item.icon className="size-4 text-gray-400 group-hover:text-gray-900 transition-colors" />
-                  <span className="text-xs font-semibold text-gray-600 group-hover:text-gray-900 transition-colors">
+                <Link href={item.url} className="flex items-center gap-2.5 px-3">
+                  {item.icon && (
+                    <item.icon className="size-4 text-zinc-400 group-hover:text-zinc-700 transition-colors flex-shrink-0" />
+                  )}
+                  <span className={cn(
+                    "text-[11px] font-bold text-zinc-500 group-hover:text-zinc-800 transition-colors truncate",
+                    !item.icon && "ml-1"
+                  )}>
                     {item.title}
                   </span>
-                </a>
+                </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
           ))}

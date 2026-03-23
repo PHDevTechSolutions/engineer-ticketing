@@ -23,6 +23,7 @@ import {
   Dialog, DialogContent, DialogDescription,
   DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog"
+import { Badge } from "@/components/ui/badge"
 
 /* ─────────────────────────────────────────────────────────
    KEY SCHEME — all scoped to userId
@@ -48,7 +49,11 @@ function PinKeypad({ onInput, onDelete, onClear, disabled }: {
     <div className="grid grid-cols-3 gap-2 w-full max-w-[240px] mx-auto">
       {keys.map(k => (
         <button key={k} type="button" disabled={disabled}
-          onClick={() => { if (k === "⌫") onDelete(); else if (k === "C") onClear(); else onInput(k) }}
+          onClick={() => { 
+            if (k === "⌫") onDelete(); 
+            else if (k === "C") onClear(); 
+            else onInput(k); 
+          }}
           className={cn(
             "h-12 rounded-xl font-black text-base transition-all select-none",
             "active:scale-90 disabled:opacity-40",
@@ -111,6 +116,7 @@ function relTime(iso: string | null): string {
    MAIN COMPONENT
 ───────────────────────────────────────────────────────── */
 export default function SecurityPage() {
+  const [isClient, setIsClient]     = React.useState(false)
   const [userId, setUserId]         = React.useState<string | undefined>(undefined)
   const [userName, setUserName]     = React.useState("")
   const [userDept, setUserDept]     = React.useState("")
@@ -133,6 +139,7 @@ export default function SecurityPage() {
 
   /* ── Load state ── */
   React.useEffect(() => {
+    setIsClient(true)
     const uid  = localStorage.getItem("userId") || undefined
     const name = localStorage.getItem("userName") || ""
     const dept = localStorage.getItem("userDepartment") || localStorage.getItem("department") || ""
@@ -226,7 +233,6 @@ export default function SecurityPage() {
 
   React.useEffect(() => {
     if (pinStep === "enter" && pinValue.length === 6) {
-      // Small delay for last dot animation then move to confirm
       setTimeout(() => setPinStep("confirm"), 300)
     }
   }, [pinValue, pinStep])
@@ -249,7 +255,7 @@ export default function SecurityPage() {
       setPinConfirm("")
       setPinStep("enter")
     }
-  }, [pinConfirm, pinStep])
+  }, [pinConfirm, pinStep, userId, pinValue])
 
   const handleRemovePin = () => {
     if (!userId) return
@@ -291,24 +297,29 @@ export default function SecurityPage() {
     setPassForm({ current: "", new: "", confirm: "" })
   }
 
-  /* ── Activity log from localStorage ── */
+  /* ── Activity log ── */
   const activityLog = React.useMemo(() => {
-    const logs: { device: string; location: string; time: string; current: boolean }[] = []
-    const deviceId = localStorage.getItem("deviceId")
+    if (!isClient) return []
+    const logs = []
     logs.push({
-      device: navigator?.userAgent?.includes("iPhone") ? "iPhone" :
-              navigator?.userAgent?.includes("Android") ? "Android Device" :
-              navigator?.userAgent?.includes("Mac") ? "Mac" : "This Device",
+      device: navigator.userAgent.includes("iPhone") ? "iPhone" :
+              navigator.userAgent.includes("Android") ? "Android Device" :
+              navigator.userAgent.includes("Mac") ? "Mac" : "This Device",
       location: "Current Session",
       time: "Active now",
       current: true,
     })
     return logs
-  }, [])
+  }, [isClient])
 
-  /* ─────────────────────────────────────────────
-     RENDER
-  ───────────────────────────────────────────── */
+  if (!isClient) {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-[#F8FAFA]">
+        <Loader2 className="size-6 animate-spin text-zinc-300" />
+      </div>
+    )
+  }
+
   return (
     <ProtectedPageWrapper>
       <SidebarProvider defaultOpen={false}>
@@ -323,9 +334,7 @@ export default function SecurityPage() {
 
           <main className="p-4 md:p-6 lg:p-8 max-w-4xl mx-auto w-full space-y-5 pb-24">
 
-            {/* ══════════════════════════════════════
-                SECURITY SCORE BANNER
-            ══════════════════════════════════════ */}
+            {/* SECURITY SCORE BANNER */}
             <section className="bg-[#121212] rounded-[24px] p-6 md:p-8 text-white overflow-hidden relative">
               <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-24 -mt-24 pointer-events-none" />
               <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/5 rounded-full -ml-12 -mb-12 pointer-events-none" />
@@ -344,44 +353,27 @@ export default function SecurityPage() {
                       )}>{level}</span>
                     </div>
                   </div>
-                  <div className={cn(
-                    "p-3 rounded-2xl",
-                    score >= 80 ? "bg-emerald-500/20" : score >= 50 ? "bg-blue-500/20" : "bg-amber-500/20"
-                  )}>
-                    <Shield className={cn("size-6",
-                      score >= 80 ? "text-emerald-400" : score >= 50 ? "text-blue-400" : "text-amber-400"
-                    )} />
+                  <div className={cn("p-3 rounded-2xl", score >= 80 ? "bg-emerald-500/20" : score >= 50 ? "bg-blue-500/20" : "bg-amber-500/20")}>
+                    <Shield className={cn("size-6", score >= 80 ? "text-emerald-400" : score >= 50 ? "text-blue-400" : "text-amber-400")} />
                   </div>
                 </div>
-
-                {/* Progress bar */}
                 <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden mb-5">
                   <div className={cn("h-full rounded-full transition-all duration-700", barColor)} style={{ width: `${score}%` }} />
                 </div>
-
-                {/* Checklist */}
                 <div className="grid grid-cols-2 gap-2">
                   {scoreItems.map(item => (
                     <div key={item.label} className="flex items-center gap-2">
-                      <div className={cn("size-4 rounded-full flex items-center justify-center flex-shrink-0",
-                        item.done ? "bg-emerald-500" : "bg-white/10"
-                      )}>
-                        {item.done
-                          ? <CheckCircle2 className="size-3 text-white" />
-                          : <div className="size-1.5 rounded-full bg-white/30" />}
+                      <div className={cn("size-4 rounded-full flex items-center justify-center flex-shrink-0", item.done ? "bg-emerald-500" : "bg-white/10")}>
+                        {item.done ? <CheckCircle2 className="size-3 text-white" /> : <div className="size-1.5 rounded-full bg-white/30" />}
                       </div>
-                      <span className={cn("text-[10px] font-bold", item.done ? "text-white/80" : "text-white/30")}>
-                        {item.label}
-                      </span>
+                      <span className={cn("text-[10px] font-bold", item.done ? "text-white/80" : "text-white/30")}>{item.label}</span>
                     </div>
                   ))}
                 </div>
               </div>
             </section>
 
-            {/* ══════════════════════════════════════
-                ACCOUNT IDENTITY STRIP
-            ══════════════════════════════════════ */}
+            {/* IDENTITY STRIP */}
             <section className="bg-white rounded-[24px] border border-zinc-200/50 p-5 shadow-sm">
               <div className="flex items-center gap-4">
                 <div className="size-12 bg-zinc-900 rounded-2xl flex items-center justify-center text-white font-black text-lg flex-shrink-0">
@@ -390,11 +382,7 @@ export default function SecurityPage() {
                 <div className="min-w-0 flex-1">
                   <p className="font-black text-zinc-900 text-[15px] truncate">{userName || "User"}</p>
                   <div className="flex items-center gap-2 mt-0.5">
-                    {userDept && (
-                      <span className="text-[8px] font-black uppercase tracking-wide bg-zinc-100 text-zinc-500 px-2 py-0.5 rounded-full">
-                        {userDept}
-                      </span>
-                    )}
+                    {userDept && <span className="text-[8px] font-black uppercase tracking-wide bg-zinc-100 text-zinc-500 px-2 py-0.5 rounded-full">{userDept}</span>}
                     <span className="text-[10px] text-zinc-400 font-medium">Active session</span>
                     <div className="size-1.5 bg-emerald-500 rounded-full animate-pulse" />
                   </div>
@@ -406,15 +394,11 @@ export default function SecurityPage() {
               </div>
             </section>
 
-            {/* ══════════════════════════════════════
-                SECTION 1: PASSWORD
-            ══════════════════════════════════════ */}
+            {/* PASSWORD SECTION */}
             <section className="bg-white rounded-[24px] border border-zinc-200/50 shadow-sm overflow-hidden">
               <div className="p-6 flex items-center justify-between border-b border-zinc-50">
                 <div className="flex items-center gap-3.5">
-                  <div className="p-2.5 bg-zinc-900 text-white rounded-xl">
-                    <Lock className="size-4" />
-                  </div>
+                  <div className="p-2.5 bg-zinc-900 text-white rounded-xl"><Lock className="size-4" /></div>
                   <div>
                     <h3 className="font-bold text-[11px] uppercase tracking-widest text-zinc-900">Account Password</h3>
                     <p className="text-[10px] text-zinc-400 font-medium mt-0.5">Standard sign-in credential</p>
@@ -430,27 +414,18 @@ export default function SecurityPage() {
                     <DialogHeader className="mb-1">
                       <div className="flex items-center justify-between">
                         <DialogTitle className="font-black text-base uppercase tracking-tight">Change Password</DialogTitle>
-                        <Button onClick={generatePassword} variant="ghost" size="sm"
-                          className="h-7 text-[9px] font-black uppercase gap-1 text-blue-600 hover:bg-blue-50 rounded-lg px-2">
+                        <Button onClick={generatePassword} variant="ghost" size="sm" className="h-7 text-[9px] font-black uppercase gap-1 text-blue-600 hover:bg-blue-50 rounded-lg px-2">
                           <Sparkles className="size-3" /> Auto-Generate
                         </Button>
                       </div>
                     </DialogHeader>
                     <div className="space-y-3 py-3">
-                      {passError && (
-                        <div className="flex items-start gap-2 p-3 bg-red-50 rounded-xl border border-red-100">
-                          <AlertTriangle className="size-3.5 text-red-500 shrink-0 mt-0.5" />
-                          <p className="text-[10px] font-medium text-red-700">{passError}</p>
-                        </div>
-                      )}
+                      {passError && <div className="flex items-start gap-2 p-3 bg-red-50 rounded-xl border border-red-100"><AlertTriangle className="size-3.5 text-red-500 shrink-0 mt-0.5" /><p className="text-[10px] font-medium text-red-700">{passError}</p></div>}
                       <div className="space-y-1.5">
                         <Label className="text-[9px] font-black uppercase tracking-widest text-zinc-400">Current Password</Label>
                         <div className="relative">
-                          <Input type={showCurrentPass ? "text" : "password"} placeholder="••••••••"
-                            className="rounded-xl h-11 bg-zinc-50 border-none pr-10 text-sm"
-                            value={passForm.current} onChange={e => setPassForm({ ...passForm, current: e.target.value })} />
-                          <button type="button" onClick={() => setShowCurrentPass(!showCurrentPass)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-300 hover:text-zinc-600">
+                          <Input type={showCurrentPass ? "text" : "password"} placeholder="••••••••" className="rounded-xl h-11 bg-zinc-50 border-none pr-10 text-sm" value={passForm.current} onChange={e => setPassForm({ ...passForm, current: e.target.value })} />
+                          <button type="button" onClick={() => setShowCurrentPass(!showCurrentPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-300 hover:text-zinc-600">
                             {showCurrentPass ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                           </button>
                         </div>
@@ -458,350 +433,90 @@ export default function SecurityPage() {
                       <div className="space-y-1.5">
                         <Label className="text-[9px] font-black uppercase tracking-widest text-zinc-400">New Password</Label>
                         <div className="relative">
-                          <Input type={showPass ? "text" : "password"} placeholder="Min. 8 characters"
-                            className="rounded-xl h-11 bg-zinc-50 border-none pr-10 text-sm"
-                            value={passForm.new} onChange={e => setPassForm({ ...passForm, new: e.target.value })} />
-                          <button type="button" onClick={() => setShowPass(!showPass)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-300 hover:text-zinc-600">
+                          <Input type={showPass ? "text" : "password"} placeholder="Min. 8 characters" className="rounded-xl h-11 bg-zinc-50 border-none pr-10 text-sm" value={passForm.new} onChange={e => setPassForm({ ...passForm, new: e.target.value })} />
+                          <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-300 hover:text-zinc-600">
                             {showPass ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                           </button>
                         </div>
                         {passForm.new && (
                           <div className="space-y-1 pt-1">
-                            <div className="h-1.5 w-full bg-zinc-100 rounded-full overflow-hidden">
-                              <div className={cn("h-full transition-all duration-500", strength.color)} style={{ width: `${strength.pct}%` }} />
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <p className={cn("text-[9px] font-black uppercase tracking-wide", strength.text)}>{strength.label}</p>
-                              <p className="text-[9px] text-zinc-300">{passForm.new.length} chars</p>
-                            </div>
+                            <div className="h-1.5 w-full bg-zinc-100 rounded-full overflow-hidden"><div className={cn("h-full transition-all duration-500", strength.color)} style={{ width: `${strength.pct}%` }} /></div>
+                            <div className="flex items-center justify-between"><p className={cn("text-[9px] font-black uppercase tracking-wide", strength.text)}>{strength.label}</p><p className="text-[9px] text-zinc-300">{passForm.new.length} chars</p></div>
                           </div>
                         )}
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-[9px] font-black uppercase tracking-widest text-zinc-400">Confirm New Password</Label>
-                        <Input type="password" placeholder="Repeat new password"
-                          className={cn("rounded-xl h-11 bg-zinc-50 border-none text-sm",
-                            passForm.confirm && passForm.confirm !== passForm.new && "ring-1 ring-red-300")}
-                          value={passForm.confirm} onChange={e => setPassForm({ ...passForm, confirm: e.target.value })} />
+                        <Input type="password" placeholder="Repeat new password" className={cn("rounded-xl h-11 bg-zinc-50 border-none text-sm", passForm.confirm && passForm.confirm !== passForm.new && "ring-1 ring-red-300")} value={passForm.confirm} onChange={e => setPassForm({ ...passForm, confirm: e.target.value })} />
                       </div>
                     </div>
-                    <Button onClick={handlePasswordSave}
-                      className="w-full bg-zinc-900 text-white rounded-xl h-11 font-black uppercase text-[10px] shadow-lg mt-1">
-                      Save New Password
-                    </Button>
+                    <Button onClick={handlePasswordSave} className="w-full bg-zinc-900 text-white rounded-xl h-11 font-black uppercase text-[10px] shadow-lg mt-1">Save New Password</Button>
                   </DialogContent>
                 </Dialog>
               </div>
-
               <div className="px-6 py-4 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <ShieldAlert className="size-4 text-blue-500 shrink-0" />
-                  <p className="text-[10px] text-zinc-500 font-medium">
-                    Last changed: <span className="font-bold text-zinc-700">{relTime(passLastChanged)}</span>
-                    {passLastChanged && (() => {
-                      const days = Math.floor((Date.now() - new Date(passLastChanged).getTime()) / 86400000)
-                      return days > 90
-                        ? <span className="ml-1.5 text-amber-600 font-black text-[9px] uppercase">· Update recommended</span>
-                        : null
-                    })()}
-                  </p>
-                </div>
-                {!passLastChanged && (
-                  <span className="text-[9px] font-black uppercase tracking-wide text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
-                    Not set
-                  </span>
-                )}
+                <div className="flex items-center gap-2.5"><ShieldAlert className="size-4 text-blue-500 shrink-0" /><p className="text-[10px] text-zinc-500 font-medium">Last changed: <span className="font-bold text-zinc-700">{relTime(passLastChanged)}</span> {passLastChanged && (Math.floor((Date.now() - new Date(passLastChanged).getTime()) / 86400000) > 90) && <span className="ml-1.5 text-amber-600 font-black text-[9px] uppercase">· Update recommended</span>}</p></div>
+                {!passLastChanged && <span className="text-[9px] font-black uppercase tracking-wide text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">Not set</span>}
               </div>
             </section>
 
-            {/* ══════════════════════════════════════
-                SECTION 2: QUICK AUTH (PIN + Biometric)
-            ══════════════════════════════════════ */}
+            {/* QUICK AUTH (PIN + Biometric) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-              {/* PIN */}
               <div className="bg-white rounded-[24px] border border-zinc-200/50 shadow-sm overflow-hidden">
-                <div className="p-5 border-b border-zinc-50 flex items-center gap-3.5">
-                  <div className="p-2.5 bg-zinc-50 text-zinc-900 rounded-xl">
-                    <KeyRound className="size-4" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-[11px] uppercase tracking-widest">Login PIN</h3>
-                    <p className="text-[10px] text-zinc-400 font-medium mt-0.5">6-digit device access code</p>
-                  </div>
-                  {hasPinSet && (
-                    <span className="ml-auto text-[8px] font-black uppercase bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full border border-emerald-200">
-                      Active
-                    </span>
-                  )}
-                </div>
+                <div className="p-5 border-b border-zinc-50 flex items-center gap-3.5"><div className="p-2.5 bg-zinc-50 text-zinc-900 rounded-xl"><KeyRound className="size-4" /></div><div><h3 className="font-bold text-[11px] uppercase tracking-widest">Login PIN</h3><p className="text-[10px] text-zinc-400 font-medium mt-0.5">6-digit device access code</p></div>{hasPinSet && <span className="ml-auto text-[8px] font-black uppercase bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full border border-emerald-200">Active</span>}</div>
                 <div className="p-5 space-y-3">
-                  <Dialog open={isPinModalOpen} onOpenChange={open => {
-                    setIsPinModalOpen(open)
-                    if (!open) { setPinValue(""); setPinConfirm(""); setPinStep("enter") }
-                  }}>
-                    <DialogTrigger asChild>
-                      <button className="w-full flex items-center justify-between p-4 bg-zinc-50 rounded-2xl border border-dashed border-zinc-200 hover:bg-zinc-100 transition-all group">
-                        <div className="flex items-center gap-3">
-                          <span className="text-xl font-black tracking-[0.4em] text-zinc-900">
-                            {hasPinSet ? "••••••" : "------"}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-[9px] font-black uppercase text-zinc-400 group-hover:text-zinc-600">
-                          <Pencil className="size-3" />
-                          {hasPinSet ? "Change" : "Set PIN"}
-                        </div>
-                      </button>
-                    </DialogTrigger>
+                  <Dialog open={isPinModalOpen} onOpenChange={open => { setIsPinModalOpen(open); if (!open) { setPinValue(""); setPinConfirm(""); setPinStep("enter") } }}>
+                    <DialogTrigger asChild><button className="w-full flex items-center justify-between p-4 bg-zinc-50 rounded-2xl border border-dashed border-zinc-200 hover:bg-zinc-100 transition-all group"><div className="flex items-center gap-3"><span className="text-xl font-black tracking-[0.4em] text-zinc-900">{hasPinSet ? "••••••" : "------"}</span></div><div className="flex items-center gap-1.5 text-[9px] font-black uppercase text-zinc-400 group-hover:text-zinc-600"><Pencil className="size-3" /> {hasPinSet ? "Change" : "Set PIN"}</div></button></DialogTrigger>
                     <DialogContent className="rounded-[28px] p-7 border-none text-center w-[95vw] sm:max-w-[340px]">
-                      <DialogHeader className="items-center mb-2">
-                        <div className="p-3 bg-zinc-900 rounded-2xl mb-2">
-                          <KeyRound className="size-5 text-white" />
-                        </div>
-                        <DialogTitle className="font-black uppercase tracking-tight">
-                          {pinStep === "enter" ? (hasPinSet ? "New PIN" : "Set PIN") : "Confirm PIN"}
-                        </DialogTitle>
-                        <DialogDescription className="text-xs text-zinc-400">
-                          {pinStep === "enter" ? "Enter a 6-digit PIN" : "Re-enter to confirm"}
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="py-4 space-y-5">
-                        <PinDots value={pinStep === "enter" ? pinValue : pinConfirm} total={6} />
-                        <PinKeypad
-                          onInput={handlePinKeyInput}
-                          onDelete={handlePinKeyDelete}
-                          onClear={handlePinKeyClear}
-                        />
-                      </div>
-                      {pinStep === "confirm" && (
-                        <button onClick={() => { setPinStep("enter"); setPinValue(""); setPinConfirm("") }}
-                          className="text-[9px] font-black uppercase tracking-widest text-zinc-400 hover:text-zinc-700 mt-1">
-                          ← Back
-                        </button>
-                      )}
+                      <DialogHeader className="items-center mb-2"><div className="p-3 bg-zinc-900 rounded-2xl mb-2"><KeyRound className="size-5 text-white" /></div><DialogTitle className="font-black uppercase tracking-tight">{pinStep === "enter" ? (hasPinSet ? "New PIN" : "Set PIN") : "Confirm PIN"}</DialogTitle><DialogDescription className="text-xs text-zinc-400">{pinStep === "enter" ? "Enter a 6-digit PIN" : "Re-enter to confirm"}</DialogDescription></DialogHeader>
+                      <div className="py-4 space-y-5"><PinDots value={pinStep === "enter" ? pinValue : pinConfirm} total={6} /><PinKeypad onInput={handlePinKeyInput} onDelete={handlePinKeyDelete} onClear={handlePinKeyClear} /></div>
+                      {pinStep === "confirm" && <button onClick={() => { setPinStep("enter"); setPinValue(""); setPinConfirm("") }} className="text-[9px] font-black uppercase tracking-widest text-zinc-400 hover:text-zinc-700 mt-1">← Back</button>}
                     </DialogContent>
                   </Dialog>
-
-                  {hasPinSet && (
-                    <button onClick={handleRemovePin}
-                      className="w-full flex items-center justify-center gap-2 py-2 text-[10px] font-black uppercase tracking-wider text-red-500 hover:bg-red-50 rounded-xl transition-all">
-                      <Trash2 className="size-3" /> Remove PIN
-                    </button>
-                  )}
+                  {hasPinSet && <button onClick={handleRemovePin} className="w-full flex items-center justify-center gap-2 py-2 text-[10px] font-black uppercase tracking-wider text-red-500 hover:bg-red-50 rounded-xl transition-all"><Trash2 className="size-3" /> Remove PIN</button>}
                 </div>
               </div>
 
-              {/* Biometrics */}
               <div className="bg-white rounded-[24px] border border-zinc-200/50 shadow-sm overflow-hidden">
-                <div className="p-5 border-b border-zinc-50 flex items-center gap-3.5">
-                  <div className={cn("p-2.5 rounded-xl transition-colors",
-                    biometrics ? "bg-emerald-50 text-emerald-600" : "bg-zinc-50 text-zinc-600"
-                  )}>
-                    <Fingerprint className="size-4" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-[11px] uppercase tracking-widest">Biometrics</h3>
-                    <p className="text-[10px] text-zinc-400 font-medium mt-0.5">Face ID · Touch ID · Windows Hello</p>
-                  </div>
-                  {bioRegistering ? (
-                    <div className="ml-auto flex items-center gap-1.5 text-zinc-400">
-                      <Loader2 className="size-3.5 animate-spin" />
-                      <span className="text-[9px] font-black uppercase">Registering</span>
-                    </div>
-                  ) : (
-                    <Switch
-                      checked={biometrics}
-                      onCheckedChange={handleBiometricToggle}
-                      disabled={bioRegistering || !isWebAuthnSupported()}
-                      className="ml-auto"
-                    />
-                  )}
-                </div>
+                <div className="p-5 border-b border-zinc-50 flex items-center gap-3.5"><div className={cn("p-2.5 rounded-xl transition-colors", biometrics ? "bg-emerald-50 text-emerald-600" : "bg-zinc-50 text-zinc-600")}><Fingerprint className="size-4" /></div><div><h3 className="font-bold text-[11px] uppercase tracking-widest">Biometrics</h3><p className="text-[10px] text-zinc-400 font-medium mt-0.5">Face ID · Touch ID · Hello</p></div>{bioRegistering ? <div className="ml-auto flex items-center gap-1.5 text-zinc-400"><Loader2 className="size-3.5 animate-spin" /><span className="text-[9px] font-black uppercase">Registering</span></div> : <Switch checked={biometrics} onCheckedChange={handleBiometricToggle} disabled={bioRegistering || !isWebAuthnSupported()} className="ml-auto" />}</div>
                 <div className="p-5">
-                  {!isWebAuthnSupported() ? (
-                    <div className="flex items-start gap-2.5 p-3.5 bg-red-50 rounded-2xl border border-red-100">
-                      <AlertTriangle className="size-4 text-red-500 shrink-0 mt-0.5" />
-                      <p className="text-[10px] text-red-700 font-medium leading-relaxed">
-                        Not supported. Try Chrome or Safari on a modern device.
-                      </p>
-                    </div>
-                  ) : biometrics ? (
-                    <div className="space-y-3">
-                      <div className="flex items-start gap-2.5 p-3.5 bg-emerald-50 rounded-2xl border border-emerald-100">
-                        <CheckCircle2 className="size-4 text-emerald-600 shrink-0 mt-0.5" />
-                        <p className="text-[10px] text-emerald-700 font-bold leading-relaxed">
-                          Biometric registered on this device. Tap the sensor to sign in instantly.
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => handleBiometricToggle(false)}
-                        className="w-full flex items-center justify-center gap-2 py-2 text-[10px] font-black uppercase tracking-wider text-red-500 hover:bg-red-50 rounded-xl transition-all">
-                        <Trash2 className="size-3" /> Remove Biometric
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-start gap-2.5 p-3.5 bg-zinc-50 rounded-2xl border border-zinc-100">
-                      <AlertTriangle className="size-4 text-zinc-400 shrink-0 mt-0.5" />
-                      <p className="text-[10px] text-zinc-500 font-medium leading-relaxed">
-                        Enable to register your device fingerprint or face for one-tap sign-in.
-                      </p>
-                    </div>
-                  )}
+                  {!isWebAuthnSupported() ? <div className="flex items-start gap-2.5 p-3.5 bg-red-50 rounded-2xl border border-red-100"><AlertTriangle className="size-4 text-red-500 shrink-0 mt-0.5" /><p className="text-[10px] text-red-700 font-medium leading-relaxed">Not supported. Try Chrome or Safari.</p></div> : biometrics ? (
+                    <div className="space-y-3"><div className="flex items-start gap-2.5 p-3.5 bg-emerald-50 rounded-2xl border border-emerald-100"><CheckCircle2 className="size-4 text-emerald-600 shrink-0 mt-0.5" /><p className="text-[10px] text-emerald-700 font-bold leading-relaxed">Biometric registered on this device.</p></div><button onClick={() => handleBiometricToggle(false)} className="w-full flex items-center justify-center gap-2 py-2 text-[10px] font-black uppercase tracking-wider text-red-500 hover:bg-red-50 rounded-xl transition-all"><Trash2 className="size-3" /> Remove Biometric</button></div>
+                  ) : <div className="flex items-start gap-2.5 p-3.5 bg-zinc-50 rounded-2xl border border-zinc-100"><AlertTriangle className="size-4 text-zinc-400 shrink-0 mt-0.5" /><p className="text-[10px] text-zinc-500 font-medium leading-relaxed">Enable for one-tap sign-in.</p></div>}
                 </div>
               </div>
             </div>
 
-            {/* ══════════════════════════════════════
-                SECTION 3: 2FA
-            ══════════════════════════════════════ */}
+            {/* 2FA SECTION */}
             <section className="bg-white rounded-[24px] border border-zinc-200/50 shadow-sm overflow-hidden">
               <div className="p-5 flex items-center justify-between border-b border-zinc-50">
-                <div className="flex items-center gap-3.5">
-                  <div className={cn("p-2.5 rounded-xl transition-colors",
-                    twoFactor ? "bg-blue-600 text-white shadow-md shadow-blue-100" : "bg-zinc-50 text-zinc-600"
-                  )}>
-                    <SmartphoneNfc className="size-4" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-[11px] uppercase tracking-widest">Two-Step Verification</h3>
-                    <p className="text-[10px] text-zinc-400 font-medium mt-0.5">SMS or Authenticator App</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  {twoFactor && (
-                    <span className="text-[8px] font-black uppercase bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full border border-blue-200">
-                      Enabled
-                    </span>
-                  )}
-                  <Switch
-                    checked={twoFactor}
-                    onCheckedChange={val => {
-                      setTwoFactor(val)
-                      localStorage.setItem("engiconnect_2fa_enabled", String(val))
-                      toast.success(val ? "2FA enabled" : "2FA disabled")
-                    }}
-                  />
-                </div>
+                <div className="flex items-center gap-3.5"><div className={cn("p-2.5 rounded-xl transition-colors", twoFactor ? "bg-blue-600 text-white shadow-md shadow-blue-100" : "bg-zinc-50 text-zinc-600")}><SmartphoneNfc className="size-4" /></div><div><h3 className="font-bold text-[11px] uppercase tracking-widest">Two-Step Verification</h3><p className="text-[10px] text-zinc-400 font-medium mt-0.5">SMS or Authenticator App</p></div></div>
+                <div className="flex items-center gap-3">{twoFactor && <span className="text-[8px] font-black uppercase bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full border border-blue-200">Enabled</span>}<Switch checked={twoFactor} onCheckedChange={val => { setTwoFactor(val); localStorage.setItem("engiconnect_2fa_enabled", String(val)); toast.success(val ? "2FA enabled" : "2FA disabled") }} /></div>
               </div>
-              <div className="px-5 py-4">
-                <p className="text-[10px] text-zinc-500 font-medium leading-relaxed">
-                  {twoFactor
-                    ? "Your account requires a second verification step on every new login."
-                    : "Add a second layer of protection. We'll ask for a code when you sign in from a new device."}
-                </p>
-              </div>
+              <div className="px-5 py-4"><p className="text-[10px] text-zinc-500 font-medium leading-relaxed">{twoFactor ? "Your account requires a second verification step on every login." : "Add a second layer of protection when you sign in from a new device."}</p></div>
             </section>
 
-            {/* ══════════════════════════════════════
-                SECTION 4: TRUSTED DEVICES
-            ══════════════════════════════════════ */}
+            {/* TRUSTED DEVICES */}
             <section className="bg-white rounded-[24px] border border-zinc-200/50 shadow-sm overflow-hidden">
-              <div className="p-5 border-b border-zinc-50 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Monitor className="size-4 text-zinc-400" />
-                  <h3 className="font-bold text-[11px] uppercase tracking-widest">Trusted Devices</h3>
-                </div>
-                <span className="text-[9px] font-black text-zinc-400 uppercase">
-                  {[hasPinSet, biometrics].filter(Boolean).length} method{[hasPinSet, biometrics].filter(Boolean).length !== 1 ? "s" : ""} on this device
-                </span>
-              </div>
-              <div className="p-5">
-                <div className="flex items-center gap-4 p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
-                  <div className="size-10 bg-zinc-900 rounded-xl flex items-center justify-center text-white flex-shrink-0">
-                    {typeof navigator !== "undefined" && navigator.userAgent.includes("iPhone")
-                      ? <Smartphone className="size-4" />
-                      : <Monitor className="size-4" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-zinc-900 truncate">This Device</p>
-                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                      {hasPinSet && (
-                        <span className="text-[8px] font-black uppercase bg-zinc-200 text-zinc-600 px-1.5 py-0.5 rounded-full">PIN</span>
-                      )}
-                      {biometrics && (
-                        <span className="text-[8px] font-black uppercase bg-zinc-200 text-zinc-600 px-1.5 py-0.5 rounded-full">Biometric</span>
-                      )}
-                      <span className="text-[8px] font-black uppercase bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded-full">Active now</span>
-                    </div>
-                  </div>
-                  <ChevronRight className="size-4 text-zinc-300 flex-shrink-0" />
-                </div>
-              </div>
+              <div className="p-5 border-b border-zinc-50 flex items-center justify-between"><div className="flex items-center gap-3"><Monitor className="size-4 text-zinc-400" /><h3 className="font-bold text-[11px] uppercase tracking-widest">Trusted Devices</h3></div><span className="text-[9px] font-black text-zinc-400 uppercase">{[hasPinSet, biometrics].filter(Boolean).length} method{[hasPinSet, biometrics].filter(Boolean).length !== 1 ? "s" : ""} on this device</span></div>
+              <div className="p-5"><div className="flex items-center gap-4 p-4 bg-zinc-50 rounded-2xl border border-zinc-100"><div className="size-10 bg-zinc-900 rounded-xl flex items-center justify-center text-white flex-shrink-0">{isClient && navigator.userAgent.includes("iPhone") ? <Smartphone className="size-4" /> : <Monitor className="size-4" />}</div><div className="flex-1 min-w-0"><p className="text-sm font-bold text-zinc-900 truncate">This Device</p><div className="flex items-center gap-2 mt-0.5 flex-wrap">{hasPinSet && <span className="text-[8px] font-black uppercase bg-zinc-200 text-zinc-600 px-1.5 py-0.5 rounded-full">PIN</span>}{biometrics && <span className="text-[8px] font-black uppercase bg-zinc-200 text-zinc-600 px-1.5 py-0.5 rounded-full">Biometric</span>}<span className="text-[8px] font-black uppercase bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded-full">Active now</span></div></div><ChevronRight className="size-4 text-zinc-300 flex-shrink-0" /></div></div>
             </section>
 
-            {/* ══════════════════════════════════════
-                SECTION 5: RECENT ACTIVITY
-            ══════════════════════════════════════ */}
+            {/* RECENT ACTIVITY */}
             <section className="bg-white rounded-[24px] border border-zinc-200/50 shadow-sm overflow-hidden">
-              <div className="p-5 border-b border-zinc-50 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <History className="size-4 text-zinc-400" />
-                  <h3 className="font-bold text-[11px] uppercase tracking-widest">Login Activity</h3>
-                </div>
-                <button className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-zinc-400 hover:text-zinc-700 transition-colors">
-                  <RefreshCw className="size-3" /> Refresh
-                </button>
-              </div>
+              <div className="p-5 border-b border-zinc-50 flex items-center justify-between"><div className="flex items-center gap-3"><History className="size-4 text-zinc-400" /><h3 className="font-bold text-[11px] uppercase tracking-widest">Login Activity</h3></div><button className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-zinc-400 hover:text-zinc-700 transition-colors"><RefreshCw className="size-3" /> Refresh</button></div>
               <div className="divide-y divide-zinc-50">
                 {activityLog.map((session, i) => (
-                  <div key={i} className="p-5 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="size-10 bg-zinc-100 rounded-xl flex items-center justify-center text-zinc-500 flex-shrink-0">
-                        <Globe className="size-4" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-bold text-zinc-900">{session.device}</p>
-                          {session.current && (
-                            <span className="text-[8px] font-black uppercase bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full border border-emerald-200">
-                              Current
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <Clock className="size-3 text-zinc-300" />
-                          <p className="text-[10px] text-zinc-400 font-medium">{session.time}</p>
-                        </div>
-                      </div>
-                    </div>
-                    {!session.current && (
-                      <button className="text-[10px] font-black uppercase text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-xl transition-all border border-red-100">
-                        Terminate
-                      </button>
-                    )}
-                  </div>
+                  <div key={i} className="p-5 flex items-center justify-between"><div className="flex items-center gap-4"><div className="size-10 bg-zinc-100 rounded-xl flex items-center justify-center text-zinc-500 flex-shrink-0"><Globe className="size-4" /></div><div><div className="flex items-center gap-2 flex-wrap"><p className="text-sm font-bold text-zinc-900">{session.device}</p>{session.current && <span className="text-[8px] font-black uppercase bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full border border-emerald-200">Current</span>}</div><div className="flex items-center gap-2 mt-0.5"><Clock className="size-3 text-zinc-300" /><p className="text-[10px] text-zinc-400 font-medium">{session.time}</p></div></div></div>{!session.current && <button className="text-[10px] font-black uppercase text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-xl transition-all border border-red-100">Terminate</button>}</div>
                 ))}
-
-                {/* Tip row */}
-                <div className="p-5 flex items-start gap-3 bg-zinc-50/50">
-                  <MapPin className="size-4 text-zinc-300 shrink-0 mt-0.5" />
-                  <p className="text-[10px] text-zinc-400 font-medium leading-relaxed">
-                    Location logging is enabled at login for security compliance. If you see an unrecognised session, terminate it and change your password immediately.
-                  </p>
-                </div>
+                <div className="p-5 flex items-start gap-3 bg-zinc-50/50"><MapPin className="size-4 text-zinc-300 shrink-0 mt-0.5" /><p className="text-[10px] text-zinc-400 font-medium leading-relaxed">Location logging is enabled for security compliance. If you see an unrecognised session, terminate it immediately.</p></div>
               </div>
             </section>
 
-            {/* ══════════════════════════════════════
-                DANGER ZONE
-            ══════════════════════════════════════ */}
+            {/* DANGER ZONE */}
             <section className="bg-white rounded-[24px] border border-red-100 shadow-sm overflow-hidden">
-              <div className="p-5 border-b border-red-50">
-                <h3 className="font-bold text-[11px] uppercase tracking-widest text-red-600">Danger Zone</h3>
-                <p className="text-[10px] text-zinc-400 font-medium mt-0.5">Irreversible actions — proceed with caution.</p>
-              </div>
-              <div className="p-5 space-y-3">
-                <div className="flex items-center justify-between p-4 rounded-2xl border border-dashed border-red-100 hover:bg-red-50/50 transition-all group">
-                  <div>
-                    <p className="text-[11px] font-bold text-zinc-900">Sign out all devices</p>
-                    <p className="text-[10px] text-zinc-400 font-medium mt-0.5">Ends all active sessions except this one</p>
-                  </div>
-                  <button className="text-[9px] font-black uppercase tracking-wide text-red-500 border border-red-200 px-3 py-1.5 rounded-xl hover:bg-red-600 hover:text-white transition-all">
-                    Sign Out All
-                  </button>
-                </div>
-              </div>
+              <div className="p-5 border-b border-red-50"><h3 className="font-bold text-[11px] uppercase tracking-widest text-red-600">Danger Zone</h3><p className="text-[10px] text-zinc-400 font-medium mt-0.5">Irreversible actions — proceed with caution.</p></div>
+              <div className="p-5 space-y-3"><div className="flex items-center justify-between p-4 rounded-2xl border border-dashed border-red-100 hover:bg-red-50/50 transition-all group"><div><p className="text-[11px] font-bold text-zinc-900">Sign out all devices</p><p className="text-[10px] text-zinc-400 font-medium mt-0.5">Ends all active sessions except this one</p></div><button className="text-[9px] font-black uppercase tracking-wide text-red-500 border border-red-200 px-3 py-1.5 rounded-xl hover:bg-red-600 hover:text-white transition-all">Sign Out All</button></div></div>
             </section>
 
           </main>

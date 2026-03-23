@@ -2,20 +2,16 @@
 
 import React, { useState } from "react"
 import { useRouter } from "next/navigation"
-import { BadgeCheck, Bell, ChevronsUpDown, LogOut, Loader2, User } from "lucide-react"
 import {
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
-  useSidebar,
+  BadgeCheck, Bell, ChevronsUpDown, LogOut,
+  Loader2, User, Shield, ChevronRight,
+} from "lucide-react"
+import {
+  SidebarMenu, SidebarMenuItem, SidebarMenuButton, useSidebar,
 } from "@/components/ui/sidebar"
 import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -32,8 +28,35 @@ interface NavUserProps {
   }
 }
 
+/* ─────────────────────────────────────────────
+   LOGOUT — clears session but keeps device keys
+   Preserved: deviceId, engiconnect_user_pin_{uid},
+              engiconnect_bio_enabled_{uid},
+              engiconnect_webauthn_credId_{uid}
+   Removed:   session identity + role/dept keys
+───────────────────────────────────────────── */
+function clearSession(userId?: string) {
+  sessionStorage.clear()
+
+  // Identity
+  localStorage.removeItem("userId")
+  localStorage.removeItem("userName")
+  localStorage.removeItem("userRole")
+  localStorage.removeItem("userDepartment")
+  localStorage.removeItem("department")    // legacy compat key
+
+  // Note: we intentionally keep:
+  //   deviceId                                — device identification
+  //   engiconnect_user_pin_{userId}           — scoped PIN
+  //   engiconnect_bio_enabled_{userId}        — scoped bio toggle
+  //   engiconnect_webauthn_credId_{userId}    — scoped WebAuthn cred
+  //   engiconnect_bio_userId_{credId}         — reverse bio mapping
+  // These are scoped to userId so they are safe across users and
+  // allow PIN / biometric login on the next session.
+}
+
 export function NavUser({ user }: NavUserProps) {
-  const router = useRouter()
+  const router              = useRouter()
   const { isMobile, setOpenMobile } = useSidebar()
   const [status, setStatus] = useState<"idle" | "logging-out" | "redirecting">("idle")
   const [progress, setProgress] = useState(0)
@@ -43,58 +66,53 @@ export function NavUser({ user }: NavUserProps) {
     setStatus(type)
     setProgress(0)
     toast.info(message)
-
     let value = 0
     const interval = setInterval(() => {
-      value += (type === "logging-out" ? 15 : 30)
-      setProgress(value)
+      value += type === "logging-out" ? 15 : 30
+      setProgress(Math.min(value, 100))
       if (value >= 100) clearInterval(interval)
-    }, 100)
+    }, 80)
   }
-
-  // const handleLogout = async () => {
-  //   startTransition("Signing out...", "logging-out")
-  //   await new Promise((resolve) => setTimeout(resolve, 1000))
-  //   sessionStorage.clear()
-  //   localStorage.clear()
-  //   router.replace("/login")
-  // }
 
   const handleLogout = async () => {
     startTransition("Signing out...", "logging-out")
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-
-    // Clear the volatile session data
-    sessionStorage.clear()
-
-    // ❌ DO NOT use localStorage.clear()
-    // ✅ Remove only user-specific items
-    localStorage.removeItem("userId")
-    localStorage.removeItem("userName")
-    localStorage.removeItem("department")
-    // This leaves 'deviceId' and 'engiconnect_user_pin' untouched!
-
+    await new Promise(r => setTimeout(r, 900))
+    clearSession(user.id)
     router.replace("/login")
   }
 
   const handleAccountClick = async () => {
-    if (!user.id) return toast.error("ID missing")
+    if (!user.id) return toast.error("User ID missing — please re-login.")
     startTransition("Loading profile...", "redirecting")
-    await new Promise((resolve) => setTimeout(resolve, 600))
-    router.push(`/account?userId=${user.id}`)
+    await new Promise(r => setTimeout(r, 500))
+    router.push(`/account/profile?userId=${user.id}`)
   }
+
+  const handleSecurityClick = async () => {
+    if (!user.id) return toast.error("User ID missing — please re-login.")
+    startTransition("Loading security...", "redirecting")
+    await new Promise(r => setTimeout(r, 500))
+    router.push(`/account/security?userId=${user.id}`)
+  }
+
+  const initials = user.name
+    ?.split(" ")
+    .map(n => n[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase() || "U"
 
   return (
     <>
-      {/* Slim Loading Overlay */}
+      {/* ── Loading overlay ── */}
       {status !== "idle" && (
         <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-white/95 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="w-64 text-center space-y-6">
-            <Loader2 className="size-8 text-red-600 animate-spin mx-auto" />
-            <h2 className="text-gray-900 font-bold text-sm uppercase tracking-widest">
-              {status === "logging-out" ? "Signing Out" : "Loading Profile"}
-            </h2>
-            <Progress value={progress} className="h-1 bg-gray-100" />
+          <div className="w-56 text-center space-y-5">
+            <Loader2 className="size-7 text-[#E33636] animate-spin mx-auto" />
+            <p className="text-zinc-800 font-black text-[11px] uppercase tracking-widest">
+              {status === "logging-out" ? "Signing Out" : "Loading..."}
+            </p>
+            <Progress value={progress} className="h-1 bg-zinc-100" />
           </div>
         </div>
       )}
@@ -105,71 +123,83 @@ export function NavUser({ user }: NavUserProps) {
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
                 size="lg"
-                className="h-12 px-2 hover:bg-gray-100/50 active:scale-[0.97] transition-all"
+                className="h-11 px-2.5 hover:bg-zinc-100 active:scale-[0.97] transition-all rounded-xl"
               >
-                <Avatar className="h-8 w-8 rounded-lg border border-gray-100 shadow-sm">
+                <Avatar className="h-8 w-8 rounded-xl border border-zinc-100 shadow-sm flex-shrink-0">
                   <AvatarImage src={user.avatar} alt={user.name} />
-                  <AvatarFallback className="bg-gray-900 text-white text-[10px] font-bold">
-                    {user.name?.[0] || <User size={12} />}
+                  <AvatarFallback className="bg-zinc-900 text-white text-[10px] font-black rounded-xl">
+                    {initials || <User size={12} />}
                   </AvatarFallback>
                 </Avatar>
-                <div className="grid flex-1 text-left text-xs leading-tight ml-2 overflow-hidden">
-                  <span className="truncate font-bold text-gray-900">{user.name}</span>
-                  <span className="truncate text-[9px] text-gray-400 font-medium uppercase">{user.email}</span>
+                <div className="grid flex-1 text-left leading-tight ml-2 overflow-hidden">
+                  <span className="truncate font-bold text-[12px] text-zinc-900">{user.name}</span>
+                  <span className="truncate text-[9px] text-zinc-400 font-medium">{user.email}</span>
                 </div>
-                <ChevronsUpDown className="ml-auto size-3 text-gray-300 shrink-0" />
+                <ChevronsUpDown className="ml-auto size-3 text-zinc-300 flex-shrink-0" />
               </SidebarMenuButton>
             </DropdownMenuTrigger>
 
             <DropdownMenuContent
               className={cn(
-                "p-1.5 shadow-xl border-gray-100 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100",
-                "w-[calc(100vw-32px)] max-w-[240px] rounded-2xl", // Fixed desktop width & responsive mobile
+                "p-1.5 shadow-2xl border-zinc-100 bg-white rounded-2xl",
+                "w-[calc(100vw-32px)] max-w-[240px]",
+                "animate-in fade-in zoom-in-95 duration-150"
               )}
               align={isMobile ? "center" : "start"}
               side={isMobile ? "bottom" : "right"}
               sideOffset={8}
             >
-              <DropdownMenuLabel className="p-2 font-normal">
-                <div className="flex items-center gap-3 px-1 py-1 text-left">
-                  <Avatar className="h-10 w-10 rounded-xl border border-gray-50 shadow-sm">
+              {/* User info header */}
+              <DropdownMenuLabel className="p-0 font-normal">
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-zinc-50 m-0.5">
+                  <Avatar className="h-10 w-10 rounded-xl border border-zinc-100 shadow-sm flex-shrink-0">
                     <AvatarImage src={user.avatar} alt={user.name} />
-                    <AvatarFallback className="bg-gray-50 text-gray-900 font-bold">
-                      {user.name?.[0]}
+                    <AvatarFallback className="bg-zinc-900 text-white font-black text-sm rounded-xl">
+                      {initials}
                     </AvatarFallback>
                   </Avatar>
-                  <div className="grid flex-1 text-left leading-tight overflow-hidden">
-                    <span className="truncate font-bold text-gray-900 text-sm leading-none mb-1">{user.name}</span>
-                    <span className="truncate text-[10px] text-gray-400 font-medium">{user.email}</span>
+                  <div className="flex-1 overflow-hidden">
+                    <p className="font-black text-[12px] text-zinc-900 truncate leading-none mb-1">{user.name}</p>
+                    <p className="text-[9px] text-zinc-400 font-medium truncate">{user.email}</p>
                   </div>
                 </div>
               </DropdownMenuLabel>
 
-              <DropdownMenuSeparator className="bg-gray-50 mx-1 my-1.5" />
+              <DropdownMenuSeparator className="bg-zinc-50 mx-0.5 my-1" />
 
               <DropdownMenuGroup className="space-y-0.5">
                 <DropdownMenuItem
                   onSelect={handleAccountClick}
-                  className="rounded-lg py-2.5 px-3 cursor-pointer hover:bg-gray-50 focus:bg-gray-50 transition-colors"
+                  className="rounded-xl py-2.5 px-3 cursor-pointer hover:bg-zinc-50 focus:bg-zinc-50 group"
                 >
-                  <BadgeCheck className="mr-2.5 h-4 w-4 text-gray-400" />
-                  <span className="text-xs font-semibold text-gray-700">Personal Profile</span>
+                  <BadgeCheck className="mr-2.5 h-4 w-4 text-zinc-400 group-hover:text-zinc-700" />
+                  <span className="text-[11px] font-bold text-zinc-700 flex-1">My Profile</span>
+                  <ChevronRight className="size-3 text-zinc-300 group-hover:translate-x-0.5 transition-transform" />
                 </DropdownMenuItem>
 
-                <DropdownMenuItem className="rounded-lg py-2.5 px-3 cursor-pointer hover:bg-gray-50 focus:bg-gray-50 transition-colors">
-                  <Bell className="mr-2.5 h-4 w-4 text-gray-400" />
-                  <span className="text-xs font-semibold text-gray-700">Notifications</span>
+                <DropdownMenuItem
+                  onSelect={handleSecurityClick}
+                  className="rounded-xl py-2.5 px-3 cursor-pointer hover:bg-zinc-50 focus:bg-zinc-50 group"
+                >
+                  <Shield className="mr-2.5 h-4 w-4 text-zinc-400 group-hover:text-zinc-700" />
+                  <span className="text-[11px] font-bold text-zinc-700 flex-1">Security</span>
+                  <ChevronRight className="size-3 text-zinc-300 group-hover:translate-x-0.5 transition-transform" />
+                </DropdownMenuItem>
+
+                <DropdownMenuItem className="rounded-xl py-2.5 px-3 cursor-pointer hover:bg-zinc-50 focus:bg-zinc-50 group">
+                  <Bell className="mr-2.5 h-4 w-4 text-zinc-400 group-hover:text-zinc-700" />
+                  <span className="text-[11px] font-bold text-zinc-700 flex-1">Notifications</span>
                 </DropdownMenuItem>
               </DropdownMenuGroup>
 
-              <DropdownMenuSeparator className="bg-gray-50 mx-1 my-1.5" />
+              <DropdownMenuSeparator className="bg-zinc-50 mx-0.5 my-1" />
 
               <DropdownMenuItem
                 onSelect={handleLogout}
-                className="rounded-lg py-2.5 px-3 text-red-600 focus:text-red-700 focus:bg-red-50 cursor-pointer font-bold text-xs"
+                className="rounded-xl py-2.5 px-3 text-red-600 focus:text-red-700 focus:bg-red-50 hover:bg-red-50 cursor-pointer"
               >
                 <LogOut className="mr-2.5 h-4 w-4" />
-                Sign Out
+                <span className="text-[11px] font-black">Sign Out</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

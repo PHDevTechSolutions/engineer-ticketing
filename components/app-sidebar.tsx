@@ -4,220 +4,387 @@ import * as React from "react"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
+  Sidebar, SidebarContent, SidebarFooter,
+  SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
 } from "@/components/ui/sidebar"
-import { NavMain } from "./nav-main"
+import { NavMain }      from "./nav-main"
 import { NavSecondary } from "./nav-secondary"
-import { NavUser } from "./nav-user"
+import { NavUser }      from "./nav-user"
+
+import { db } from "@/lib/firebase"
+import { collection, onSnapshot } from "firebase/firestore"
+
 import {
-  BookOpen,
-  CalendarDays,
-  Settings2,
-  Users,
-  LayoutDashboard,
-  CircleUser,
+  LayoutDashboard, CalendarCheck, FileText, Monitor, ClipboardCheck,
+  Package, MoreHorizontal, ThumbsUp, Wrench, Warehouse,
+  Users, ShieldCheck, BarChart3, Settings2, BookOpen, CircleUser,
 } from "lucide-react"
 
-/**
- * FIX: userId is now 'string | undefined' to stay in sync with 
- * how the Security page sets its initial state.
- */
+/* ─────────────────────────────────────────────────────────
+   TYPES
+───────────────────────────────────────────────────────── */
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   userId: string | null | undefined
 }
 
+type NavItem = {
+  title: string
+  url:   string
+  icon?: any
+  isActive?: boolean
+  badge?:  number
+  items?:  { title: string; url: string }[]
+}
+
+/* ─────────────────────────────────────────────────────────
+   SERVICE DEFINITIONS
+   key   → must match the Firestore role_permissions.services
+           keys exactly (same as dashboard)
+   "others" is the Firestore key for "Other Request"
+───────────────────────────────────────────────────────── */
+const SERVICE_MAP: Record<string, { title: string; icon: any; path: string }> = {
+  siteVisit:      { title: "Site Visit",        icon: CalendarCheck, path: "/appointments/site-visit" },
+  jobRequest:     { title: "Job Request",        icon: FileText,      path: "/request/job" },
+  dialux:         { title: "DIAlux Simulation",  icon: Monitor,       path: "/request/dialux" },
+  recommendation: { title: "Recommendation",     icon: ThumbsUp,      path: "/requests/recommendation" },
+  shopDrawing:    { title: "Shop Drawing",        icon: Wrench,        path: "/request/shop-drawing" },
+  testing:        { title: "Testing Monitor",     icon: ClipboardCheck,path: "/request/testing" },
+  productRequest: { title: "SPF Product",         icon: Package,       path: "/request/product" },
+  others:         { title: "Other Request",       icon: MoreHorizontal,path: "/request/other" },
+}
+
+/* ─────────────────────────────────────────────────────────
+   ROLE RANK — for management/admin visibility
+───────────────────────────────────────────────────────── */
+const ROLE_RANK: Record<string, number> = {
+  "SUPER ADMIN": 4, "MANAGER": 3, "LEADER": 2, "MEMBER": 1, "GUEST": 0,
+}
+const hasRole = (role: string, min: string) =>
+  (ROLE_RANK[role?.toUpperCase()] ?? 0) >= (ROLE_RANK[min] ?? 0)
+
+/* ─────────────────────────────────────────────────────────
+   BADGE HELPERS
+───────────────────────────────────────────────────────── */
+function getDeptStyle(dept: string) {
+  const d = dept?.toUpperCase().trim()
+  if (d === "IT")                   return "bg-emerald-100 text-emerald-700"
+  if (d === "ENGINEERING")          return "bg-blue-100 text-blue-700"
+  if (d === "SALES")                return "bg-red-100 text-red-700"
+  if (d === "PROCUREMENT")          return "bg-violet-100 text-violet-700"
+  if (d?.includes("WAREHOUSE"))     return "bg-amber-100 text-amber-700"
+  return "bg-zinc-100 text-zinc-500"
+}
+
+function getRoleStyle(role: string) {
+  const r = role?.toUpperCase()
+  if (r === "SUPER ADMIN") return "bg-zinc-900 text-white"
+  if (r === "MANAGER")     return "bg-blue-600 text-white"
+  if (r === "LEADER")      return "bg-violet-100 text-violet-700"
+  return "bg-zinc-100 text-zinc-500"
+}
+
+/* ─────────────────────────────────────────────────────────
+   MAIN COMPONENT
+───────────────────────────────────────────────────────── */
 export function AppSidebar({ userId, ...props }: AppSidebarProps) {
   const pathname = usePathname()
-  const [isLoading, setIsLoading] = React.useState(true)
 
-  const [userDetails, setUserDetails] = React.useState({
-    UserId: "",
-    Firstname: "",
-    Lastname: "",
-    Email: "",
-    profilePicture: "",
-    Position: "",
-    Department: "",
+  const [isLoading, setIsLoading]       = React.useState(true)
+  const [userDetails, setUserDetails]   = React.useState({
+    UserId: "", Firstname: "", Lastname: "", Email: "",
+    profilePicture: "", Department: "", Role: "",
   })
+  // Firestore role_permissions services for this user's dept+role
+  const [allowedServices, setAllowedServices] = React.useState<Record<string, boolean>>({})
+  const [permsLoaded, setPermsLoaded]   = React.useState(false)
 
+  /* ── 1. Fetch user profile ── */
   React.useEffect(() => {
-    // If we don't have a user ID, stop loading and wait
-    if (!userId) {
-      setIsLoading(false)
-      return
-    }
-    
-    const fetchData = async () => {
+    if (!userId) { setIsLoading(false); return }
+    const fetchUser = async () => {
       try {
-        const res = await fetch(`/api/user?id=${encodeURIComponent(userId)}`)
+        const res  = await fetch(`/api/user?id=${encodeURIComponent(userId)}`)
         const data = await res.json()
+        const role = localStorage.getItem("userRole")       || "MEMBER"
+        const dept = localStorage.getItem("userDepartment") || data.Department || ""
         setUserDetails({
-          UserId: data._id || userId,
-          Firstname: data.Firstname || "",
-          Lastname: data.Lastname || "",
-          Email: data.Email || "",
+          UserId:         data._id || userId,
+          Firstname:      data.Firstname      || "",
+          Lastname:       data.Lastname       || "",
+          Email:          data.Email          || "",
           profilePicture: data.profilePicture || "/avatars/default.jpg",
-          Position: data.Position || "",
-          Department: data.Department || "",
+          Department:     dept,
+          Role:           role,
         })
-      } catch (error) {
-        console.error("DATA_FETCH_ERROR:", error)
+      } catch (e) {
+        console.error("Sidebar user fetch error:", e)
       } finally {
         setIsLoading(false)
       }
     }
-    fetchData()
+    fetchUser()
   }, [userId])
 
-  // Helper to keep the user ID in the link when moving between pages
-  const appendUserId = (url: string) =>
-    userId ? (url.includes("?") ? `${url}&userId=${userId}` : `${url}?userId=${userId}`) : url
+  /* ── 2. Subscribe to role_permissions (same collection as dashboard) ── */
+  React.useEffect(() => {
+    if (!userDetails.Department || !userDetails.Role) return
 
-  const NAV_ITEMS = {
-    dashboard: {
-        title: "Home",
-        url: appendUserId("/dashboard"),
-        icon: LayoutDashboard,
-        isActive: pathname?.startsWith("/dashboard"),
-    },
-    services: {
-      title: "Work Management",
-      url: "#",
-      icon: CalendarDays,
-      isActive: pathname?.includes("/appointments") || pathname?.includes("/admin/protocols"),
-      items: [
-        { title: "Service Schedules", url: appendUserId("/appointments/slots") },
-        { title: "Standard Procedures", url: appendUserId("/admin/protocols") },
-        { title: "Team Assignments", url: appendUserId("/admin/assignment-matrix") },
-      ],
-    },
-    team: {
-      title: "Team Directory",
-      url: "#",
-      icon: Users,
-      isActive: pathname?.startsWith("/admin") && !pathname?.includes("protocols"),
-      items: [
-        { title: "Staff List", url: appendUserId("/admin/staff") },
-        { title: "Access Rights", url: appendUserId("/admin/permissions") },
-        { title: "Activity Logs", url: appendUserId("/admin/logs") },
-      ],
-    },
-    account: {
-      title: "My Profile",
-      url: "#",
-      icon: CircleUser,
-      isActive: pathname?.startsWith("/account"),
-      items: [
-        { title: "Personal Details", url: appendUserId("/account/profile") },
-        { title: "Security Settings", url: appendUserId("/account/security") },
-        { title: "App Settings", url: appendUserId("/account/preferences") },
-      ],
-    },
-  }
+    const deptKey = userDetails.Department.toUpperCase().trim()
+    const roleKey = userDetails.Role.toUpperCase().trim()
 
-  const department = userDetails.Department?.trim()
-  const hasFullAccess = ["IT", "Engineering"].includes(department)
+    // Document ID format: "PROCUREMENT_MEMBER", "IT_SUPER ADMIN", etc.
+    // Matches exactly what the dashboard uses
+    const targetId = `${deptKey}_${roleKey}`
 
-  const getFilteredData = () => {
-    if (isLoading) return { navMain: [], navSecondary: [] }
-    const baseItems = [NAV_ITEMS.dashboard, NAV_ITEMS.account]
+    const unsub = onSnapshot(collection(db, "role_permissions"), snap => {
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[]
 
-    if (hasFullAccess) {
-      return {
-        navMain: [NAV_ITEMS.dashboard, NAV_ITEMS.services, NAV_ITEMS.team, NAV_ITEMS.account],
-        navSecondary: [
-          { title: "System Settings", url: appendUserId("/settings"), icon: Settings2 },
-          { title: "Help Center", url: appendUserId("/docs"), icon: BookOpen },
-        ],
-      }
+      // Exact match first, then fallback to role-only match
+      const perms = docs.find((p: any) => p.id === targetId)
+                 || docs.find((p: any) => p.id.endsWith(`_${roleKey}`))
+
+      setAllowedServices(perms?.services || {})
+      setPermsLoaded(true)
+    })
+
+    return () => unsub()
+  }, [userDetails.Department, userDetails.Role])
+
+  /* ── 3. Append userId to links ── */
+  const appendId = React.useCallback((url: string) =>
+    userId ? (url.includes("?") ? `${url}&userId=${userId}` : `${url}?userId=${userId}`) : url,
+    [userId]
+  )
+
+  /* ── 4. Build nav from permissions + role ── */
+  const { navMain, navSecondary } = React.useMemo(() => {
+    if (isLoading || !permsLoaded) return { navMain: [], navSecondary: [] }
+
+    const p    = pathname ?? ""
+    const role = userDetails.Role?.toUpperCase().trim() || "MEMBER"
+    const dept = userDetails.Department?.toUpperCase().trim() || ""
+
+    /* ── Always visible ── */
+    const dashboard: NavItem = {
+      title:    "Dashboard",
+      url:      appendId("/dashboard"),
+      icon:     LayoutDashboard,
+      isActive: p.startsWith("/dashboard"),
     }
 
-    if (department === "Sales") {
-        return {
-          navMain: [
-            NAV_ITEMS.dashboard,
-            {
-              ...NAV_ITEMS.services,
-              items: NAV_ITEMS.services.items?.filter(i => 
-                !["Standard Procedures", "Team Assignments"].includes(i.title)
-              )
-            },
-            NAV_ITEMS.account
-          ],
-          navSecondary: [],
-        }
+    /* ── Services section — built from Firestore permissions ──
+       Same keys as dashboard: siteVisit, jobRequest, dialux,
+       recommendation, shopDrawing, testing, productRequest, others
+       Admin enables/disables these in role_permissions collection.
+    ── */
+    const serviceItems: NavItem[] = Object.entries(SERVICE_MAP)
+      .filter(([key]) => allowedServices[key] === true)
+      .map(([, def]) => ({
+        title:    def.title,
+        url:      appendId(def.path),
+        icon:     def.icon,
+        isActive: p.startsWith(def.path),
+      }))
+
+    /* Group services under a collapsible if more than 3,
+       otherwise show flat for quick access                  */
+    const servicesGroup: NavItem | null = serviceItems.length > 0
+      ? serviceItems.length <= 3
+        ? null  // show flat
+        : {
+            title:    "Services",
+            url:      "#",
+            icon:     LayoutDashboard,
+            isActive: serviceItems.some(s => p.startsWith(s.url.split("?")[0])),
+            items:    serviceItems.map(s => ({ title: s.title, url: s.url })),
+          }
+      : null
+
+    /* ── Management (LEADER+) ── */
+    const canManage  = hasRole(role, "LEADER")
+    const canAdmin   = hasRole(role, "MANAGER")
+    const isSuperOrIT = hasRole(role, "SUPER ADMIN") || dept === "IT"
+
+    const teamItem: NavItem = {
+      title:    "Team",
+      url:      "#",
+      icon:     Users,
+      isActive: p.startsWith("/admin"),
+      items: [
+        { title: "Staff Directory",   url: appendId("/admin/staff") },
+        ...(canAdmin ? [
+          { title: "Activity Logs",     url: appendId("/admin/logs") },
+          { title: "Service Schedules", url: appendId("/appointments/slots") },
+        ] : []),
+      ],
     }
-    return { navMain: baseItems, navSecondary: [] }
-  }
 
-  const filtered = getFilteredData()
+    const adminItem: NavItem = {
+      title:    "Admin",
+      url:      "#",
+      icon:     ShieldCheck,
+      isActive: p.startsWith("/admin/permissions") || p.startsWith("/admin/protocols"),
+      items: [
+        { title: "Access Rights",   url: appendId("/admin/permissions") },
+        { title: "Protocols",       url: appendId("/admin/protocols") },
+        { title: "Team Matrix",     url: appendId("/admin/assignment-matrix") },
+      ],
+    }
 
+    const analyticsItem: NavItem = {
+      title:    "Analytics",
+      url:      appendId("/analytics"),
+      icon:     BarChart3,
+      isActive: p.startsWith("/analytics"),
+    }
+
+    /* ── Account ── */
+    const accountItem: NavItem = {
+      title:    "My Account",
+      url:      "#",
+      icon:     CircleUser,
+      isActive: p.startsWith("/account"),
+      items: [
+        { title: "Profile",   url: appendId("/account/profile") },
+        { title: "Security",  url: appendId("/account/security") },
+        { title: "Settings",  url: appendId("/account/preferences") },
+      ],
+    }
+
+    /* ── Assemble navMain ── */
+    const main: NavItem[] = [
+      dashboard,
+      // Flat services (≤3) OR grouped services (>3)
+      ...(servicesGroup ? [servicesGroup] : serviceItems),
+      // Management sections based on role
+      ...(canManage  ? [teamItem]     : []),
+      ...(canAdmin   ? [adminItem, analyticsItem] : []),
+      accountItem,
+    ]
+
+    /* ── Secondary nav (IT / SUPER ADMIN) ── */
+    const secondary: NavItem[] = isSuperOrIT ? [
+      { title: "System Settings", url: appendId("/settings"), icon: Settings2 },
+      { title: "Help Center",     url: appendId("/docs"),     icon: BookOpen },
+    ] : []
+
+    return { navMain: main, navSecondary: secondary }
+  }, [isLoading, permsLoaded, allowedServices, pathname, userDetails, appendId])
+
+  const dept = userDetails.Department?.trim()
+  const role = userDetails.Role?.trim()
+
+  /* ─────────────────────────────────────────────
+     RENDER
+  ───────────────────────────────────────────── */
   return (
     <Sidebar variant="inset" className="bg-[#F8F9FA] border-r border-gray-100 z-30" {...props}>
-      <SidebarHeader className="p-0 overflow-hidden bg-white border-b border-gray-100">
+
+      {/* ── HEADER ── */}
+      <SidebarHeader className="p-0 bg-white border-b border-gray-100">
         <SidebarMenu className="p-4">
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild className="hover:bg-transparent px-0 h-auto">
-              <Link 
-                href={appendUserId("/dashboard")} 
-                className="flex flex-col items-start gap-4 w-full group text-left no-underline"
+              <Link
+                href={appendId("/dashboard")}
+                className="flex flex-col items-start gap-3 w-full group text-left no-underline"
               >
+                {/* Brand */}
                 <div className="flex items-center gap-3">
-                  <div className="size-10 rounded-xl bg-red-600 flex items-center justify-center shadow-lg shadow-red-100 transition-transform group-hover:scale-95">
-                    <img src="/disruptive.png" className="w-6 h-6 invert" alt="Logo" />
+                  <div className="size-10 rounded-xl bg-[#E33636] flex items-center justify-center shadow-lg shadow-red-100 transition-transform group-hover:scale-95 flex-shrink-0">
+                    <img src="/disruptive.png" className="w-6 h-6 invert" alt="DSI" />
                   </div>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-bold uppercase tracking-tight text-gray-900">
-                      engiconnect
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-sm font-black uppercase tracking-tighter text-zinc-900 leading-none">
+                      DSI Connect
                     </span>
-                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">
-                      Dashboard v2.6
+                    <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest mt-0.5">
+                      Enterprise Platform
                     </span>
                   </div>
                 </div>
 
-                <div className="w-full px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between group-hover:bg-gray-100 transition-colors">
-                  <div className="flex flex-col">
-                    <span className="text-[7px] font-bold text-gray-400 uppercase tracking-widest">Department</span>
-                    <span className="text-[10px] font-bold text-gray-900 uppercase">
-                      {department || "Guest"}
-                    </span>
+                {/* User context card */}
+                {isLoading ? (
+                  <div className="w-full h-[58px] bg-zinc-50 border border-zinc-100 rounded-xl animate-pulse" />
+                ) : dept ? (
+                  <div className="w-full px-3 py-2.5 bg-zinc-50 border border-zinc-100 rounded-xl group-hover:bg-zinc-100 transition-colors">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest leading-none mb-1">
+                          Session
+                        </p>
+                        <p className="text-[12px] font-black text-zinc-900 truncate leading-none">
+                          {userDetails.Firstname || "User"}
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                        <span className={`text-[7px] font-black uppercase px-1.5 py-0.5 rounded-full ${getDeptStyle(dept)}`}>
+                          {dept.length > 10 ? dept.slice(0, 8) + "…" : dept}
+                        </span>
+                        <span className={`text-[7px] font-black uppercase px-1.5 py-0.5 rounded-full ${getRoleStyle(role)}`}>
+                          {role || "MEMBER"}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-2 pt-1.5 border-t border-zinc-100">
+                      <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="text-[8px] font-bold text-emerald-600 uppercase tracking-widest">Live</span>
+                      {permsLoaded && (
+                        <>
+                          <div className="h-2 w-px bg-zinc-200 mx-0.5" />
+                          <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest">
+                            {Object.values(allowedServices).filter(Boolean).length} services
+                          </span>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <div className="size-1.5 rounded-full bg-emerald-500" />
-                    <span className="text-[8px] font-bold text-emerald-600 uppercase">System Active</span>
+                ) : (
+                  <div className="w-full px-3 py-2 bg-zinc-50 border border-zinc-100 rounded-xl">
+                    <p className="text-[9px] font-bold text-zinc-400 uppercase">Guest Session</p>
                   </div>
-                </div>
+                )}
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
 
-      <SidebarContent className="gap-0 py-4 scrollbar-hide">
-        {!isLoading && (
+      {/* ── CONTENT ── */}
+      <SidebarContent className="gap-0 py-3 overflow-y-auto scrollbar-hide">
+        {isLoading || !permsLoaded ? (
+          <div className="px-4 space-y-1.5 pt-2">
+            {[...Array(6)].map((_, i) => (
+              <div
+                key={i}
+                className="h-9 bg-zinc-100 rounded-xl animate-pulse"
+                style={{ opacity: 1 - i * 0.12 }}
+              />
+            ))}
+          </div>
+        ) : (
           <>
-            <NavMain items={filtered.navMain} />
-            <div className="px-6 py-4">
-               <div className="h-px bg-gray-100 w-full" />
-            </div>
-            <NavSecondary items={filtered.navSecondary} className="mt-auto" />
+            <NavMain items={navMain} />
+            {navSecondary.length > 0 && (
+              <>
+                <div className="px-4 py-2">
+                  <div className="h-px bg-zinc-100" />
+                </div>
+                <NavSecondary items={navSecondary} />
+              </>
+            )}
           </>
         )}
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-gray-100 bg-white p-4">
+      {/* ── FOOTER ── */}
+      <SidebarFooter className="border-t border-gray-100 bg-white p-3">
         <NavUser
           user={{
-            id: userDetails.UserId,
-            name: isLoading ? "Loading..." : `${userDetails.Firstname} ${userDetails.Lastname}`,
-            email: userDetails.Email,
+            id:     userDetails.UserId,
+            name:   isLoading ? "Loading..." : `${userDetails.Firstname} ${userDetails.Lastname}`.trim(),
+            email:  userDetails.Email,
             avatar: userDetails.profilePicture,
           }}
         />
