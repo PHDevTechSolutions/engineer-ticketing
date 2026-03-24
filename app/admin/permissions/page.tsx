@@ -238,7 +238,7 @@ function PermissionSection({
         <div className="bg-white rounded-[20px] border border-zinc-200/50 shadow-sm overflow-hidden">
             {/* Section header */}
             <div
-                className="flex items-center gap-4 p-5 cursor-pointer hover:bg-zinc-50/50 transition-colors"
+                className="flex flex-wrap sm:flex-nowrap items-start sm:items-center gap-3 p-4 sm:p-5 cursor-pointer hover:bg-zinc-50/50 transition-colors"
                 onClick={() => setCollapsed(!collapsed)}
             >
                 <div className={cn("p-2.5 rounded-xl border flex-shrink-0", section.color)}>
@@ -252,13 +252,13 @@ function PermissionSection({
                         {section.description}
                     </p>
                 </div>
-                <div className="flex items-center gap-3 flex-shrink-0">
+                <div className="ml-auto flex items-center gap-2 sm:gap-3 flex-shrink-0">
                     {/* All-on/off badge */}
                     <button
                         type="button"
                         onClick={e => { e.stopPropagation(); toggleAll() }}
                         className={cn(
-                            "text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full border transition-all",
+                            "text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full border transition-all whitespace-nowrap min-w-[56px]",
                             allOn
                                 ? "bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-200"
                                 : allOff
@@ -269,8 +269,8 @@ function PermissionSection({
                         {allOn ? "All On" : allOff ? "All Off" : "Partial"}
                     </button>
                     {collapsed
-                        ? <ChevronDown className="size-4 text-zinc-300" />
-                        : <ChevronUp   className="size-4 text-zinc-300" />}
+                        ? <ChevronDown className="size-4 text-zinc-300 flex-shrink-0" />
+                        : <ChevronUp   className="size-4 text-zinc-300 flex-shrink-0" />}
                 </div>
             </div>
 
@@ -433,14 +433,14 @@ export default function PermissionsPage() {
         <ProtectedPageWrapper>
             <SidebarProvider defaultOpen={false}>
                 <AppSidebar userId={userId} />
-                <SidebarInset className="bg-[#F8F9F9] font-sans">
+                <SidebarInset className="bg-[#F8F9F9] font-sans overflow-x-hidden">
                     <PageHeader
                         title="ACCESS RIGHTS"
                         version="V2.0"
                         showBackButton={true}
                         trigger={<SidebarTrigger className="mr-2" />}
                         actions={
-                            <div className="flex items-center gap-2">
+                            <div className="hidden md:flex items-center gap-2">
                                 {isDirty && (
                                     <Button
                                         onClick={handleReset}
@@ -456,9 +456,9 @@ export default function PermissionsPage() {
                                     disabled={!isDirty || isSaving}
                                     size="sm"
                                     className={cn(
-                                        "rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                                        "h-10 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all",
                                         isDirty
-                                            ? "bg-[#121212] text-white hover:bg-zinc-800 shadow-lg"
+                                            ? "bg-zinc-900 text-white hover:bg-zinc-800 shadow-lg"
                                             : "bg-zinc-100 text-zinc-400 cursor-not-allowed"
                                     )}
                                 >
@@ -470,12 +470,12 @@ export default function PermissionsPage() {
                         }
                     />
 
-                    <main className="p-4 md:p-6 lg:p-8 max-w-5xl mx-auto space-y-6 pb-24">
+                    <main className="p-4 md:p-6 lg:p-8 max-w-5xl mx-auto w-full overflow-x-hidden space-y-6 pb-36 md:pb-24">
 
                         {/* ══════════════════════════════
                             OVERVIEW GRID — all combos
                         ══════════════════════════════ */}
-                        <section className="bg-white rounded-[24px] border border-zinc-200/50 shadow-sm overflow-hidden">
+                        <section className="bg-white rounded-[24px] border border-zinc-200/50 shadow-sm overflow-hidden w-full">
                             <div className="px-6 py-4 border-b border-zinc-50 flex items-center gap-3">
                                 <Building2 className="size-4 text-zinc-400" />
                                 <h2 className="font-black text-[11px] uppercase tracking-widest text-zinc-800">
@@ -485,7 +485,7 @@ export default function PermissionsPage() {
                                     {Object.keys(allConfigs).length} configured
                                 </span>
                             </div>
-                            <div className="overflow-x-auto">
+                            <div className="w-full overflow-x-auto">
                                 <table className="w-full text-[10px]">
                                     <thead>
                                         <tr className="border-b border-zinc-50">
@@ -542,7 +542,7 @@ export default function PermissionsPage() {
                                     </tbody>
                                 </table>
                             </div>
-                            <div className="px-5 py-3 border-t border-zinc-50 flex items-center gap-4 text-[9px] text-zinc-400 font-bold uppercase">
+                            <div className="px-5 py-3 border-t border-zinc-50 flex items-center gap-4 flex-wrap text-[9px] text-zinc-400 font-bold uppercase">
                                 <div className="flex items-center gap-1.5">
                                     <div className="size-3 bg-[#121212] rounded" />Selected
                                 </div>
@@ -558,7 +558,7 @@ export default function PermissionsPage() {
                         {/* ══════════════════════════════
                             SELECTOR — dept + role
                         ══════════════════════════════ */}
-                        <section className="bg-white rounded-[24px] border border-zinc-200/50 shadow-sm p-5">
+                        <section className="bg-white rounded-[24px] border border-zinc-200/50 shadow-sm p-5 w-full overflow-hidden">
                             <div className="flex items-center gap-3 mb-4">
                                 <ShieldCheck className="size-4 text-zinc-400" />
                                 <h2 className="font-black text-[11px] uppercase tracking-widest text-zinc-800">
@@ -630,7 +630,7 @@ export default function PermissionsPage() {
                                     </span>
                                 </div>
                                 {!isLoading && (
-                                    <div className="ml-auto flex items-center gap-3 flex-wrap text-[9px] font-black uppercase text-zinc-400">
+                                    <div className="w-full sm:w-auto sm:ml-auto flex items-center gap-3 flex-wrap text-[9px] font-black uppercase text-zinc-400">
                                         {SECTIONS.map(s => (
                                             <span key={s.key}>
                                                 {s.label.split(" ")[0]}: <span className="text-zinc-700">{countEnabled(s.key)}/{s.items.length}</span>
@@ -679,26 +679,25 @@ export default function PermissionsPage() {
                         )}
 
                         {/* ── Sticky save bar (mobile) ── */}
-                        {isDirty && (
-                            <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/95 backdrop-blur-sm border-t border-zinc-100 z-50 flex items-center gap-3 md:hidden shadow-2xl">
+                        <div className="fixed bottom-0 left-0 right-0 p-4 pb-5 bg-white/95 backdrop-blur-sm border-t border-zinc-200 z-50 flex items-center gap-2 md:gap-3 md:hidden shadow-2xl shadow-zinc-900/10 overflow-x-hidden">
                                 <div className="flex-1 min-w-0">
                                     <p className="text-[10px] font-black text-zinc-900 uppercase tracking-wide truncate">
-                                        Unsaved changes
+                                        {isDirty ? "Unsaved changes" : "No changes yet"}
                                     </p>
                                     <p className="text-[9px] text-zinc-400 font-medium">
                                         {selectedDept} · {selectedRole}
                                     </p>
                                 </div>
                                 <Button onClick={handleReset} variant="outline" size="sm"
-                                    className="rounded-xl text-[10px] font-black uppercase border-zinc-200 flex-shrink-0">
+                                    disabled={!isDirty || isSaving}
+                                    className="h-12 rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest border-zinc-200 flex-shrink-0 px-3">
                                     Reset
                                 </Button>
-                                <Button onClick={handleSave} disabled={isSaving} size="sm"
-                                    className="bg-[#121212] text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex-shrink-0">
-                                    {isSaving ? <RefreshCw className="size-3 animate-spin" /> : "Save"}
+                                <Button onClick={handleSave} disabled={!isDirty || isSaving} size="sm"
+                                    className="h-12 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white text-[9px] sm:text-[10px] font-black uppercase tracking-widest flex-shrink-0 px-3">
+                                    {isSaving ? <RefreshCw className="size-3.5 animate-spin" /> : <><Save className="size-3.5 mr-1.5" /> Save Changes</>}
                                 </Button>
                             </div>
-                        )}
                     </main>
                 </SidebarInset>
             </SidebarProvider>
