@@ -1,470 +1,707 @@
 "use client"
 
 import * as React from "react"
-import { 
-  ShieldCheck, Search, ShieldAlert, UserCog, 
-  ChevronRight, Lock, Unlock, RotateCcw,
-  Layers, Users2, Briefcase, RefreshCw, Loader2,
-  CheckCircle2, AlertCircle, XCircle, Info, Settings2,
-  SlidersHorizontal, LayoutDashboard, Database, 
-  Terminal, Globe, HardDrive, CalendarCheck, FileText, 
-  Monitor, ThumbsUp, ClipboardCheck, MoreHorizontal, Plus,
-  Package // Added for Product Request
-} from "lucide-react"
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { PageHeader } from "@/components/page-header"
-import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/app-sidebar"
 import ProtectedPageWrapper from "@/components/protected-page-wrapper"
-import { toast } from "sonner"
-import { 
-  Sheet, 
-  SheetContent, 
-  SheetHeader, 
-  SheetTitle, 
-  SheetDescription,
-  SheetFooter 
-} from "@/components/ui/sheet"
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
+import { PageHeader } from "@/components/page-header"
 import { Switch } from "@/components/ui/switch"
-import { Label } from "@/components/ui/label"
-import { Separator } from "@/components/ui/separator"
+import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { cn } from "@/lib/utils"
+import { toast } from "sonner"
 
-// --- FIREBASE ---
-import { db } from "@/lib/firebase" 
-import { collection, getDocs, doc, setDoc, getDoc } from "firebase/firestore"
+import { db } from "@/lib/firebase"
+import { doc, getDoc, setDoc, onSnapshot, collection } from "firebase/firestore"
 
-// --- TYPES ---
-interface PermissionRole {
-  id: string
-  roleName: string
-  description: string
-  status: "ACTIVE" | "RESTRICTED"
-  departments: string[]
+import {
+    CalendarCheck, FileText, Monitor, ThumbsUp, Wrench,
+    ClipboardCheck, Package, MoreHorizontal, Users, ShieldCheck,
+    BarChart3, Settings2, BookOpen, CircleUser, Lock,
+    Fingerprint, Smartphone, Eye, Pencil, LayoutDashboard,
+    Save, RefreshCw, Shield, ChevronDown, ChevronUp,
+    Building2, Layers, Activity, Bell,
+} from "lucide-react"
+
+/* ─────────────────────────────────────────────────────────
+   PERMISSION SCHEMA
+   This is the complete structure stored in Firestore:
+   role_permissions/{DEPT_ROLE}
+
+   services    → which service tiles appear (dashboard + sidebar)
+   nav         → which sidebar nav sections appear
+   security    → which security page features are accessible
+   account     → which account page features are accessible
+   dashboard   → which dashboard sections are visible
+───────────────────────────────────────────────────────── */
+type PermissionDoc = {
+    services: {
+        siteVisit:      boolean
+        jobRequest:     boolean
+        dialux:         boolean
+        recommendation: boolean
+        shopDrawing:    boolean
+        testing:        boolean
+        productRequest: boolean
+        others:         boolean
+    }
+    nav: {
+        team:        boolean   // Staff Directory access
+        admin:       boolean   // Access Rights / Protocols
+        analytics:   boolean   // Analytics page
+        systemSettings: boolean // System Settings (IT only typically)
+        helpCenter:  boolean
+    }
+    security: {
+        changePassword:   boolean
+        managePin:        boolean
+        manageBiometrics: boolean
+        manage2FA:        boolean
+        viewActivityLog:  boolean
+    }
+    account: {
+        viewProfile:  boolean
+        editProfile:  boolean
+        preferences:  boolean
+    }
+    dashboard: {
+        showStats:          boolean
+        showRecentActivity: boolean
+        showOverviewTabs:   boolean
+        showAlertBanner:    boolean
+    }
 }
 
-const StreetLightIcon = ({ size = 16, className = "" }: { size?: number; className?: string }) => (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-        <path d="M7 22h3M9 22V7c0-2 1-3 3-3h5" /><path d="M15 4h5l1 2h-7l1-2z" /><path d="M17 9v1M14 8l-.5.5M20 8l.5.5" opacity="0.5" />
-    </svg>
-);
+const DEFAULT_PERMISSIONS: PermissionDoc = {
+    services: {
+        siteVisit: false, jobRequest: false, dialux: false,
+        recommendation: false, shopDrawing: false, testing: false,
+        productRequest: false, others: false,
+    },
+    nav: {
+        team: false, admin: false, analytics: false,
+        systemSettings: false, helpCenter: false,
+    },
+    security: {
+        changePassword: true, managePin: true, manageBiometrics: true,
+        manage2FA: false, viewActivityLog: true,
+    },
+    account: {
+        viewProfile: true, editProfile: true, preferences: true,
+    },
+    dashboard: {
+        showStats: true, showRecentActivity: true,
+        showOverviewTabs: true, showAlertBanner: true,
+    },
+}
 
-export default function PermissionsPage() {
-  const [userId, setUserId] = React.useState<string | null>(null)
-  const [searchTerm, setSearchTerm] = React.useState("")
-  const [activeDept, setActiveDept] = React.useState<string>("ALL")
-  const [staff, setStaff] = React.useState<any[]>([])
-  const [isFetching, setIsFetching] = React.useState(true)
-  const [isSaving, setIsSaving] = React.useState(false)
-  const [selectedRole, setSelectedRole] = React.useState<PermissionRole | null>(null)
-  
-  // Logic States
-  const [isDashboardAllowed, setIsDashboardAllowed] = React.useState(false)
-  const [servicePermissions, setServicePermissions] = React.useState<Record<string, boolean>>({
-    siteVisit: false,
-    jobRequest: false,
-    dialux: false,
-    recommendation: false,
-    shopDrawing: false,
-    testing: false,
-    productRequest: false, // Added for SPF Product Request
-    others: false
-  })
+/* ─────────────────────────────────────────────────────────
+   DEPARTMENT + ROLE MATRIX
+───────────────────────────────────────────────────────── */
+const DEPARTMENTS = [
+    "IT",
+    "Engineering",
+    "Sales",
+    "Procurement",
+    "Warehouse Operations",
+]
 
-  const updatePermissionsData = React.useCallback(async () => {
-    setIsFetching(true)
-    try {
-      const res = await fetch("/api/UserManagement/Fetch")
-      if (!res.ok) throw new Error("Connection failed")
-      const mongoUsers = await res.json()
+const ROLES = ["MEMBER", "LEADER", "MANAGER", "SUPER ADMIN"]
 
-      const firestoreSnap = await getDocs(collection(db, "users"))
-      const securityMap: Record<string, any> = {}
-      firestoreSnap.forEach(doc => {
-        securityMap[doc.id] = doc.data()
-      })
+/* ─────────────────────────────────────────────────────────
+   PERMISSION SECTIONS CONFIG
+   Drives the UI — each section has a title, icon,
+   color, and list of toggleable keys with labels
+───────────────────────────────────────────────────────── */
+const SECTIONS = [
+    {
+        key:   "services",
+        label: "Service Access",
+        description: "Controls which service tiles appear on the Dashboard and Sidebar for this role.",
+        icon:  Layers,
+        color: "bg-blue-50 text-blue-600 border-blue-100",
+        items: [
+            { key: "siteVisit",      label: "Site Visit Appointments", icon: CalendarCheck },
+            { key: "jobRequest",     label: "Job Requests",            icon: FileText },
+            { key: "dialux",         label: "DIAlux Simulation",       icon: Monitor },
+            { key: "recommendation", label: "Product Recommendation",  icon: ThumbsUp },
+            { key: "shopDrawing",    label: "Shop Drawing Requests",   icon: Wrench },
+            { key: "testing",        label: "Testing Monitoring",      icon: ClipboardCheck },
+            { key: "productRequest", label: "SPF Product Request",     icon: Package },
+            { key: "others",         label: "Other Requests",          icon: MoreHorizontal },
+        ],
+    },
+    {
+        key:   "nav",
+        label: "Navigation Access",
+        description: "Controls which sidebar navigation sections are visible to this role.",
+        icon:  LayoutDashboard,
+        color: "bg-violet-50 text-violet-600 border-violet-100",
+        items: [
+            { key: "team",          label: "Team — Staff Directory",    icon: Users },
+            { key: "admin",         label: "Admin — Access & Protocols", icon: ShieldCheck },
+            { key: "analytics",     label: "Analytics Dashboard",        icon: BarChart3 },
+            { key: "systemSettings",label: "System Settings",            icon: Settings2 },
+            { key: "helpCenter",    label: "Help Center",                icon: BookOpen },
+        ],
+    },
+    {
+        key:   "security",
+        label: "Security Controls",
+        description: "Controls which features are available on the Security settings page.",
+        icon:  Shield,
+        color: "bg-red-50 text-red-600 border-red-100",
+        items: [
+            { key: "changePassword",   label: "Change Password",       icon: Lock },
+            { key: "managePin",        label: "Manage Login PIN",      icon: CircleUser },
+            { key: "manageBiometrics", label: "Biometric Registration",icon: Fingerprint },
+            { key: "manage2FA",        label: "Two-Step Verification", icon: Smartphone },
+            { key: "viewActivityLog",  label: "View Login Activity",   icon: Activity },
+        ],
+    },
+    {
+        key:   "account",
+        label: "Account Features",
+        description: "Controls what the user can do on their profile / account page.",
+        icon:  CircleUser,
+        color: "bg-emerald-50 text-emerald-600 border-emerald-100",
+        items: [
+            { key: "viewProfile", label: "View Profile",        icon: Eye },
+            { key: "editProfile", label: "Edit Profile Details", icon: Pencil },
+            { key: "preferences", label: "App Preferences",     icon: Settings2 },
+        ],
+    },
+    {
+        key:   "dashboard",
+        label: "Dashboard Visibility",
+        description: "Controls which sections are visible on the main dashboard.",
+        icon:  LayoutDashboard,
+        color: "bg-amber-50 text-amber-600 border-amber-100",
+        items: [
+            { key: "showStats",          label: "Summary Stats Cards",   icon: BarChart3 },
+            { key: "showRecentActivity", label: "Recent Activity Feed",  icon: Bell },
+            { key: "showOverviewTabs",   label: "Overview Tabs",         icon: Layers },
+            { key: "showAlertBanner",    label: "Critical Alert Banner", icon: Activity },
+        ],
+    },
+]
 
-      const mergedData = mongoUsers.map((u: any) => {
-        const security = securityMap[u._id] || { Role: "MEMBER" }
-        return { 
-          ...u, 
-          Role: security.Role?.toUpperCase() || "MEMBER" 
-        }
-      })
+/* ─────────────────────────────────────────────────────────
+   DEPARTMENT BADGE COLORS
+───────────────────────────────────────────────────────── */
+const DEPT_COLORS: Record<string, string> = {
+    "IT":                   "bg-emerald-100 text-emerald-700 border-emerald-200",
+    "Engineering":          "bg-blue-100 text-blue-700 border-blue-200",
+    "Sales":                "bg-red-100 text-[#E33636] border-red-200",
+    "Procurement":          "bg-violet-100 text-violet-700 border-violet-200",
+    "Warehouse Operations": "bg-amber-100 text-amber-700 border-amber-200",
+}
 
-      setStaff(mergedData || [])
-    } catch (err) {
-      console.error(err)
-      toast.error("Could not sync role counts.")
-    } finally {
-      setIsFetching(false)
+const ROLE_COLORS: Record<string, string> = {
+    "SUPER ADMIN": "bg-zinc-900 text-white border-zinc-800",
+    "MANAGER":     "bg-blue-600 text-white border-blue-700",
+    "LEADER":      "bg-violet-100 text-violet-700 border-violet-200",
+    "MEMBER":      "bg-zinc-100 text-zinc-600 border-zinc-200",
+}
+
+/* ─────────────────────────────────────────────────────────
+   HELPER — build Firestore doc ID
+───────────────────────────────────────────────────────── */
+const makeDocId = (dept: string, role: string) =>
+    `${dept.toUpperCase().trim()}_${role.toUpperCase().trim()}`
+
+/* ─────────────────────────────────────────────────────────
+   SECTION CARD COMPONENT
+───────────────────────────────────────────────────────── */
+function PermissionSection({
+    section,
+    perms,
+    onChange,
+    isSaving,
+}: {
+    section: typeof SECTIONS[0]
+    perms: Record<string, boolean>
+    onChange: (key: string, val: boolean) => void
+    isSaving: boolean
+}) {
+    const [collapsed, setCollapsed] = React.useState(false)
+    const Icon = section.icon
+    const allOn  = section.items.every(i => perms[i.key])
+    const allOff = section.items.every(i => !perms[i.key])
+
+    const toggleAll = () => {
+        const next = !allOn
+        section.items.forEach(i => onChange(i.key, next))
     }
-  }, [])
 
-  React.useEffect(() => {
-    setUserId(localStorage.getItem("userId"))
-    updatePermissionsData()
-  }, [updatePermissionsData])
-
-  React.useEffect(() => {
-    const loadRolePermissions = async () => {
-      if (!selectedRole || activeDept === "ALL") return;
-      
-      try {
-        const docId = `${activeDept}_${selectedRole.roleName}`;
-        const docRef = doc(db, "role_permissions", docId);
-        const docSnap = await getDoc(docRef);
-
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setIsDashboardAllowed(data.isDashboardAllowed ?? false);
-          setServicePermissions(data.services ?? {});
-        } else {
-          // Seniority-based defaults
-          const isHighLevel = ["SUPER ADMIN", "MANAGER", "LEADER"].includes(selectedRole.roleName);
-          setIsDashboardAllowed(selectedRole.roleName !== "GUEST");
-          setServicePermissions({
-            siteVisit: isHighLevel,
-            jobRequest: isHighLevel,
-            dialux: isHighLevel,
-            recommendation: true,
-            shopDrawing: ["SUPER ADMIN", "MANAGER"].includes(selectedRole.roleName),
-            testing: isHighLevel,
-            productRequest: isHighLevel, // Added default
-            others: true
-          });
-        }
-      } catch (error) {
-        console.error("Error loading permissions:", error);
-      }
-    };
-
-    loadRolePermissions();
-  }, [selectedRole, activeDept]);
-
-  const handleSavePermissionLogic = async () => {
-    if (!selectedRole || activeDept === "ALL") {
-        toast.error("Please select a specific department first.");
-        return;
-    }
-    
-    setIsSaving(true)
-    try {
-      const docId = `${activeDept}_${selectedRole.roleName}`;
-      const roleRef = doc(db, "role_permissions", docId);
-      
-      await setDoc(roleRef, {
-        roleName: selectedRole.roleName,
-        department: activeDept,
-        isDashboardAllowed: isDashboardAllowed,
-        services: servicePermissions,
-        updatedAt: new Date(),
-        updatedBy: userId
-      }, { merge: true });
-
-      toast.success(`${activeDept} ${selectedRole.roleName} Updated`, {
-        icon: <ShieldCheck className="size-4 text-emerald-500" />
-      })
-      setSelectedRole(null)
-    } catch (error) {
-      console.error("Firebase Save Error:", error)
-      toast.error("Failed to commit changes.")
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
-  const toggleService = (serviceId: string) => {
-    setServicePermissions(prev => ({
-      ...prev,
-      [serviceId]: !prev[serviceId]
-    }))
-  }
-
-  const departments = ["ALL", "IT", "ENGINEERING", "SALES", "PROCUREMENT", "WAREHOUSE OPERATIONS"]
-
-  const roles: PermissionRole[] = React.useMemo(() => [
-    { id: "1", roleName: "SUPER ADMIN", description: "Full system authority. Manages global configurations.", status: "ACTIVE", departments: ["IT", "ENGINEERING", "SALES", "PROCUREMENT", "WAREHOUSE OPERATIONS"] },
-    { id: "2", roleName: "MANAGER", description: "Departmental head. Project approvals and reporting.", status: "ACTIVE", departments: ["IT", "ENGINEERING", "SALES", "PROCUREMENT", "WAREHOUSE OPERATIONS"] },
-    { id: "3", roleName: "LEADER", description: "Team supervisor. Daily task distribution.", status: "ACTIVE", departments: ["IT", "ENGINEERING", "SALES", "PROCUREMENT", "WAREHOUSE OPERATIONS"] },
-    { id: "4", roleName: "MEMBER", description: "Standard operational access. Creates tickets.", status: "ACTIVE", departments: ["IT", "ENGINEERING", "SALES", "PROCUREMENT", "WAREHOUSE OPERATIONS"] },
-    { id: "5", roleName: "GUEST", description: "Restricted visibility. Limited viewing only.", status: "RESTRICTED", departments: ["ALL"] },
-  ], [])
-
-  const filteredRoles = React.useMemo(() => roles.filter(role => {
-    const matchesSearch = role.roleName.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesDept = activeDept === "ALL" || role.departments.includes(activeDept)
-    return matchesSearch && matchesDept
-  }), [roles, searchTerm, activeDept])
-
-  const getRoleUserCount = (roleName: string) => staff.filter(user => user.Role === roleName.toUpperCase()).length
-
-  return (
-    <ProtectedPageWrapper>
-      <SidebarProvider defaultOpen={false}>
-        <AppSidebar userId={userId} />
-        <SidebarInset className="bg-[#F8FAFA] font-sans pb-20 md:pb-0">
-          
-          <PageHeader 
-            title="SYSTEM PERMISSIONS" 
-            version="V4.5-SECURITY" 
-            showBackButton={true}
-            trigger={<SidebarTrigger className="mr-2" />}
-            actions={
-                <Button onClick={updatePermissionsData} variant="ghost" size="icon" className={cn("rounded-full h-10 w-10", isFetching && "bg-blue-50")}>
-                    <RefreshCw className={cn("size-5", isFetching && "animate-spin text-blue-600")} />
-                </Button>
-            }
-          />
-
-          <main className="p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
-              <StatCard icon={<ShieldCheck />} label="Active Roles" value={roles.filter(r => r.status === "ACTIVE").length} color="emerald" />
-              <StatCard icon={<Users2 />} label="Total Staff" value={staff.length} color="zinc" loading={isFetching} />
-              <StatCard icon={<Lock />} label="Restricted" value={roles.filter(r => r.status === "RESTRICTED").length} color="orange" className="hidden md:flex" />
-            </div>
-
-            <div className="bg-white p-2 rounded-[24px] md:rounded-[28px] border border-zinc-200 shadow-sm flex flex-col md:flex-row gap-2 sticky top-4 z-30">
-                <div className="relative flex-1 group">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-zinc-400 group-focus-within:text-black transition-colors" />
-                    <input
-                        placeholder="Search security roles..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-11 h-12 rounded-[20px] md:rounded-[22px] border-none bg-transparent focus:bg-zinc-50 focus:ring-1 focus:ring-zinc-100 outline-none text-sm font-bold transition-all"
-                    />
+    return (
+        <div className="bg-white rounded-[20px] border border-zinc-200/50 shadow-sm overflow-hidden">
+            {/* Section header */}
+            <div
+                className="flex items-center gap-4 p-5 cursor-pointer hover:bg-zinc-50/50 transition-colors"
+                onClick={() => setCollapsed(!collapsed)}
+            >
+                <div className={cn("p-2.5 rounded-xl border flex-shrink-0", section.color)}>
+                    <Icon className="size-4" />
                 </div>
-                <Separator orientation="vertical" className="hidden md:block h-8 self-center bg-zinc-200 mx-2" />
-                <div className="flex gap-1 overflow-x-auto no-scrollbar p-1 pb-2 md:pb-1">
-                    {departments.map((dept) => (
+                <div className="flex-1 min-w-0">
+                    <h3 className="font-black text-[12px] uppercase tracking-tight text-zinc-900">
+                        {section.label}
+                    </h3>
+                    <p className="text-[10px] text-zinc-400 font-medium mt-0.5 hidden md:block truncate">
+                        {section.description}
+                    </p>
+                </div>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                    {/* All-on/off badge */}
                     <button
-                        key={dept}
-                        onClick={() => setActiveDept(dept)}
+                        type="button"
+                        onClick={e => { e.stopPropagation(); toggleAll() }}
                         className={cn(
-                            "h-10 px-5 rounded-full text-[10px] font-black uppercase tracking-tighter transition-all whitespace-nowrap",
-                            activeDept === dept ? "bg-black text-white shadow-lg scale-105" : "text-zinc-500 hover:bg-zinc-100"
+                            "text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full border transition-all",
+                            allOn
+                                ? "bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-200"
+                                : allOff
+                                ? "bg-zinc-100 text-zinc-500 border-zinc-200 hover:bg-zinc-200"
+                                : "bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200"
                         )}
                     >
-                        {dept}
+                        {allOn ? "All On" : allOff ? "All Off" : "Partial"}
                     </button>
-                    ))}
+                    {collapsed
+                        ? <ChevronDown className="size-4 text-zinc-300" />
+                        : <ChevronUp   className="size-4 text-zinc-300" />}
                 </div>
             </div>
 
-            <div className="bg-white rounded-[32px] border border-zinc-200/60 overflow-hidden shadow-sm">
-              <div className="hidden md:grid grid-cols-12 bg-zinc-50/50 p-6 border-b border-zinc-100 text-[10px] font-bold uppercase tracking-widest text-zinc-400">
-                <span className="col-span-4">Role Identity</span>
-                <span className="col-span-4">Permissions Overview</span>
-                <span className="col-span-2 text-center">Assigned</span>
-                <span className="col-span-2 text-right">Registry Status</span>
-              </div>
-
-              <div className="divide-y divide-zinc-50">
-                {isFetching ? (
-                  [...Array(4)].map((_, i) => (
-                    <div key={i} className="p-6 space-y-3">
-                      <div className="flex items-center gap-4">
-                        <Skeleton className="size-10 rounded-2xl" />
-                        <div className="space-y-2">
-                          <Skeleton className="h-4 w-32" />
-                          <Skeleton className="h-3 w-20" />
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : filteredRoles.length > 0 ? (
-                  filteredRoles.map((role) => (
-                    <div key={role.id} onClick={() => setSelectedRole(role)} className="grid grid-cols-1 md:grid-cols-12 gap-4 p-5 md:p-6 items-center hover:bg-zinc-50/40 transition-colors group cursor-pointer relative">
-                      <div className="col-span-4 flex items-center gap-4">
-                        <div className={cn("p-3 rounded-2xl text-white group-hover:scale-110 transition-transform shadow-sm", 
-                          role.roleName === "SUPER ADMIN" ? "bg-zinc-900" : role.roleName === "MANAGER" ? "bg-blue-600" : role.roleName === "LEADER" ? "bg-emerald-600" : "bg-zinc-400")}>
-                          {role.status === "ACTIVE" ? <Unlock className="size-4" /> : <Lock className="size-4" />}
-                        </div>
-                        <div>
-                          <span className="text-sm font-black text-zinc-900 block group-hover:underline decoration-zinc-300 underline-offset-4">{role.roleName}</span>
-                          <div className="flex gap-1 mt-1 overflow-x-hidden">
-                              {role.departments.slice(0, 3).map(d => (
-                                  <span key={d} className="text-[8px] font-bold px-1.5 py-0.5 bg-zinc-100 text-zinc-500 rounded uppercase whitespace-nowrap">{d}</span>
-                              ))}
-                              {role.departments.length > 3 && <span className="text-[8px] font-bold px-1.5 py-0.5 bg-zinc-100 text-zinc-500 rounded">+{role.departments.length - 3}</span>}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="col-span-4 text-xs text-zinc-500 font-medium leading-relaxed md:pr-6 line-clamp-2">
-                        {role.description}
-                      </div>
-                      
-                      <div className="flex items-center justify-between md:contents">
-                        <div className="col-span-2 text-center md:text-center">
-                            <span className="text-sm font-black text-zinc-900">{getRoleUserCount(role.roleName).toString().padStart(2, '0')}</span>
-                            <p className="text-[8px] font-bold text-zinc-400 uppercase tracking-tighter">Profiles</p>
-                        </div>
-                        <div className="col-span-2 flex justify-end items-center gap-3">
-                            <Badge className={cn("text-[9px] font-black border-none px-3", role.status === "ACTIVE" ? "bg-emerald-50 text-emerald-600" : "bg-orange-50 text-orange-600")}>
-                                {role.status}
-                            </Badge>
-                            <ChevronRight className="size-5 text-zinc-300 group-hover:text-black group-hover:translate-x-1 transition-all" />
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="p-20 text-center flex flex-col items-center justify-center">
-                    <div className="size-16 bg-zinc-50 rounded-full flex items-center justify-center mb-4">
-                      <Search className="size-6 text-zinc-200" />
-                    </div>
-                    <p className="text-sm font-bold text-zinc-900">No security roles found</p>
-                    <p className="text-xs text-zinc-400 mt-1">Try adjusting your search or filters.</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </main>
-
-          <Sheet open={!!selectedRole} onOpenChange={() => !isSaving && setSelectedRole(null)}>
-            <SheetContent className="w-full sm:max-w-md md:rounded-l-[40px] border-l-zinc-200 shadow-2xl p-0 overflow-hidden flex flex-col">
-              
-              <div className="p-6 md:p-8 pb-10 bg-gradient-to-br from-zinc-50 via-white to-zinc-50 relative">
-                <div className="space-y-4">
-                  <Badge className="bg-zinc-900 text-white text-[9px] font-black rounded-full px-3 py-1 border-none uppercase">
-                    {activeDept} DEPT CONFIG
-                  </Badge>
-                  <SheetTitle className="text-3xl md:text-4xl font-black tracking-tighter text-zinc-900 leading-none">
-                    {selectedRole?.roleName}
-                  </SheetTitle>
-                  <SheetDescription className="text-zinc-500 font-medium text-sm leading-relaxed">
-                    Customizing access levels for the <b>{activeDept}</b> division.
-                  </SheetDescription>
-                </div>
-                <Settings2 className="absolute top-8 right-8 size-12 md:size-16 text-zinc-100/80 -z-10 animate-pulse" />
-              </div>
-
-              <div className="flex-1 overflow-y-auto px-6 md:px-8 py-4 space-y-8 no-scrollbar">
-                {activeDept === "ALL" ? (
-                    <div className="p-6 bg-red-50 rounded-[28px] border border-red-100 text-center">
-                        <AlertCircle className="size-8 text-red-500 mx-auto mb-3" />
-                        <p className="text-xs font-bold text-red-600 uppercase">Selection Required</p>
-                        <p className="text-[10px] text-red-500 mt-1 leading-normal">You must select a specific department from the main page filters before editing permissions.</p>
-                        <Button variant="outline" className="mt-4 rounded-full text-[10px] font-bold border-red-200 text-red-600 h-8" onClick={() => setSelectedRole(null)}>Go Back</Button>
-                    </div>
-                ) : (
-                    <>
-                    <div className="space-y-4">
-                      <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest flex items-center gap-2">
-                        <LayoutDashboard className="size-3 text-black" /> Navigation Access
-                      </h4>
-                      <div className="p-1 bg-zinc-100/50 rounded-[28px]">
-                        <PermissionToggle 
-                            label="Enable Dashboard" 
-                            description={`Grant access to the ${activeDept} workspace`}
-                            checked={isDashboardAllowed}
-                            onCheckedChange={setIsDashboardAllowed}
-                        />
-                      </div>
-                    </div>
-
-                    {isDashboardAllowed && (
-                        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
-                            <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest flex items-center gap-2">
-                                <Database className="size-3 text-black" /> Service Modules
-                            </h4>
-                            
-                            <div className="grid gap-2">
-                                <ServiceAccessItem icon={<CalendarCheck size={16} />} label="Site Visit" checked={servicePermissions.siteVisit} onCheckedChange={() => toggleService('siteVisit')} />
-                                <ServiceAccessItem icon={<FileText size={16} />} label="Job Request" checked={servicePermissions.jobRequest} onCheckedChange={() => toggleService('jobRequest')} />
-                                <ServiceAccessItem icon={<Monitor size={16} />} label="DIAlux Sim" checked={servicePermissions.dialux} onCheckedChange={() => toggleService('dialux')} />
-                                <ServiceAccessItem icon={<ThumbsUp size={16} />} label="Product Reco" checked={servicePermissions.recommendation} onCheckedChange={() => toggleService('recommendation')} />
-                                <ServiceAccessItem icon={<StreetLightIcon size={16} />} label="Shop Drawing" checked={servicePermissions.shopDrawing} onCheckedChange={() => toggleService('shopDrawing')} />
-                                <ServiceAccessItem icon={<ClipboardCheck size={16} />} label="Testing Lab" checked={servicePermissions.testing} onCheckedChange={() => toggleService('testing')} />
-                                
-                                {/* NEW: SPF Product Request Toggle */}
-                                <ServiceAccessItem icon={<Package size={16} />} label="Product Request" checked={servicePermissions.productRequest} onCheckedChange={() => toggleService('productRequest')} />
-                                
-                                <ServiceAccessItem icon={<MoreHorizontal size={16} />} label="Misc Services" checked={servicePermissions.others} onCheckedChange={() => toggleService('others')} />
+            {/* Toggle items */}
+            {!collapsed && (
+                <div className="border-t border-zinc-50 divide-y divide-zinc-50">
+                    {section.items.map(item => {
+                        const ItemIcon = item.icon
+                        return (
+                            <div
+                                key={item.key}
+                                className={cn(
+                                    "flex items-center justify-between px-5 py-3.5 transition-colors",
+                                    perms[item.key] ? "bg-white" : "bg-zinc-50/40"
+                                )}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <ItemIcon className={cn(
+                                        "size-4 flex-shrink-0 transition-colors",
+                                        perms[item.key] ? "text-zinc-600" : "text-zinc-300"
+                                    )} />
+                                    <span className={cn(
+                                        "text-[11px] font-bold transition-colors",
+                                        perms[item.key] ? "text-zinc-800" : "text-zinc-400"
+                                    )}>
+                                        {item.label}
+                                    </span>
+                                </div>
+                                <Switch
+                                    checked={!!perms[item.key]}
+                                    onCheckedChange={val => onChange(item.key, val)}
+                                    disabled={isSaving}
+                                    className="data-[state=checked]:bg-zinc-900"
+                                />
                             </div>
-                        </div>
-                    )}
-                    </>
-                )}
-              </div>
-
-              <SheetFooter className="p-6 md:p-8 bg-white border-t border-zinc-100">
-                <Button 
-                  disabled={isSaving || activeDept === "ALL"}
-                  className="w-full h-14 md:h-16 rounded-[20px] md:rounded-[22px] bg-black text-white font-black text-sm hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-zinc-200 disabled:opacity-50"
-                  onClick={handleSavePermissionLogic}
-                >
-                  {isSaving ? (
-                    <div className="flex items-center gap-2">
-                        <Loader2 className="animate-spin size-4" />
-                        <span>SYNCING CHANGES...</span>
-                    </div>
-                  ) : `UPDATE ${activeDept} ROLES`}
-                </Button>
-              </SheetFooter>
-            </SheetContent>
-          </Sheet>
-
-        </SidebarInset>
-      </SidebarProvider>
-      <style jsx global>{`
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      `}</style>
-    </ProtectedPageWrapper>
-  )
-}
-
-function StatCard({ icon, label, value, color, loading, className }: any) {
-  const colors: any = { 
-    emerald: "bg-emerald-50 text-emerald-600", 
-    zinc: "bg-zinc-50 text-zinc-400", 
-    orange: "bg-orange-50 text-orange-600" 
-  }
-  return (
-    <div className={cn("bg-white p-5 md:p-6 rounded-[28px] md:rounded-[32px] border border-zinc-200/60 shadow-sm flex items-center gap-4 md:gap-5", className)}>
-      <div className={cn("p-3 md:p-4 rounded-2xl", colors[color])}>
-        {React.cloneElement(icon, { className: "size-5 md:size-6" })}
-      </div>
-      <div>
-        <p className="text-[9px] md:text-[10px] font-bold text-zinc-400 uppercase tracking-widest">{label}</p>
-        <p className="text-2xl md:text-3xl font-black text-zinc-900 leading-none mt-1">{loading ? "..." : value.toString().padStart(2, '0')}</p>
-      </div>
-    </div>
-  )
-}
-
-function PermissionToggle({ label, description, checked, onCheckedChange }: any) {
-  return (
-    <div className="flex items-center justify-between p-5 bg-white rounded-[24px] border border-zinc-100 shadow-sm transition-all hover:border-zinc-200">
-      <div className="max-w-[75%]">
-        <Label className="text-sm font-black text-zinc-900 block mb-0.5">{label}</Label>
-        <p className="text-[10px] text-zinc-500 font-bold leading-tight">{description}</p>
-      </div>
-      <Switch checked={checked} onCheckedChange={onCheckedChange} className="data-[state=checked]:bg-black" />
-    </div>
-  )
-}
-
-function ServiceAccessItem({ icon, label, checked, onCheckedChange }: any) {
-  return (
-    <div className={cn(
-        "flex items-center justify-between p-4 rounded-[22px] border transition-all",
-        checked ? "bg-white border-zinc-200 shadow-sm" : "bg-zinc-50/50 border-transparent opacity-60"
-    )}>
-        <div className="flex items-center gap-3">
-            <div className={cn("p-2 rounded-xl transition-colors", checked ? "bg-zinc-900 text-white" : "bg-zinc-200 text-zinc-500")}>
-                {icon}
-            </div>
-            <Label className="text-[11px] font-black text-zinc-900 block">{label}</Label>
+                        )
+                    })}
+                </div>
+            )}
         </div>
-        <Switch 
-          checked={checked} 
-          onCheckedChange={onCheckedChange}
-          className="data-[state=checked]:bg-emerald-500 scale-90" 
-        />
-    </div>
-  )
+    )
+}
+
+/* ─────────────────────────────────────────────────────────
+   MAIN PAGE
+───────────────────────────────────────────────────────── */
+export default function PermissionsPage() {
+    const [userId, setUserId]             = React.useState<string | null>(null)
+    const [selectedDept, setSelectedDept] = React.useState(DEPARTMENTS[0])
+    const [selectedRole, setSelectedRole] = React.useState(ROLES[0])
+    const [perms, setPerms]               = React.useState<PermissionDoc>(DEFAULT_PERMISSIONS)
+    const [isLoading, setIsLoading]       = React.useState(false)
+    const [isSaving, setIsSaving]         = React.useState(false)
+    const [isDirty, setIsDirty]           = React.useState(false)
+    const [savedSnapshot, setSavedSnapshot] = React.useState<string>("")
+
+    // Track all configured combos for the overview grid
+    const [allConfigs, setAllConfigs] = React.useState<Record<string, PermissionDoc>>({})
+
+    React.useEffect(() => {
+        setUserId(localStorage.getItem("userId"))
+    }, [])
+
+    /* ── Subscribe to all role_permissions docs ── */
+    React.useEffect(() => {
+        const unsub = onSnapshot(collection(db, "role_permissions"), snap => {
+            const map: Record<string, PermissionDoc> = {}
+            snap.docs.forEach(d => {
+                map[d.id] = d.data() as PermissionDoc
+            })
+            setAllConfigs(map)
+        })
+        return () => unsub()
+    }, [])
+
+    /* ── Load when dept/role selection changes ── */
+    React.useEffect(() => {
+        const load = async () => {
+            setIsLoading(true)
+            setIsDirty(false)
+            const docId  = makeDocId(selectedDept, selectedRole)
+            const docRef = doc(db, "role_permissions", docId)
+            try {
+                const snap = await getDoc(docRef)
+                if (snap.exists()) {
+                    // Deep merge with defaults to handle missing keys
+                    const data = snap.data() as Partial<PermissionDoc>
+                    const merged: PermissionDoc = {
+                        services:  { ...DEFAULT_PERMISSIONS.services,  ...(data.services  || {}) },
+                        nav:       { ...DEFAULT_PERMISSIONS.nav,        ...(data.nav       || {}) },
+                        security:  { ...DEFAULT_PERMISSIONS.security,   ...(data.security  || {}) },
+                        account:   { ...DEFAULT_PERMISSIONS.account,    ...(data.account   || {}) },
+                        dashboard: { ...DEFAULT_PERMISSIONS.dashboard,  ...(data.dashboard || {}) },
+                    }
+                    setPerms(merged)
+                    setSavedSnapshot(JSON.stringify(merged))
+                } else {
+                    setPerms(DEFAULT_PERMISSIONS)
+                    setSavedSnapshot(JSON.stringify(DEFAULT_PERMISSIONS))
+                }
+            } catch (e) {
+                console.error("Load permissions error:", e)
+                toast.error("Failed to load permissions.")
+            } finally {
+                setIsLoading(false)
+            }
+        }
+        load()
+    }, [selectedDept, selectedRole])
+
+    /* ── Detect unsaved changes ── */
+    React.useEffect(() => {
+        setIsDirty(JSON.stringify(perms) !== savedSnapshot)
+    }, [perms, savedSnapshot])
+
+    /* ── Toggle a single permission ── */
+    const handleToggle = (section: string, key: string, val: boolean) => {
+        setPerms(prev => ({
+            ...prev,
+            [section]: { ...(prev as any)[section], [key]: val },
+        }))
+    }
+
+    /* ── Save to Firestore ── */
+    const handleSave = async () => {
+        setIsSaving(true)
+        const docId  = makeDocId(selectedDept, selectedRole)
+        const docRef = doc(db, "role_permissions", docId)
+        try {
+            await setDoc(docRef, {
+                ...perms,
+                updatedAt: new Date().toISOString(),
+                updatedBy: userId,
+            }, { merge: true })
+            setSavedSnapshot(JSON.stringify(perms))
+            setIsDirty(false)
+            toast.success(`Permissions saved for ${selectedDept} · ${selectedRole}`)
+        } catch (e) {
+            console.error("Save permissions error:", e)
+            toast.error("Failed to save permissions.")
+        } finally {
+            setIsSaving(false)
+        }
+    }
+
+    /* ── Reset to last saved ── */
+    const handleReset = () => {
+        setPerms(JSON.parse(savedSnapshot))
+        setIsDirty(false)
+    }
+
+    /* ── Count enabled per section ── */
+    const countEnabled = (section: string) =>
+        Object.values((perms as any)[section] || {}).filter(Boolean).length
+
+    const docId        = makeDocId(selectedDept, selectedRole)
+    const isConfigured = !!allConfigs[docId]
+
+    return (
+        <ProtectedPageWrapper>
+            <SidebarProvider defaultOpen={false}>
+                <AppSidebar userId={userId} />
+                <SidebarInset className="bg-[#F8F9F9] font-sans">
+                    <PageHeader
+                        title="ACCESS RIGHTS"
+                        version="V2.0"
+                        showBackButton={true}
+                        trigger={<SidebarTrigger className="mr-2" />}
+                        actions={
+                            <div className="flex items-center gap-2">
+                                {isDirty && (
+                                    <Button
+                                        onClick={handleReset}
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-zinc-500 text-[10px] font-black uppercase rounded-xl"
+                                    >
+                                        <RefreshCw className="size-3 mr-1.5" /> Reset
+                                    </Button>
+                                )}
+                                <Button
+                                    onClick={handleSave}
+                                    disabled={!isDirty || isSaving}
+                                    size="sm"
+                                    className={cn(
+                                        "rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                                        isDirty
+                                            ? "bg-[#121212] text-white hover:bg-zinc-800 shadow-lg"
+                                            : "bg-zinc-100 text-zinc-400 cursor-not-allowed"
+                                    )}
+                                >
+                                    {isSaving
+                                        ? <><RefreshCw className="size-3 mr-1.5 animate-spin" />Saving...</>
+                                        : <><Save className="size-3 mr-1.5" />Save Changes</>}
+                                </Button>
+                            </div>
+                        }
+                    />
+
+                    <main className="p-4 md:p-6 lg:p-8 max-w-5xl mx-auto space-y-6 pb-24">
+
+                        {/* ══════════════════════════════
+                            OVERVIEW GRID — all combos
+                        ══════════════════════════════ */}
+                        <section className="bg-white rounded-[24px] border border-zinc-200/50 shadow-sm overflow-hidden">
+                            <div className="px-6 py-4 border-b border-zinc-50 flex items-center gap-3">
+                                <Building2 className="size-4 text-zinc-400" />
+                                <h2 className="font-black text-[11px] uppercase tracking-widest text-zinc-800">
+                                    Configuration Overview
+                                </h2>
+                                <span className="ml-auto text-[9px] font-black text-zinc-400 uppercase">
+                                    {Object.keys(allConfigs).length} configured
+                                </span>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-[10px]">
+                                    <thead>
+                                        <tr className="border-b border-zinc-50">
+                                            <th className="text-left px-5 py-3 font-black uppercase tracking-widest text-zinc-400 w-40">
+                                                Department
+                                            </th>
+                                            {ROLES.map(r => (
+                                                <th key={r} className="text-center px-3 py-3 font-black uppercase tracking-widest text-zinc-400">
+                                                    {r}
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-zinc-50">
+                                        {DEPARTMENTS.map(dept => (
+                                            <tr key={dept} className="hover:bg-zinc-50/40 transition-colors">
+                                                <td className="px-5 py-3">
+                                                    <span className={cn(
+                                                        "text-[9px] font-black uppercase px-2 py-1 rounded-full border",
+                                                        DEPT_COLORS[dept] || "bg-zinc-100 text-zinc-500 border-zinc-200"
+                                                    )}>
+                                                        {dept.length > 14 ? dept.slice(0, 12) + "…" : dept}
+                                                    </span>
+                                                </td>
+                                                {ROLES.map(role => {
+                                                    const id  = makeDocId(dept, role)
+                                                    const cfg = allConfigs[id]
+                                                    const serviceCount = cfg
+                                                        ? Object.values(cfg.services || {}).filter(Boolean).length
+                                                        : null
+                                                    const isSelected = selectedDept === dept && selectedRole === role
+
+                                                    return (
+                                                        <td key={role} className="text-center px-3 py-3">
+                                                            <button
+                                                                onClick={() => { setSelectedDept(dept); setSelectedRole(role) }}
+                                                                className={cn(
+                                                                    "mx-auto size-9 rounded-xl flex items-center justify-center text-[9px] font-black transition-all border",
+                                                                    isSelected
+                                                                        ? "bg-[#121212] text-white border-zinc-900 scale-110 shadow-lg"
+                                                                        : cfg
+                                                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:scale-105"
+                                                                        : "bg-zinc-50 text-zinc-300 border-zinc-100 hover:bg-zinc-100 hover:text-zinc-500"
+                                                                )}
+                                                                title={cfg ? `${serviceCount} services enabled` : "Not configured"}
+                                                            >
+                                                                {cfg ? serviceCount : "—"}
+                                                            </button>
+                                                        </td>
+                                                    )
+                                                })}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div className="px-5 py-3 border-t border-zinc-50 flex items-center gap-4 text-[9px] text-zinc-400 font-bold uppercase">
+                                <div className="flex items-center gap-1.5">
+                                    <div className="size-3 bg-[#121212] rounded" />Selected
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    <div className="size-3 bg-emerald-100 border border-emerald-200 rounded" />Configured
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    <div className="size-3 bg-zinc-50 border border-zinc-100 rounded" />Not set
+                                </div>
+                            </div>
+                        </section>
+
+                        {/* ══════════════════════════════
+                            SELECTOR — dept + role
+                        ══════════════════════════════ */}
+                        <section className="bg-white rounded-[24px] border border-zinc-200/50 shadow-sm p-5">
+                            <div className="flex items-center gap-3 mb-4">
+                                <ShieldCheck className="size-4 text-zinc-400" />
+                                <h2 className="font-black text-[11px] uppercase tracking-widest text-zinc-800">
+                                    Editing Permissions For
+                                </h2>
+                                {isConfigured && (
+                                    <span className="ml-auto text-[8px] font-black uppercase bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200">
+                                        Configured
+                                    </span>
+                                )}
+                                {!isConfigured && (
+                                    <span className="ml-auto text-[8px] font-black uppercase bg-zinc-100 text-zinc-500 px-2 py-0.5 rounded-full border border-zinc-200">
+                                        Using Defaults
+                                    </span>
+                                )}
+                            </div>
+
+                            {/* Department pills */}
+                            <div className="space-y-3">
+                                <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400">Department</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {DEPARTMENTS.map(dept => (
+                                        <button
+                                            key={dept}
+                                            onClick={() => setSelectedDept(dept)}
+                                            className={cn(
+                                                "px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wide border transition-all",
+                                                selectedDept === dept
+                                                    ? (DEPT_COLORS[dept] || "bg-zinc-900 text-white border-zinc-900") + " scale-105 shadow-sm"
+                                                    : "bg-zinc-50 text-zinc-500 border-zinc-200 hover:bg-zinc-100"
+                                            )}
+                                        >
+                                            {dept}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* Role pills */}
+                                <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400 mt-2">Role</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {ROLES.map(role => (
+                                        <button
+                                            key={role}
+                                            onClick={() => setSelectedRole(role)}
+                                            className={cn(
+                                                "px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wide border transition-all",
+                                                selectedRole === role
+                                                    ? (ROLE_COLORS[role] || "bg-zinc-900 text-white") + " scale-105 shadow-sm"
+                                                    : "bg-zinc-50 text-zinc-500 border-zinc-200 hover:bg-zinc-100"
+                                            )}
+                                        >
+                                            {role}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Current selection summary */}
+                            <div className="mt-4 pt-4 border-t border-zinc-50 flex items-center gap-3 flex-wrap">
+                                <div className="flex items-center gap-2">
+                                    <span className={cn("text-[9px] font-black uppercase px-2 py-1 rounded-full border",
+                                        DEPT_COLORS[selectedDept] || "bg-zinc-100 text-zinc-500 border-zinc-200")}>
+                                        {selectedDept}
+                                    </span>
+                                    <span className="text-zinc-300 text-xs">·</span>
+                                    <span className={cn("text-[9px] font-black uppercase px-2 py-1 rounded-full border",
+                                        ROLE_COLORS[selectedRole] || "bg-zinc-100 text-zinc-500 border-zinc-200")}>
+                                        {selectedRole}
+                                    </span>
+                                </div>
+                                {!isLoading && (
+                                    <div className="ml-auto flex items-center gap-3 flex-wrap text-[9px] font-black uppercase text-zinc-400">
+                                        {SECTIONS.map(s => (
+                                            <span key={s.key}>
+                                                {s.label.split(" ")[0]}: <span className="text-zinc-700">{countEnabled(s.key)}/{s.items.length}</span>
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </section>
+
+                        {/* ══════════════════════════════
+                            PERMISSION SECTIONS
+                        ══════════════════════════════ */}
+                        {isLoading ? (
+                            <div className="space-y-4">
+                                {[...Array(5)].map((_, i) => (
+                                    <div key={i} className="bg-white rounded-[20px] border border-zinc-100 p-5 animate-pulse">
+                                        <div className="flex items-center gap-3 mb-4">
+                                            <div className="size-9 bg-zinc-100 rounded-xl" />
+                                            <div className="space-y-2">
+                                                <div className="h-3 w-32 bg-zinc-100 rounded" />
+                                                <div className="h-2 w-48 bg-zinc-50 rounded" />
+                                            </div>
+                                        </div>
+                                        {[...Array(3)].map((_, j) => (
+                                            <div key={j} className="flex items-center justify-between py-3 border-t border-zinc-50">
+                                                <div className="h-3 w-36 bg-zinc-100 rounded" />
+                                                <div className="h-5 w-10 bg-zinc-100 rounded-full" />
+                                            </div>
+                                        ))}
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {SECTIONS.map(section => (
+                                    <PermissionSection
+                                        key={section.key}
+                                        section={section}
+                                        perms={(perms as any)[section.key] || {}}
+                                        onChange={(key, val) => handleToggle(section.key, key, val)}
+                                        isSaving={isSaving}
+                                    />
+                                ))}
+                            </div>
+                        )}
+
+                        {/* ── Sticky save bar (mobile) ── */}
+                        {isDirty && (
+                            <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/95 backdrop-blur-sm border-t border-zinc-100 z-50 flex items-center gap-3 md:hidden shadow-2xl">
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-[10px] font-black text-zinc-900 uppercase tracking-wide truncate">
+                                        Unsaved changes
+                                    </p>
+                                    <p className="text-[9px] text-zinc-400 font-medium">
+                                        {selectedDept} · {selectedRole}
+                                    </p>
+                                </div>
+                                <Button onClick={handleReset} variant="outline" size="sm"
+                                    className="rounded-xl text-[10px] font-black uppercase border-zinc-200 flex-shrink-0">
+                                    Reset
+                                </Button>
+                                <Button onClick={handleSave} disabled={isSaving} size="sm"
+                                    className="bg-[#121212] text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex-shrink-0">
+                                    {isSaving ? <RefreshCw className="size-3 animate-spin" /> : "Save"}
+                                </Button>
+                            </div>
+                        )}
+                    </main>
+                </SidebarInset>
+            </SidebarProvider>
+        </ProtectedPageWrapper>
+    )
 }

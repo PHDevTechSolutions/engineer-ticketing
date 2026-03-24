@@ -28,50 +28,57 @@ interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
 }
 
 type NavItem = {
-  title: string
-  url:   string
-  icon?: any
+  title:    string
+  url:      string
+  icon?:    any
   isActive?: boolean
-  badge?:  number
-  items?:  { title: string; url: string }[]
+  badge?:   number
+  items?:   { title: string; url: string }[]
+}
+
+/* Full permission document shape — matches permissions-page.tsx */
+type PermDoc = {
+  services:  Record<string, boolean>
+  nav:       Record<string, boolean>
+  security:  Record<string, boolean>
+  account:   Record<string, boolean>
+  dashboard: Record<string, boolean>
 }
 
 /* ─────────────────────────────────────────────────────────
-   SERVICE DEFINITIONS
-   key   → must match the Firestore role_permissions.services
-           keys exactly (same as dashboard)
-   "others" is the Firestore key for "Other Request"
+   SERVICE MAP  — key must match Firestore role_permissions
+   .services keys exactly (same as dashboard + permissions page)
 ───────────────────────────────────────────────────────── */
 const SERVICE_MAP: Record<string, { title: string; icon: any; path: string }> = {
-  siteVisit:      { title: "Site Visit",        icon: CalendarCheck, path: "/appointments/site-visit" },
-  jobRequest:     { title: "Job Request",        icon: FileText,      path: "/request/job" },
-  dialux:         { title: "DIAlux Simulation",  icon: Monitor,       path: "/request/dialux" },
-  recommendation: { title: "Recommendation",     icon: ThumbsUp,      path: "/requests/recommendation" },
-  shopDrawing:    { title: "Shop Drawing",        icon: Wrench,        path: "/request/shop-drawing" },
-  testing:        { title: "Testing Monitor",     icon: ClipboardCheck,path: "/request/testing" },
-  productRequest: { title: "SPF Product",         icon: Package,       path: "/request/product" },
-  others:         { title: "Other Request",       icon: MoreHorizontal,path: "/request/other" },
+  siteVisit:      { title: "Site Visit",        icon: CalendarCheck,  path: "/appointments/site-visit" },
+  jobRequest:     { title: "Job Request",        icon: FileText,       path: "/request/job" },
+  dialux:         { title: "DIAlux Simulation",  icon: Monitor,        path: "/request/dialux" },
+  recommendation: { title: "Recommendation",     icon: ThumbsUp,       path: "/requests/recommendation" },
+  shopDrawing:    { title: "Shop Drawing",        icon: Wrench,         path: "/request/shop-drawing" },
+  testing:        { title: "Testing Monitor",     icon: ClipboardCheck, path: "/request/testing" },
+  productRequest: { title: "SPF Product",         icon: Package,        path: "/request/product" },
+  others:         { title: "Other Request",       icon: MoreHorizontal, path: "/request/other" },
 }
 
-/* ─────────────────────────────────────────────────────────
-   ROLE RANK — for management/admin visibility
-───────────────────────────────────────────────────────── */
-const ROLE_RANK: Record<string, number> = {
-  "SUPER ADMIN": 4, "MANAGER": 3, "LEADER": 2, "MEMBER": 1, "GUEST": 0,
+/* Default fallback when no permission doc exists */
+const DEFAULT_PERMS: PermDoc = {
+  services:  {},
+  nav:       { team: false, admin: false, analytics: false, systemSettings: false, helpCenter: false },
+  security:  { changePassword: true, managePin: true, manageBiometrics: true, manage2FA: false, viewActivityLog: true },
+  account:   { viewProfile: true, editProfile: true, preferences: true },
+  dashboard: { showStats: true, showRecentActivity: true, showOverviewTabs: true, showAlertBanner: true },
 }
-const hasRole = (role: string, min: string) =>
-  (ROLE_RANK[role?.toUpperCase()] ?? 0) >= (ROLE_RANK[min] ?? 0)
 
 /* ─────────────────────────────────────────────────────────
    BADGE HELPERS
 ───────────────────────────────────────────────────────── */
 function getDeptStyle(dept: string) {
   const d = dept?.toUpperCase().trim()
-  if (d === "IT")                   return "bg-emerald-100 text-emerald-700"
-  if (d === "ENGINEERING")          return "bg-blue-100 text-blue-700"
-  if (d === "SALES")                return "bg-red-100 text-red-700"
-  if (d === "PROCUREMENT")          return "bg-violet-100 text-violet-700"
-  if (d?.includes("WAREHOUSE"))     return "bg-amber-100 text-amber-700"
+  if (d === "IT")               return "bg-emerald-100 text-emerald-700"
+  if (d === "ENGINEERING")      return "bg-blue-100 text-blue-700"
+  if (d === "SALES")            return "bg-red-100 text-red-700"
+  if (d === "PROCUREMENT")      return "bg-violet-100 text-violet-700"
+  if (d?.includes("WAREHOUSE")) return "bg-amber-100 text-amber-700"
   return "bg-zinc-100 text-zinc-500"
 }
 
@@ -89,19 +96,19 @@ function getRoleStyle(role: string) {
 export function AppSidebar({ userId, ...props }: AppSidebarProps) {
   const pathname = usePathname()
 
-  const [isLoading, setIsLoading]       = React.useState(true)
-  const [userDetails, setUserDetails]   = React.useState({
+  const [isLoading, setIsLoading]     = React.useState(true)
+  const [permsLoaded, setPermsLoaded] = React.useState(false)
+  const [userDetails, setUserDetails] = React.useState({
     UserId: "", Firstname: "", Lastname: "", Email: "",
     profilePicture: "", Department: "", Role: "",
   })
-  // Firestore role_permissions services for this user's dept+role
-  const [allowedServices, setAllowedServices] = React.useState<Record<string, boolean>>({})
-  const [permsLoaded, setPermsLoaded]   = React.useState(false)
+  /* Full permission doc for this user's dept+role */
+  const [permDoc, setPermDoc] = React.useState<PermDoc>(DEFAULT_PERMS)
 
   /* ── 1. Fetch user profile ── */
   React.useEffect(() => {
     if (!userId) { setIsLoading(false); return }
-    const fetchUser = async () => {
+    const run = async () => {
       try {
         const res  = await fetch(`/api/user?id=${encodeURIComponent(userId)}`)
         const data = await res.json()
@@ -117,33 +124,41 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
           Role:           role,
         })
       } catch (e) {
-        console.error("Sidebar user fetch error:", e)
+        console.error("Sidebar user fetch:", e)
       } finally {
         setIsLoading(false)
       }
     }
-    fetchUser()
+    run()
   }, [userId])
 
-  /* ── 2. Subscribe to role_permissions (same collection as dashboard) ── */
+  /* ── 2. Subscribe to role_permissions — reads ALL sections ── */
   React.useEffect(() => {
     if (!userDetails.Department || !userDetails.Role) return
 
-    const deptKey = userDetails.Department.toUpperCase().trim()
-    const roleKey = userDetails.Role.toUpperCase().trim()
-
-    // Document ID format: "PROCUREMENT_MEMBER", "IT_SUPER ADMIN", etc.
-    // Matches exactly what the dashboard uses
+    const deptKey  = userDetails.Department.toUpperCase().trim()
+    const roleKey  = userDetails.Role.toUpperCase().trim()
     const targetId = `${deptKey}_${roleKey}`
 
     const unsub = onSnapshot(collection(db, "role_permissions"), snap => {
       const docs = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[]
 
-      // Exact match first, then fallback to role-only match
-      const perms = docs.find((p: any) => p.id === targetId)
-                 || docs.find((p: any) => p.id.endsWith(`_${roleKey}`))
+      /* Exact match first, then fallback to role-only */
+      const raw = docs.find((p: any) => p.id === targetId)
+               || docs.find((p: any) => p.id.endsWith(`_${roleKey}`))
 
-      setAllowedServices(perms?.services || {})
+      if (raw) {
+        /* Deep merge with defaults to handle missing keys */
+        setPermDoc({
+          services:  { ...DEFAULT_PERMS.services,  ...(raw.services  || {}) },
+          nav:       { ...DEFAULT_PERMS.nav,        ...(raw.nav       || {}) },
+          security:  { ...DEFAULT_PERMS.security,   ...(raw.security  || {}) },
+          account:   { ...DEFAULT_PERMS.account,    ...(raw.account   || {}) },
+          dashboard: { ...DEFAULT_PERMS.dashboard,  ...(raw.dashboard || {}) },
+        })
+      } else {
+        setPermDoc(DEFAULT_PERMS)
+      }
       setPermsLoaded(true)
     })
 
@@ -152,19 +167,22 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
 
   /* ── 3. Append userId to links ── */
   const appendId = React.useCallback((url: string) =>
-    userId ? (url.includes("?") ? `${url}&userId=${userId}` : `${url}?userId=${userId}`) : url,
+    userId
+      ? url.includes("?") ? `${url}&userId=${userId}` : `${url}?userId=${userId}`
+      : url,
     [userId]
   )
 
-  /* ── 4. Build nav from permissions + role ── */
+  /* ── 4. Build nav — 100% driven by Firestore permDoc ── */
   const { navMain, navSecondary } = React.useMemo(() => {
     if (isLoading || !permsLoaded) return { navMain: [], navSecondary: [] }
 
-    const p    = pathname ?? ""
-    const role = userDetails.Role?.toUpperCase().trim() || "MEMBER"
-    const dept = userDetails.Department?.toUpperCase().trim() || ""
+    const p  = pathname ?? ""
+    const sv = permDoc.services
+    const nv = permDoc.nav
+    const ac = permDoc.account
 
-    /* ── Always visible ── */
+    /* Dashboard — always visible */
     const dashboard: NavItem = {
       title:    "Dashboard",
       url:      appendId("/dashboard"),
@@ -172,13 +190,9 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
       isActive: p.startsWith("/dashboard"),
     }
 
-    /* ── Services section — built from Firestore permissions ──
-       Same keys as dashboard: siteVisit, jobRequest, dialux,
-       recommendation, shopDrawing, testing, productRequest, others
-       Admin enables/disables these in role_permissions collection.
-    ── */
+    /* ── Services — from permDoc.services ── */
     const serviceItems: NavItem[] = Object.entries(SERVICE_MAP)
-      .filter(([key]) => allowedServices[key] === true)
+      .filter(([key]) => sv[key] === true)
       .map(([, def]) => ({
         title:    def.title,
         url:      appendId(def.path),
@@ -186,36 +200,29 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
         isActive: p.startsWith(def.path),
       }))
 
-    /* Group services under a collapsible if more than 3,
-       otherwise show flat for quick access                  */
-    const servicesGroup: NavItem | null = serviceItems.length > 0
-      ? serviceItems.length <= 3
-        ? null  // show flat
-        : {
-            title:    "Services",
-            url:      "#",
-            icon:     LayoutDashboard,
-            isActive: serviceItems.some(s => p.startsWith(s.url.split("?")[0])),
-            items:    serviceItems.map(s => ({ title: s.title, url: s.url })),
-          }
-      : null
+    /* ≤3 services → flat; >3 → collapsible group */
+    const servicesEntry: NavItem[] = serviceItems.length === 0
+      ? []
+      : serviceItems.length <= 3
+      ? serviceItems
+      : [{
+          title:    "Services",
+          url:      "#",
+          icon:     LayoutDashboard,
+          isActive: serviceItems.some(s => p.startsWith(s.url.split("?")[0])),
+          items:    serviceItems.map(s => ({ title: s.title, url: s.url })),
+        }]
 
-    /* ── Management (LEADER+) ── */
-    const canManage  = hasRole(role, "LEADER")
-    const canAdmin   = hasRole(role, "MANAGER")
-    const isSuperOrIT = hasRole(role, "SUPER ADMIN") || dept === "IT"
-
+    /* ── Nav sections — from permDoc.nav ── */
     const teamItem: NavItem = {
       title:    "Team",
       url:      "#",
       icon:     Users,
-      isActive: p.startsWith("/admin"),
+      isActive: p.startsWith("/admin/staff") || p.startsWith("/admin/logs"),
       items: [
         { title: "Staff Directory",   url: appendId("/admin/staff") },
-        ...(canAdmin ? [
-          { title: "Activity Logs",     url: appendId("/admin/logs") },
-          { title: "Service Schedules", url: appendId("/appointments/slots") },
-        ] : []),
+        { title: "Activity Logs",     url: appendId("/admin/logs") },
+        { title: "Service Schedules", url: appendId("/appointments/slots") },
       ],
     }
 
@@ -238,41 +245,42 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
       isActive: p.startsWith("/analytics"),
     }
 
-    /* ── Account ── */
+    /* ── Account — sub-items filtered by permDoc.account ── */
+    const accountSubItems = [
+      ...(ac.viewProfile ? [{ title: "Profile",   url: appendId("/account/profile") }]      : []),
+      { title: "Security", url: appendId("/account/security") }, // always available
+      ...(ac.preferences  ? [{ title: "Settings", url: appendId("/account/preferences") }]   : []),
+    ]
+
     const accountItem: NavItem = {
       title:    "My Account",
       url:      "#",
       icon:     CircleUser,
       isActive: p.startsWith("/account"),
-      items: [
-        { title: "Profile",   url: appendId("/account/profile") },
-        { title: "Security",  url: appendId("/account/security") },
-        { title: "Settings",  url: appendId("/account/preferences") },
-      ],
+      items:    accountSubItems,
     }
 
-    /* ── Assemble navMain ── */
+    /* ── Assemble final nav ── */
     const main: NavItem[] = [
       dashboard,
-      // Flat services (≤3) OR grouped services (>3)
-      ...(servicesGroup ? [servicesGroup] : serviceItems),
-      // Management sections based on role
-      ...(canManage  ? [teamItem]     : []),
-      ...(canAdmin   ? [adminItem, analyticsItem] : []),
+      ...servicesEntry,
+      ...(nv.team      ? [teamItem]      : []),
+      ...(nv.admin     ? [adminItem]     : []),
+      ...(nv.analytics ? [analyticsItem] : []),
       accountItem,
     ]
 
-    /* ── Secondary nav (IT / SUPER ADMIN) ── */
-    const secondary: NavItem[] = isSuperOrIT ? [
-      { title: "System Settings", url: appendId("/settings"), icon: Settings2 },
-      { title: "Help Center",     url: appendId("/docs"),     icon: BookOpen },
-    ] : []
+    const secondary: NavItem[] = [
+      ...(nv.systemSettings ? [{ title: "System Settings", url: appendId("/settings"), icon: Settings2 }] : []),
+      ...(nv.helpCenter     ? [{ title: "Help Center",     url: appendId("/docs"),     icon: BookOpen  }] : []),
+    ]
 
     return { navMain: main, navSecondary: secondary }
-  }, [isLoading, permsLoaded, allowedServices, pathname, userDetails, appendId])
+  }, [isLoading, permsLoaded, permDoc, pathname, appendId])
 
-  const dept = userDetails.Department?.trim()
-  const role = userDetails.Role?.trim()
+  const dept             = userDetails.Department?.trim()
+  const role             = userDetails.Role?.trim()
+  const enabledServices  = Object.values(permDoc.services).filter(Boolean).length
 
   /* ─────────────────────────────────────────────
      RENDER
@@ -306,14 +314,12 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
 
                 {/* User context card */}
                 {isLoading ? (
-                  <div className="w-full h-[58px] bg-zinc-50 border border-zinc-100 rounded-xl animate-pulse" />
+                  <div className="w-full h-[62px] bg-zinc-50 border border-zinc-100 rounded-xl animate-pulse" />
                 ) : dept ? (
                   <div className="w-full px-3 py-2.5 bg-zinc-50 border border-zinc-100 rounded-xl group-hover:bg-zinc-100 transition-colors">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <p className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest leading-none mb-1">
-                          Session
-                        </p>
+                        <p className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest leading-none mb-1">Session</p>
                         <p className="text-[12px] font-black text-zinc-900 truncate leading-none">
                           {userDetails.Firstname || "User"}
                         </p>
@@ -327,14 +333,14 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
                         </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5 mt-2 pt-1.5 border-t border-zinc-100">
+                    <div className="flex items-center gap-2 mt-2 pt-1.5 border-t border-zinc-100">
                       <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
                       <span className="text-[8px] font-bold text-emerald-600 uppercase tracking-widest">Live</span>
-                      {permsLoaded && (
+                      {permsLoaded && enabledServices > 0 && (
                         <>
                           <div className="h-2 w-px bg-zinc-200 mx-0.5" />
                           <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest">
-                            {Object.values(allowedServices).filter(Boolean).length} services
+                            {enabledServices} service{enabledServices !== 1 ? "s" : ""}
                           </span>
                         </>
                       )}
@@ -356,11 +362,8 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
         {isLoading || !permsLoaded ? (
           <div className="px-4 space-y-1.5 pt-2">
             {[...Array(6)].map((_, i) => (
-              <div
-                key={i}
-                className="h-9 bg-zinc-100 rounded-xl animate-pulse"
-                style={{ opacity: 1 - i * 0.12 }}
-              />
+              <div key={i} className="h-9 bg-zinc-100 rounded-xl animate-pulse"
+                style={{ opacity: 1 - i * 0.12 }} />
             ))}
           </div>
         ) : (
@@ -368,9 +371,7 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
             <NavMain items={navMain} />
             {navSecondary.length > 0 && (
               <>
-                <div className="px-4 py-2">
-                  <div className="h-px bg-zinc-100" />
-                </div>
+                <div className="px-4 py-2"><div className="h-px bg-zinc-100" /></div>
                 <NavSecondary items={navSecondary} />
               </>
             )}
