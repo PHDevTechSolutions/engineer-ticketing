@@ -1,9 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig = {
-  experimental: {
-    turbopack: false,
-  },
   // 2. Remote Image Whitelisting (Fixes the Cloudinary Error)
   images: {
     remotePatterns: [

@@ -486,7 +486,7 @@ export default function PermissionsPage() {
                                 </span>
                             </div>
                             <div className="w-full overflow-x-auto">
-                                <table className="w-full text-[10px]">
+                                <table className="w-full min-w-[560px] text-[10px]">
                                     <thead>
                                         <tr className="border-b border-zinc-50">
                                             <th className="text-left px-5 py-3 font-black uppercase tracking-widest text-zinc-400 w-40">
