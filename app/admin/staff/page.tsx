@@ -275,6 +275,13 @@ export default function StaffDirectoryPage() {
                     />
 
                     <main className="p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6">
+                        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3">
+                            <ShieldCheck className="size-4 text-blue-500 flex-shrink-0" />
+                            <p className="text-[11px] font-black text-blue-700">
+                                Tip: Press <span className="font-mono">/</span> to focus search and <span className="font-mono">Esc</span> to clear.
+                            </p>
+                        </div>
+
                         {!isFetching && staff.filter(s => s.isActive === false).length > 0 && activeDept !== "SUSPENDED" && (
                             <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
                                 <div className="flex items-center gap-2">

@@ -20,6 +20,8 @@ import {
     X,
     RotateCcw,
     ShieldCheck,
+    Loader2,
+    LayoutGrid,
 } from "lucide-react"
 import ProtectedPageWrapper from "@/components/protected-page-wrapper"
 import { cn } from "@/lib/utils"
@@ -56,6 +58,9 @@ interface User {
     ReferenceID?: string;
     profilePicture?: string;
 }
+type ConfirmAction =
+    | { type: "toggle"; managerId: string; engName: string }
+    | { type: "bulk"; managerId: string; mode: "assign_all" | "clear_all"; managerName: string }
 
 /**
  * TOAST COMPONENT
@@ -81,6 +86,63 @@ const Toast = ({ message, type, onClose }: { message: string, type: 'success' | 
     )
 }
 
+function StatPill({
+    label,
+    count,
+    icon: Icon,
+    variant,
+    isActive,
+    onClick,
+}: {
+    label: string
+    count: string
+    icon: any
+    variant: "default" | "emerald" | "blue" | "slate"
+    isActive?: boolean
+    onClick?: () => void
+}) {
+    const colors: Record<string, string> = {
+        default: "text-zinc-500 bg-zinc-100",
+        emerald: "text-emerald-600 bg-emerald-50",
+        blue: "text-blue-600 bg-blue-50",
+        slate: "text-slate-600 bg-slate-100",
+    }
+    return (
+        <button
+            onClick={onClick}
+            className={cn(
+                "flex items-center gap-2.5 px-4 py-3 rounded-2xl border bg-white shadow-sm transition-all flex-shrink-0 active:scale-95",
+                isActive ? "border-zinc-900 ring-4 ring-zinc-900/5 shadow-md" : "border-zinc-200/60 hover:border-zinc-300 hover:shadow-md"
+            )}
+        >
+            <div className={cn("p-1.5 rounded-xl", colors[variant])}>
+                <Icon className="size-3.5" />
+            </div>
+            <div className="text-left min-w-[28px]">
+                <p className="text-[16px] font-black text-zinc-900 leading-none">{count}</p>
+                <p className="text-[8px] font-black uppercase text-zinc-400 tracking-widest mt-0.5 whitespace-nowrap">{label}</p>
+            </div>
+        </button>
+    )
+}
+
+function SkeletonManagerRow() {
+    return (
+        <div className="px-5 md:px-7 py-6 animate-pulse">
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                    <div className="size-12 rounded-2xl bg-zinc-100" />
+                    <div className="space-y-2">
+                        <div className="h-3 w-36 bg-zinc-100 rounded-full" />
+                        <div className="h-2 w-24 bg-zinc-100 rounded-full" />
+                    </div>
+                </div>
+                <div className="size-9 rounded-xl bg-zinc-100" />
+            </div>
+        </div>
+    )
+}
+
 export default function PICAssignmentMatrixPage() {
     // --- STATE ---
     const [salesManagers, setSalesManagers] = React.useState<User[]>([])
@@ -94,10 +156,13 @@ export default function PICAssignmentMatrixPage() {
     const [openManager, setOpenManager] = React.useState<string | null>(null)
     const [showInstructions, setShowInstructions] = React.useState(false)
     const [searchQuery, setSearchQuery] = React.useState("")
+    const [showAssignedOnly, setShowAssignedOnly] = React.useState(false)
     const [currentPage, setCurrentPage] = React.useState(1)
     const [itemsPerPage, setItemsPerPage] = React.useState("10")
-    const [confirmAction, setConfirmAction] = React.useState<{ managerId: string, engName: string } | null>(null)
+    const [confirmAction, setConfirmAction] = React.useState<ConfirmAction | null>(null)
     const [toast, setToast] = React.useState<{ message: string, type: 'success' | 'error' } | null>(null)
+    const searchRef = React.useRef<HTMLInputElement>(null)
+    const [engineerSearchByManager, setEngineerSearchByManager] = React.useState<Record<string, string>>({})
 
     // 1. HYDRATION & INITIAL LOAD
     React.useEffect(() => {
@@ -159,20 +224,25 @@ export default function PICAssignmentMatrixPage() {
     const handleSaveAssignment = async () => {
         if (!confirmAction) return
         setIsSaving(true)
-        
-        const { managerId, engName } = confirmAction
+        const { managerId } = confirmAction
         const previousAssignments = { ...assignments }
         const currentBatch = assignments[managerId] || []
-        const isCurrentlyAssigned = currentBatch.includes(engName)
-        
-        const newBatch = isCurrentlyAssigned
-            ? currentBatch.filter(n => n !== engName)
-            : [...currentBatch, engName]
+        const manager = salesManagers.find(m => m._id === managerId)
+
+        let newBatch: string[] = []
+        if (confirmAction.type === "toggle") {
+            const { engName } = confirmAction
+            const isCurrentlyAssigned = currentBatch.includes(engName)
+            newBatch = isCurrentlyAssigned
+                ? currentBatch.filter(n => n !== engName)
+                : [...currentBatch, engName]
+        } else {
+            const allEngineerNames = engineers.map((eng) => `${eng.Firstname} ${eng.Lastname}`)
+            newBatch = confirmAction.mode === "assign_all" ? allEngineerNames : []
+        }
 
         // Update UI immediately
         setAssignments(prev => ({ ...prev, [managerId]: newBatch }))
-
-        const manager = salesManagers.find(m => m._id === managerId)
 
         try {
             await setDoc(doc(db, "pic_assignments", managerId), {
@@ -181,8 +251,15 @@ export default function PICAssignmentMatrixPage() {
                 managerName: manager ? `${manager.Firstname} ${manager.Lastname}` : "Unknown Manager",
                 managerRole: "Sales Manager"
             }, { merge: true })
-            
-            setToast({ message: "Matrix Updated", type: 'success' })
+
+            setToast({
+                message: confirmAction.type === "toggle"
+                    ? "Matrix Updated"
+                    : confirmAction.mode === "assign_all"
+                        ? "All engineers assigned"
+                        : "All assignments cleared",
+                type: 'success'
+            })
             setConfirmAction(null)
         } catch (err) {
             setAssignments(previousAssignments) // Rollback
@@ -202,11 +279,45 @@ export default function PICAssignmentMatrixPage() {
     }, [salesManagers, searchQuery])
 
     const limit = parseInt(itemsPerPage)
-    const totalPages = Math.max(1, Math.ceil(filteredManagers.length / limit))
-    const paginatedManagers = filteredManagers.slice((currentPage - 1) * limit, currentPage * limit)
-
     // Reset to page 1 on search
     React.useEffect(() => { setCurrentPage(1) }, [searchQuery, itemsPerPage])
+
+    React.useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            if (e.key === "/" && document.activeElement?.tagName !== "INPUT") {
+                e.preventDefault()
+                searchRef.current?.focus()
+            }
+            if (e.key === "Escape" && document.activeElement?.tagName === "INPUT") {
+                setSearchQuery("")
+                searchRef.current?.blur()
+            }
+        }
+        window.addEventListener("keydown", handler)
+        return () => window.removeEventListener("keydown", handler)
+    }, [])
+
+    const managersWithAssignments = React.useMemo(
+        () => salesManagers.filter((m) => (assignments[m._id] || []).length > 0).length,
+        [salesManagers, assignments]
+    )
+
+    const totalLinks = React.useMemo(
+        () => Object.values(assignments).reduce((acc, curr) => acc + curr.length, 0),
+        [assignments]
+    )
+
+    const filteredManagersByMode = React.useMemo(() => {
+        if (!showAssignedOnly) return filteredManagers
+        return filteredManagers.filter((m) => (assignments[m._id] || []).length > 0)
+    }, [filteredManagers, showAssignedOnly, assignments])
+
+    const totalPagesSafe = Math.max(1, Math.ceil(filteredManagersByMode.length / limit))
+    const paginatedManagersSafe = filteredManagersByMode.slice((currentPage - 1) * limit, currentPage * limit)
+
+    React.useEffect(() => {
+        if (currentPage > totalPagesSafe) setCurrentPage(totalPagesSafe)
+    }, [currentPage, totalPagesSafe])
 
     return (
         <ProtectedPageWrapper>
@@ -220,6 +331,19 @@ export default function PICAssignmentMatrixPage() {
                     />
 
                     <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full space-y-6">
+                        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3">
+                            <ShieldCheck className="size-4 text-blue-500 flex-shrink-0" />
+                            <p className="text-[11px] font-black text-blue-700">
+                                Matrix updates are synced in real-time for all admins.
+                            </p>
+                        </div>
+
+                        <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-none">
+                            <StatPill label="All Managers" count={String(salesManagers.length)} icon={LayoutGrid} variant="default" isActive={!showAssignedOnly} onClick={() => setShowAssignedOnly(false)} />
+                            <StatPill label="Engineers" count={String(engineers.length)} icon={Users} variant="slate" />
+                            <StatPill label="With PIC" count={String(managersWithAssignments)} icon={CheckCircle2} variant="emerald" isActive={showAssignedOnly} onClick={() => setShowAssignedOnly(true)} />
+                            <StatPill label="Assignments" count={String(totalLinks)} icon={ShieldCheck} variant="blue" />
+                        </div>
 
                         {/* INSTRUCTIONS */}
                         <div className="w-full">
@@ -262,15 +386,26 @@ export default function PICAssignmentMatrixPage() {
                             <div className="relative flex-1">
                                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
                                 <input
-                                    placeholder="Search by name or reference ID..."
+                                    ref={searchRef}
+                                    placeholder='Search by name or reference ID... ("/" focus)'
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                     className="w-full h-14 pl-12 pr-4 rounded-2xl border border-slate-200 bg-white text-[13px] focus:outline-none focus:ring-4 focus:ring-emerald-500/5 focus:border-emerald-500/30 transition-all shadow-sm"
                                 />
                             </div>
                             <Button
+                                variant={showAssignedOnly ? "default" : "outline"}
+                                onClick={() => setShowAssignedOnly((v) => !v)}
+                                className={cn(
+                                    "rounded-2xl h-14 px-5 uppercase font-bold text-[10px] tracking-widest transition-all",
+                                    showAssignedOnly ? "bg-slate-900 text-white hover:bg-black" : "border-slate-200 bg-white hover:bg-slate-50"
+                                )}
+                            >
+                                {showAssignedOnly ? "Assigned Only: On" : "Assigned Only: Off"}
+                            </Button>
+                            <Button
                                 variant="outline"
-                                onClick={() => { setSearchQuery(""); setCurrentPage(1) }}
+                                onClick={() => { setSearchQuery(""); setShowAssignedOnly(false); setCurrentPage(1) }}
                                 className="rounded-2xl border-slate-200 h-14 px-8 uppercase font-bold text-[10px] tracking-widest bg-white hover:bg-slate-50 active:scale-95 transition-all"
                             >
                                 <RotateCcw className="mr-2 size-4" /> Reset Filters
@@ -281,20 +416,14 @@ export default function PICAssignmentMatrixPage() {
                         <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden flex flex-col min-h-[400px]">
                             <div className="divide-y divide-slate-100">
                                 {isLoading ? (
-                                    <div className="flex flex-col items-center justify-center py-32 gap-4">
-                                        <div className="relative">
-                                            <RefreshCw className="size-10 animate-spin text-emerald-500" />
-                                            <div className="absolute inset-0 blur-xl bg-emerald-500/20 animate-pulse" />
-                                        </div>
-                                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Syncing with Cloud</p>
-                                    </div>
-                                ) : paginatedManagers.length === 0 ? (
+                                    Array.from({ length: 5 }).map((_, i) => <SkeletonManagerRow key={i} />)
+                                ) : paginatedManagersSafe.length === 0 ? (
                                     <div className="py-32 text-center">
                                         <Users className="size-16 text-slate-100 mx-auto mb-4" />
                                         <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">No matching managers found</p>
                                     </div>
                                 ) : (
-                                    paginatedManagers.map((manager) => {
+                                    paginatedManagersSafe.map((manager) => {
                                         const assignedCount = assignments[manager._id]?.length || 0
                                         const isOpen = openManager === manager._id
                                         
@@ -341,15 +470,62 @@ export default function PICAssignmentMatrixPage() {
                                                 </CollapsibleTrigger>
                                                 
                                                 <CollapsibleContent className="bg-white border-t border-slate-50 p-6 md:p-8 animate-in slide-in-from-top-1">
+                                                    <div className="mb-5 flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
+                                                        <div className="relative flex-1 max-w-md">
+                                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-slate-400" />
+                                                            <input
+                                                                value={engineerSearchByManager[manager._id] || ""}
+                                                                onChange={(e) => setEngineerSearchByManager((prev) => ({ ...prev, [manager._id]: e.target.value }))}
+                                                                placeholder="Search engineer in this manager..."
+                                                                className="w-full h-10 rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-[11px] font-bold outline-none focus:ring-2 focus:ring-slate-900/5 focus:border-slate-300"
+                                                            />
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            <Button
+                                                                variant="outline"
+                                                                className="h-10 rounded-xl text-[10px] font-black uppercase tracking-widest border-slate-200"
+                                                                onClick={() =>
+                                                                    setConfirmAction({
+                                                                        type: "bulk",
+                                                                        managerId: manager._id,
+                                                                        mode: "assign_all",
+                                                                        managerName: `${manager.Firstname} ${manager.Lastname}`,
+                                                                    })
+                                                                }
+                                                            >
+                                                                Assign All
+                                                            </Button>
+                                                            <Button
+                                                                variant="outline"
+                                                                className="h-10 rounded-xl text-[10px] font-black uppercase tracking-widest border-slate-200"
+                                                                onClick={() =>
+                                                                    setConfirmAction({
+                                                                        type: "bulk",
+                                                                        managerId: manager._id,
+                                                                        mode: "clear_all",
+                                                                        managerName: `${manager.Firstname} ${manager.Lastname}`,
+                                                                    })
+                                                                }
+                                                            >
+                                                                Clear All
+                                                            </Button>
+                                                        </div>
+                                                    </div>
                                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                                                        {engineers.map((eng) => {
+                                                        {engineers
+                                                            .filter((eng) => {
+                                                                const q = (engineerSearchByManager[manager._id] || "").toLowerCase().trim()
+                                                                if (!q) return true
+                                                                return `${eng.Firstname} ${eng.Lastname}`.toLowerCase().includes(q)
+                                                            })
+                                                            .map((eng) => {
                                                             const fullName = `${eng.Firstname} ${eng.Lastname}`
                                                             const isAssigned = (assignments[manager._id] || []).includes(fullName)
                                                             
                                                             return (
                                                                 <button
                                                                     key={eng._id}
-                                                                    onClick={() => setConfirmAction({ managerId: manager._id, engName: fullName })}
+                                                                    onClick={() => setConfirmAction({ type: "toggle", managerId: manager._id, engName: fullName })}
                                                                     className={cn(
                                                                         "group flex items-center justify-between p-3.5 rounded-xl border text-[10px] font-black uppercase transition-all duration-200 active:scale-95",
                                                                         isAssigned
@@ -387,7 +563,7 @@ export default function PICAssignmentMatrixPage() {
                                 <div className="flex items-center gap-6 w-full sm:w-auto">
                                     <div className="flex flex-col">
                                         <span className="text-[9px] font-bold uppercase text-slate-400 tracking-[0.1em]">Database</span>
-                                        <span className="text-xs font-black text-slate-900">{filteredManagers.length} Managers</span>
+                                        <span className="text-xs font-black text-slate-900">{filteredManagersByMode.length} Managers</span>
                                     </div>
                                     <div className="h-8 w-[1px] bg-slate-200 hidden sm:block" />
                                     <Select value={itemsPerPage} onValueChange={setItemsPerPage}>
@@ -402,7 +578,7 @@ export default function PICAssignmentMatrixPage() {
 
                                 <div className="flex items-center gap-6 w-full sm:w-auto justify-between sm:justify-end">
                                     <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">
-                                        Page <span className="text-slate-900">{currentPage}</span> of {totalPages}
+                                        Page <span className="text-slate-900">{currentPage}</span> of {totalPagesSafe}
                                     </span>
                                     <div className="flex gap-2">
                                         <Button 
@@ -417,8 +593,8 @@ export default function PICAssignmentMatrixPage() {
                                         <Button 
                                             variant="outline" 
                                             size="icon" 
-                                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
-                                            disabled={currentPage === totalPages} 
+                                            onClick={() => setCurrentPage(p => Math.min(totalPagesSafe, p + 1))} 
+                                            disabled={currentPage === totalPagesSafe} 
                                             className="size-10 rounded-xl bg-white shadow-sm hover:bg-slate-50 disabled:opacity-30"
                                         >
                                             <ChevronRight className="size-5" />
@@ -447,7 +623,17 @@ export default function PICAssignmentMatrixPage() {
                                     Sync Update?
                                 </AlertDialogTitle>
                                 <AlertDialogDescription className="text-[11px] font-bold leading-relaxed text-slate-400 uppercase tracking-tight px-4 mt-2">
-                                    Confirming this will update the PIC list for <span className="text-emerald-600 font-black">{confirmAction?.engName}</span> in the matrix.
+                                    {confirmAction?.type === "toggle" && (
+                                        <>
+                                            Confirming this will update the PIC list for <span className="text-emerald-600 font-black">{confirmAction.engName}</span> in the matrix.
+                                        </>
+                                    )}
+                                    {confirmAction?.type === "bulk" && (
+                                        <>
+                                            {confirmAction.mode === "assign_all" ? "Assign all engineers to " : "Clear all engineers from "}
+                                            <span className="text-emerald-600 font-black">{confirmAction.managerName}</span>.
+                                        </>
+                                    )}
                                 </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter className="flex flex-col sm:flex-row gap-3 mt-10 w-full">
@@ -459,7 +645,7 @@ export default function PICAssignmentMatrixPage() {
                                     disabled={isSaving}
                                     className="flex-1 rounded-2xl bg-slate-900 text-[10px] font-black uppercase text-white h-14 hover:bg-black shadow-lg hover:shadow-xl transition-all"
                                 >
-                                    {isSaving ? "Syncing..." : "Confirm"}
+                                    {isSaving ? <><Loader2 className="size-4 animate-spin mr-1.5" /> Syncing...</> : "Confirm"}
                                 </AlertDialogAction>
                             </AlertDialogFooter>
                         </AlertDialogContent>

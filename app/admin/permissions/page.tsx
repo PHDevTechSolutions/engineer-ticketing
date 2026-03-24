@@ -20,7 +20,7 @@ import {
     BarChart3, Settings2, BookOpen, CircleUser, Lock,
     Fingerprint, Smartphone, Eye, Pencil, LayoutDashboard,
     Save, RefreshCw, Shield, ChevronDown, ChevronUp,
-    Building2, Layers, Activity, Bell,
+    Building2, Layers, Activity, Bell, Search, X, Sparkles,
 } from "lucide-react"
 
 /* ─────────────────────────────────────────────────────────
@@ -218,16 +218,34 @@ function PermissionSection({
     perms,
     onChange,
     isSaving,
+    query,
+    collapseSignal,
+    collapsedByDefault,
 }: {
     section: typeof SECTIONS[0]
     perms: Record<string, boolean>
     onChange: (key: string, val: boolean) => void
     isSaving: boolean
+    query: string
+    collapseSignal: number
+    collapsedByDefault: boolean
 }) {
     const [collapsed, setCollapsed] = React.useState(false)
     const Icon = section.icon
     const allOn  = section.items.every(i => perms[i.key])
     const allOff = section.items.every(i => !perms[i.key])
+    const visibleItems = React.useMemo(() => {
+        const q = query.trim().toLowerCase()
+        if (!q) return section.items
+        return section.items.filter(item => item.label.toLowerCase().includes(q))
+    }, [query, section.items])
+    const enabledVisible = visibleItems.filter(i => perms[i.key]).length
+
+    React.useEffect(() => {
+        setCollapsed(collapsedByDefault)
+    }, [collapseSignal, collapsedByDefault])
+
+    if (query.trim() && visibleItems.length === 0) return null
 
     const toggleAll = () => {
         const next = !allOn
@@ -248,8 +266,10 @@ function PermissionSection({
                     <h3 className="font-black text-[12px] uppercase tracking-tight text-zinc-900">
                         {section.label}
                     </h3>
-                    <p className="text-[10px] text-zinc-400 font-medium mt-0.5 hidden md:block truncate">
-                        {section.description}
+                    <p className="text-[10px] text-zinc-400 font-medium mt-0.5 hidden md:block truncate flex items-center gap-2">
+                        <span>{section.description}</span>
+                        <span className="text-zinc-300">·</span>
+                        <span className="text-zinc-600 font-black">{enabledVisible}/{visibleItems.length} enabled</span>
                     </p>
                 </div>
                 <div className="ml-auto flex items-center gap-2 sm:gap-3 flex-shrink-0">
@@ -277,7 +297,7 @@ function PermissionSection({
             {/* Toggle items */}
             {!collapsed && (
                 <div className="border-t border-zinc-50 divide-y divide-zinc-50">
-                    {section.items.map(item => {
+                    {visibleItems.map(item => {
                         const ItemIcon = item.icon
                         return (
                             <div
@@ -314,6 +334,36 @@ function PermissionSection({
     )
 }
 
+function StatPill({
+    label,
+    value,
+    icon: Icon,
+    active,
+}: {
+    label: string
+    value: string
+    icon: any
+    active?: boolean
+}) {
+    return (
+        <div className={cn(
+            "flex items-center gap-2.5 px-4 py-3 rounded-2xl border bg-white shadow-sm transition-all flex-shrink-0",
+            active ? "border-zinc-900 ring-4 ring-zinc-900/5 shadow-md" : "border-zinc-200/60"
+        )}>
+            <div className={cn(
+                "p-1.5 rounded-xl",
+                active ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-500"
+            )}>
+                <Icon className="size-3.5" />
+            </div>
+            <div className="text-left min-w-[28px]">
+                <p className="text-[16px] font-black text-zinc-900 leading-none">{value}</p>
+                <p className="text-[8px] font-black uppercase text-zinc-400 tracking-widest mt-0.5 whitespace-nowrap">{label}</p>
+            </div>
+        </div>
+    )
+}
+
 /* ─────────────────────────────────────────────────────────
    MAIN PAGE
 ───────────────────────────────────────────────────────── */
@@ -326,12 +376,31 @@ export default function PermissionsPage() {
     const [isSaving, setIsSaving]         = React.useState(false)
     const [isDirty, setIsDirty]           = React.useState(false)
     const [savedSnapshot, setSavedSnapshot] = React.useState<string>("")
+    const [searchTerm, setSearchTerm] = React.useState("")
+    const searchInputRef = React.useRef<HTMLInputElement>(null)
+    const [collapseSignal, setCollapseSignal] = React.useState(0)
+    const [allCollapsed, setAllCollapsed] = React.useState(false)
 
     // Track all configured combos for the overview grid
     const [allConfigs, setAllConfigs] = React.useState<Record<string, PermissionDoc>>({})
 
     React.useEffect(() => {
         setUserId(localStorage.getItem("userId"))
+    }, [])
+
+    React.useEffect(() => {
+        const keyHandler = (e: KeyboardEvent) => {
+            if (e.key === "/" && document.activeElement?.tagName !== "INPUT") {
+                e.preventDefault()
+                searchInputRef.current?.focus()
+            }
+            if (e.key === "Escape" && document.activeElement?.tagName === "INPUT") {
+                setSearchTerm("")
+                searchInputRef.current?.blur()
+            }
+        }
+        window.addEventListener("keydown", keyHandler)
+        return () => window.removeEventListener("keydown", keyHandler)
     }, [])
 
     /* ── Subscribe to all role_permissions docs ── */
@@ -428,6 +497,21 @@ export default function PermissionsPage() {
 
     const docId        = makeDocId(selectedDept, selectedRole)
     const isConfigured = !!allConfigs[docId]
+    const totalConfigured = Object.keys(allConfigs).length
+    const totalCombos = DEPARTMENTS.length * ROLES.length
+    const enabledTotal = React.useMemo(() => {
+        return SECTIONS.reduce((sum, section) => sum + Object.values((perms as any)[section.key] || {}).filter(Boolean).length, 0)
+    }, [perms])
+    const totalPermissions = React.useMemo(() => {
+        return SECTIONS.reduce((sum, section) => sum + section.items.length, 0)
+    }, [])
+    const enabledServices = Object.values(perms.services || {}).filter(Boolean).length
+    const enabledSecurity = Object.values(perms.security || {}).filter(Boolean).length
+
+    const handleCollapseAll = (next: boolean) => {
+        setAllCollapsed(next)
+        setCollapseSignal(prev => prev + 1)
+    }
 
     return (
         <ProtectedPageWrapper>
@@ -471,6 +555,70 @@ export default function PermissionsPage() {
                     />
 
                     <main className="p-4 md:p-6 lg:p-8 max-w-5xl mx-auto w-full overflow-x-hidden space-y-6 pb-36 md:pb-24">
+                        <section className="flex gap-2.5 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-none">
+                            <StatPill
+                                label="Enabled"
+                                value={`${enabledTotal}/${totalPermissions}`}
+                                icon={Sparkles}
+                                active={enabledTotal > 0}
+                            />
+                            <StatPill
+                                label="Services"
+                                value={`${enabledServices}/${SECTIONS.find(s => s.key === "services")?.items.length || 0}`}
+                                icon={Layers}
+                                active={enabledServices > 0}
+                            />
+                            <StatPill
+                                label="Security"
+                                value={`${enabledSecurity}/${SECTIONS.find(s => s.key === "security")?.items.length || 0}`}
+                                icon={Shield}
+                                active={enabledSecurity > 0}
+                            />
+                            <StatPill
+                                label="Configured"
+                                value={`${totalConfigured}/${totalCombos}`}
+                                icon={Building2}
+                                active={totalConfigured > 0}
+                            />
+                        </section>
+
+                        <section className="bg-white rounded-[22px] border border-zinc-200/60 p-3 md:p-4 shadow-sm">
+                            <div className="flex flex-col md:flex-row gap-2">
+                                <div className="relative group flex-1">
+                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-zinc-300 group-focus-within:text-zinc-700 transition-colors" />
+                                    <input
+                                        ref={searchInputRef}
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        placeholder='Search permission label... (e.g. "analytics", "password") ("/" focus)'
+                                        className="w-full pl-11 pr-10 h-12 rounded-2xl bg-white shadow-sm ring-1 ring-zinc-200 outline-none focus:ring-2 focus:ring-zinc-900 text-sm font-bold"
+                                    />
+                                    {searchTerm && (
+                                        <button
+                                            onClick={() => setSearchTerm("")}
+                                            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-300 hover:text-zinc-600 transition-colors"
+                                            aria-label="Clear permission search"
+                                        >
+                                            <X className="size-4" />
+                                        </button>
+                                    )}
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => handleCollapseAll(true)}
+                                    className="h-12 rounded-2xl border-zinc-200 bg-white text-[10px] font-black uppercase tracking-widest"
+                                >
+                                    Collapse All
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => handleCollapseAll(false)}
+                                    className="h-12 rounded-2xl border-zinc-200 bg-white text-[10px] font-black uppercase tracking-widest"
+                                >
+                                    Expand All
+                                </Button>
+                            </div>
+                        </section>
 
                         {/* ══════════════════════════════
                             OVERVIEW GRID — all combos
@@ -673,6 +821,9 @@ export default function PermissionsPage() {
                                         perms={(perms as any)[section.key] || {}}
                                         onChange={(key, val) => handleToggle(section.key, key, val)}
                                         isSaving={isSaving}
+                                        query={searchTerm}
+                                        collapseSignal={collapseSignal}
+                                        collapsedByDefault={allCollapsed}
                                     />
                                 ))}
                             </div>

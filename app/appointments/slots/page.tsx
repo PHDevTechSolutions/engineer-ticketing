@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
     X, AlertTriangle, Activity,
-    CalendarDays, HelpCircle, Plus, ChevronRight, ChevronLeft, Clock, Info, Bell
+    CalendarDays, HelpCircle, Plus, ChevronRight, ChevronLeft, Clock, Info, Bell, Search, Sparkles, CalendarCheck2, Loader2
 } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -65,6 +65,11 @@ export default function AvailabilitySlotsPage() {
     const [timeScope, setTimeScope] = useState("FULL_DAY")
     const [startTime, setStartTime] = useState("09:00")
     const [endTime, setEndTime] = useState("17:00")
+    const [liveSearch, setLiveSearch] = useState("")
+    const [liveFilter, setLiveFilter] = useState<"ALL" | "All Day" | "Morning" | "Afternoon" | "Custom Range">("ALL")
+    const [isBootstrapping, setIsBootstrapping] = useState(true)
+    const [isSaving, setIsSaving] = useState(false)
+    const liveSearchRef = useRef<HTMLInputElement>(null)
 
     useEffect(() => {
         setUserId(typeof window !== 'undefined' ? localStorage.getItem("userId") : null)
@@ -72,8 +77,24 @@ export default function AvailabilitySlotsPage() {
         const unsub = onSnapshot(q, (snap) => {
             const dates = snap.docs.map(d => ({ id: d.id, ...d.data() } as BlockedSlot))
             setBlockedDates(dates)
+            setIsBootstrapping(false)
         })
         return () => unsub()
+    }, [])
+
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            if (e.key === "/" && document.activeElement?.tagName !== "INPUT") {
+                e.preventDefault()
+                liveSearchRef.current?.focus()
+            }
+            if (e.key === "Escape" && document.activeElement?.tagName === "INPUT") {
+                setLiveSearch("")
+                liveSearchRef.current?.blur()
+            }
+        }
+        window.addEventListener("keydown", handler)
+        return () => window.removeEventListener("keydown", handler)
     }, [])
 
     const blockedDateStrings = useMemo(() => {
@@ -100,6 +121,36 @@ export default function AvailabilitySlotsPage() {
         return blockedDates.filter(d => d.dateString === selectedDate?.toDateString());
     }, [blockedDates, selectedDate]);
 
+    const displayedSlots = useMemo(() => {
+        return filteredSlots.filter((slot) => {
+            const matchesFilter = liveFilter === "ALL" ? true : slot.shiftScope === liveFilter
+            const q = liveSearch.trim().toLowerCase()
+            const matchesSearch = q.length === 0
+                ? true
+                : `${slot.justification} ${slot.startTime} ${slot.endTime} ${slot.shiftScope}`.toLowerCase().includes(q)
+            return matchesFilter && matchesSearch
+        })
+    }, [filteredSlots, liveSearch, liveFilter])
+
+    const upcomingBlocks = useMemo(() => {
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        return blockedDates.filter((slot) => {
+            const d = new Date(slot.dateString)
+            d.setHours(0, 0, 0, 0)
+            return d >= today
+        }).length
+    }, [blockedDates])
+
+    const selectedDateSummary = useMemo(() => {
+        if (!selectedDate) return "No date selected"
+        return selectedDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })
+    }, [selectedDate])
+
+    const hasInvalidTimeRange = useMemo(() => {
+        return Boolean(startTime && endTime && startTime >= endTime)
+    }, [startTime, endTime])
+
     const applyShiftPreset = (type: "FULL_DAY" | "AM" | "PM" | "CUSTOM") => {
         if (isPastDate) return;
         setTimeScope(type)
@@ -120,7 +171,24 @@ export default function AvailabilitySlotsPage() {
 
     const executeRegistryUpdate = async () => {
         if (!selectedDate || isPastDate) return
+        if (hasInvalidTimeRange) {
+            toast.error("End time must be later than start time")
+            setIsPendingCommit(false)
+            return
+        }
+        const duplicate = blockedDates.some((slot) =>
+            slot.dateString === selectedDate.toDateString() &&
+            slot.startTime === startTime &&
+            slot.endTime === endTime &&
+            slot.shiftScope === typeOfShiftLabel()
+        )
+        if (duplicate) {
+            toast.error("This slot already exists for the selected date")
+            setIsPendingCommit(false)
+            return
+        }
         try {
+            setIsSaving(true)
             await addDoc(collection(db, "blocked_slots"), {
                 dateString: selectedDate.toDateString(),
                 timestamp: selectedDate,
@@ -136,6 +204,7 @@ export default function AvailabilitySlotsPage() {
         } catch (error) {
             toast.error("Could not save changes")
         } finally {
+            setIsSaving(false)
             setIsPendingCommit(false)
         }
     }
@@ -186,7 +255,45 @@ export default function AvailabilitySlotsPage() {
                         }
                     />
 
-                    <main className="p-4 md:p-8 max-w-[1600px] mx-auto w-full space-y-6 flex-1">
+                    <main className="p-4 md:p-8 pb-24 md:pb-8 max-w-[1600px] mx-auto w-full space-y-6 flex-1">
+                        <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                            <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
+                                <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">Selected date</p>
+                                <p className="text-sm font-black text-gray-900 mt-1">{selectedDateSummary}</p>
+                            </div>
+                            <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
+                                <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">Today blocks</p>
+                                <p className="text-xl font-black text-gray-900 mt-1">
+                                    {blockedDates.filter((d) => d.dateString === new Date().toDateString()).length}
+                                </p>
+                            </div>
+                            <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
+                                <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">Upcoming blocks</p>
+                                <p className="text-xl font-black text-gray-900 mt-1">{upcomingBlocks}</p>
+                            </div>
+                            <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
+                                <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">Quick date</p>
+                                <div className="flex gap-2 mt-2">
+                                    <button
+                                        onClick={() => setSelectedDate(new Date())}
+                                        className="h-8 px-3 rounded-lg text-[10px] font-bold uppercase border border-gray-200 hover:bg-gray-50"
+                                    >
+                                        Today
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            const t = new Date()
+                                            t.setDate(t.getDate() + 1)
+                                            setSelectedDate(t)
+                                        }}
+                                        className="h-8 px-3 rounded-lg text-[10px] font-bold uppercase border border-gray-200 hover:bg-gray-50"
+                                    >
+                                        Tomorrow
+                                    </button>
+                                </div>
+                            </div>
+                        </section>
+
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
                             {/* STEP 1: CALENDAR */}
@@ -263,6 +370,12 @@ export default function AvailabilitySlotsPage() {
                                     </div>
 
                                     <div className={cn("space-y-8", isPastDate && "opacity-40 grayscale pointer-events-none")}>
+                                        <div className="bg-gray-50 border border-gray-100 rounded-xl p-3 flex items-center gap-2">
+                                            <Sparkles size={14} className="text-gray-400" />
+                                            <p className="text-[10px] font-bold text-gray-500">
+                                                Tip: Use presets for faster updates, then fine-tune hours if needed.
+                                            </p>
+                                        </div>
                                         <div className="space-y-3">
                                             <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Shift Type</label>
                                             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -282,6 +395,9 @@ export default function AvailabilitySlotsPage() {
                                                     <span className="text-gray-300 font-bold text-[10px] uppercase">to</span>
                                                     <input type="time" value={endTime} onChange={(e) => { setEndTime(e.target.value); setTimeScope("CUSTOM") }} className="bg-transparent text-sm font-black text-gray-900 outline-none w-full" />
                                                 </div>
+                                                {hasInvalidTimeRange && (
+                                                    <p className="text-[10px] font-bold text-[#E33636]">End time must be later than start time.</p>
+                                                )}
                                             </div>
                                             <div className="space-y-3">
                                                 <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Public Note</label>
@@ -292,7 +408,7 @@ export default function AvailabilitySlotsPage() {
                                             </div>
                                         </div>
 
-                                        <Button disabled={!selectedDate || isPastDate} onClick={() => setIsPendingCommit(true)} className="w-full h-14 rounded-xl bg-[#0F172A] hover:bg-gray-800 text-white font-black text-[11px] uppercase tracking-[0.2em] transition-all shadow-lg shadow-gray-900/10">
+                                        <Button disabled={!selectedDate || isPastDate || hasInvalidTimeRange} onClick={() => setIsPendingCommit(true)} className="w-full h-14 rounded-xl bg-[#0F172A] hover:bg-gray-800 text-white font-black text-[11px] uppercase tracking-[0.2em] transition-all shadow-lg shadow-gray-900/10">
                                             <Plus size={18} className="mr-2" /> Sync to engiconnect
                                         </Button>
                                     </div>
@@ -310,13 +426,67 @@ export default function AvailabilitySlotsPage() {
                                         <div className="size-10 bg-white/10 rounded-xl flex items-center justify-center border border-white/10"><Activity size={18} className="text-red-500 animate-pulse" /></div>
                                     </div>
 
+                                    <div className="space-y-3 mb-4">
+                                        <div className="relative">
+                                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                            <input
+                                                ref={liveSearchRef}
+                                                value={liveSearch}
+                                                onChange={(e) => setLiveSearch(e.target.value)}
+                                                placeholder='Search note or time... ("/" focus)'
+                                                className="w-full h-10 bg-white/5 border border-white/10 rounded-xl pl-9 pr-3 text-xs text-white placeholder:text-gray-500 outline-none focus:border-white/30"
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-2 overflow-x-auto">
+                                            {(["ALL", "All Day", "Morning", "Afternoon", "Custom Range"] as const).map((scope) => (
+                                                <button
+                                                    key={scope}
+                                                    onClick={() => setLiveFilter(scope)}
+                                                    className={cn(
+                                                        "px-3 h-8 rounded-lg text-[9px] uppercase font-black tracking-widest border whitespace-nowrap transition-all",
+                                                        liveFilter === scope
+                                                            ? "bg-white text-[#0F172A] border-white"
+                                                            : "bg-white/5 text-gray-300 border-white/10 hover:bg-white/10"
+                                                    )}
+                                                >
+                                                    {scope}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                            <p className="text-[9px] font-black uppercase tracking-widest text-gray-500">
+                                                Showing {displayedSlots.length} of {filteredSlots.length}
+                                            </p>
+                                            {(liveSearch || liveFilter !== "ALL") && (
+                                                <button
+                                                    onClick={() => {
+                                                        setLiveSearch("")
+                                                        setLiveFilter("ALL")
+                                                    }}
+                                                    className="text-[9px] uppercase tracking-widest font-black text-gray-300 hover:text-white transition-colors"
+                                                >
+                                                    Clear filters
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+
                                     <div className="space-y-4 flex-1 overflow-y-auto max-h-[400px] pr-1 custom-scrollbar">
-                                        {filteredSlots.length === 0 ? (
+                                        {isBootstrapping ? (
+                                            Array.from({ length: 3 }).map((_, idx) => (
+                                                <div key={idx} className="bg-white/5 border border-white/10 rounded-xl p-5 animate-pulse">
+                                                    <div className="h-3 w-20 bg-white/10 rounded mb-3" />
+                                                    <div className="h-4 w-36 bg-white/10 rounded mb-4" />
+                                                    <div className="h-10 w-full bg-white/10 rounded" />
+                                                </div>
+                                            ))
+                                        ) : displayedSlots.length === 0 ? (
                                             <div className="flex flex-col items-center justify-center h-40 border border-white/10 border-dashed rounded-2xl">
-                                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">No active blocks</p>
+                                                <CalendarCheck2 size={18} className="text-gray-500 mb-2" />
+                                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">No matching blocks</p>
                                             </div>
                                         ) : (
-                                            filteredSlots.map((d) => (
+                                            displayedSlots.map((d) => (
                                                 <div key={d.id} className="bg-white/5 border border-white/10 rounded-xl p-5 hover:bg-white/[0.08] transition-all group">
                                                     <div className="flex justify-between items-start mb-3">
                                                         <div className="space-y-1">
@@ -386,11 +556,30 @@ export default function AvailabilitySlotsPage() {
                                 </AlertDialogDescription>
                             </AlertDialogHeader>
                             <div className="flex flex-col gap-3 mt-10">
-                                <AlertDialogAction onClick={executeRegistryUpdate} className="bg-[#0F172A] hover:bg-gray-800 h-14 rounded-xl text-[11px] font-black uppercase tracking-[0.2em]">Update Schedule</AlertDialogAction>
-                                <AlertDialogCancel className="h-14 rounded-xl text-[11px] font-black uppercase tracking-[0.2em] border-gray-100 text-gray-400">Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={executeRegistryUpdate} className="bg-[#0F172A] hover:bg-gray-800 h-14 rounded-xl text-[11px] font-black uppercase tracking-[0.2em]" disabled={isSaving}>
+                                    {isSaving ? <Loader2 className="size-4 animate-spin" /> : "Update Schedule"}
+                                </AlertDialogAction>
+                                <AlertDialogCancel className="h-14 rounded-xl text-[11px] font-black uppercase tracking-[0.2em] border-gray-100 text-gray-400" disabled={isSaving}>Cancel</AlertDialogCancel>
                             </div>
                         </AlertDialogContent>
                     </AlertDialog>
+
+                    <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200/80 bg-white/95 backdrop-blur px-4 py-3">
+                        <div className="flex items-center justify-between mb-2">
+                            <p className="text-[9px] uppercase tracking-widest font-black text-gray-400">{selectedDateSummary}</p>
+                            <Badge className={cn("rounded-lg px-2.5 py-1 text-[9px] font-bold uppercase shadow-none border-none", isPastDate ? "bg-gray-100 text-gray-400" : "bg-green-50 text-green-600")}>
+                                {isPastDate ? "Past" : "Ready"}
+                            </Badge>
+                        </div>
+                        <Button
+                            disabled={!selectedDate || isPastDate || hasInvalidTimeRange}
+                            onClick={() => setIsPendingCommit(true)}
+                            className="w-full h-12 rounded-xl bg-[#0F172A] hover:bg-gray-800 text-white font-black text-[10px] uppercase tracking-[0.2em]"
+                        >
+                            <Plus size={16} className="mr-2" />
+                            Sync to engiconnect
+                        </Button>
+                    </div>
 
                 </SidebarInset>
             </SidebarProvider>
