@@ -8,7 +8,7 @@ import {
   CreditCard, Phone, User, Layers, Box, BadgeDollarSign,
   Receipt, Truck, Factory, Anchor, Save, FileDown,
   FileText, ChevronDown, ChevronUp, Users, ClipboardList,
-  AlertTriangle, TrendingUp, Lock,
+  AlertTriangle, TrendingUp, Lock, Calculator,
 } from "lucide-react";
 
 import { supabase } from "@/utils/supabase";
@@ -45,6 +45,11 @@ interface ProductCell {
   leadTime: string;
   rowIndex: number;
   productIndex: number;
+  // DB Pre-population fields added here
+  l_db: string;
+  w_db: string;
+  h_db: string;
+  pcs_carton_db: string;
 }
 
 /* ─────────────────────────────────────────────
@@ -122,9 +127,27 @@ const formatPHP = (val: any) => {
   return new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(num);
 };
 
+
+function extractDimensions(packaging: string) {
+  if (!packaging) return { l: "", w: "", h: "" };
+
+  // Match formats like: "34 cm x 56 cm x 78 cm"
+  const match = packaging.match(/(\d+)\s*cm\s*x\s*(\d+)\s*cm\s*x\s*(\d+)\s*cm/i);
+
+  if (!match) return { l: "", w: "", h: "" };
+
+  return {
+    l: match[1],
+    w: match[2],
+    h: match[3],
+  };
+}
+
 function parseAllProducts(offers: any): ProductCell[][] {
   if (!offers?.product_offer_image) return [];
+
   const split = (s: string | null | undefined) => (s ?? "").split("|ROW|");
+
   const rowImages       = split(offers.product_offer_image);
   const rowQtys         = split(offers.product_offer_qty);
   const rowSpecs        = split(offers.product_offer_technical_specification);
@@ -140,25 +163,42 @@ function parseAllProducts(offers: any): ProductCell[][] {
   const rowSelling      = split(offers.final_selling_cost);
   const rowLeadTimes    = split(offers.proj_lead_time);
 
+  // ✅ CORRECT FIELD FROM YOUR DB
+  const rowPcsCartons = split(offers.product_offer_pcs_per_carton ?? "");
+
   return rowImages.map((rowStr, rIdx) =>
-    rowStr.split(",").map((img, pIdx) => ({
-      image:         img.trim(),
-      qty:           rowQtys[rIdx]?.split(",")[pIdx]?.trim()        ?? "0",
-      specs:         parseSpecs(rowSpecs[rIdx]?.split(" || ")[pIdx] ?? ""),
-      unitCost:      rowUnitCosts[rIdx]?.split(",")[pIdx]?.trim()   ?? "0",
-      packaging:     rowPackaging[rIdx]?.split(",")[pIdx]?.trim()   ?? "-",
-      factory:       rowFactories[rIdx]?.split(",")[pIdx]?.trim()   ?? "-",
-      port:          rowPorts[rIdx]?.split(",")[pIdx]?.trim()       ?? "-",
-      subtotal:      rowSubtotals[rIdx]?.split(",")[pIdx]?.trim()   ?? "0",
-      supplierBrand: rowBrands[rIdx]?.split(",")[pIdx]?.trim()      ?? "-",
-      companyName:   rowCompanies[rIdx]?.split(",")[pIdx]?.trim()   ?? "-",
-      contactName:   rowContactNames[rIdx]?.split(",")[pIdx]?.trim()?? "-",
-      contactNumber: rowContactNums[rIdx]?.split(",")[pIdx]?.trim() ?? "-",
-      sellingCost:   rowSelling[rIdx]?.split(",")[pIdx]?.trim()     ?? "-",
-      leadTime:      rowLeadTimes[rIdx]?.split(",")[pIdx]?.trim()   ?? "-",
-      rowIndex: rIdx,
-      productIndex: pIdx,
-    }))
+    rowStr.split(",").map((img, pIdx) => {
+      const packagingStr = rowPackaging[rIdx]?.split(",")[pIdx]?.trim() ?? "";
+      const dims = extractDimensions(packagingStr);
+
+      return {
+        image:         img.trim(),
+        qty:           rowQtys[rIdx]?.split(",")[pIdx]?.trim()        ?? "0",
+        specs:         parseSpecs(rowSpecs[rIdx]?.split(" || ")[pIdx] ?? ""),
+        unitCost:      rowUnitCosts[rIdx]?.split(",")[pIdx]?.trim()   ?? "0",
+        packaging:     packagingStr,
+        factory:       rowFactories[rIdx]?.split(",")[pIdx]?.trim()   ?? "-",
+        port:          rowPorts[rIdx]?.split(",")[pIdx]?.trim()       ?? "-",
+        subtotal:      rowSubtotals[rIdx]?.split(",")[pIdx]?.trim()   ?? "0",
+        supplierBrand: rowBrands[rIdx]?.split(",")[pIdx]?.trim()      ?? "-",
+        companyName:   rowCompanies[rIdx]?.split(",")[pIdx]?.trim()   ?? "-",
+        contactName:   rowContactNames[rIdx]?.split(",")[pIdx]?.trim()?? "-",
+        contactNumber: rowContactNums[rIdx]?.split(",")[pIdx]?.trim() ?? "-",
+        sellingCost:   rowSelling[rIdx]?.split(",")[pIdx]?.trim()     ?? "-",
+        leadTime:      rowLeadTimes[rIdx]?.split(",")[pIdx]?.trim()   ?? "-",
+
+        // ✅ AUTO POPULATED FROM PACKAGING STRING
+        l_db: dims.l,
+        w_db: dims.w,
+        h_db: dims.h,
+
+        // ✅ CORRECT SOURCE
+        pcs_carton_db: rowPcsCartons[rIdx]?.split(",")[pIdx]?.trim() ?? "",
+
+        rowIndex: rIdx,
+        productIndex: pIdx,
+      };
+    })
   );
 }
 
@@ -179,24 +219,96 @@ export default function ProcurementDetailPage() {
   const [showConfirm, setShowConfirm]   = useState(false);
   const [rows, setRows]                 = useState<ProductCell[][]>([]);
   const [expandedRows, setExpandedRows] = useState<Record<number, boolean>>({});
+  const [liveExchangeRate, setLiveExchangeRate] = useState("60");
+
+  // Calculator States
+  const [showCalc, setShowCalc]         = useState<Record<string, boolean>>({});
+  const [calcStates, setCalcStates]     = useState<Record<string, any>>({});
 
   /* ── FETCH ── */
   useEffect(() => {
     async function load() {
       try {
         setLoading(true);
+  
+        // ✅ Fetch Live Exchange Rate (WITH FALLBACK)
+        let currentRate = "60";
+  
+        try {
+          const rateRes = await fetch("https://open.er-api.com/v6/latest/USD");
+          const rateData = await rateRes.json();
+  
+          if (rateData?.rates?.PHP) {
+            currentRate = rateData.rates.PHP.toFixed(4);
+          }
+        } catch (e) {
+          console.error("Primary exchange rate failed", e);
+        }
+  
+        // ✅ FALLBACK API
+        if (!currentRate || currentRate === "60") {
+          try {
+            const res = await fetch("https://api.exchangerate.host/latest?base=USD&symbols=PHP");
+            const data = await res.json();
+  
+            if (data?.rates?.PHP) {
+              currentRate = data.rates.PHP.toFixed(4);
+            }
+          } catch (e) {
+            console.error("Fallback exchange rate failed", e);
+          }
+        }
+  
+        // ✅ APPLY RATE
+        setLiveExchangeRate(currentRate);
+  
+        // 🔽 YOUR ORIGINAL LOGIC (UNCHANGED)
         const { data: offer, error } = await supabase
-          .from("spf_creation").select("*").eq("id", params.id).single();
+          .from("spf_creation")
+          .select("*")
+          .eq("id", params.id)
+          .single();
+  
         if (error) throw error;
+  
         setSpfData(offer);
+  
         const parsed = parseAllProducts(offer);
         setRows(parsed);
+  
+        // Initialize Calculator state directly with DB pre-pop values and Live Rate
+        const initCalcs: Record<string, any> = {};
+        parsed.forEach((r, ri) =>
+          r.forEach((p, pi) => {
+            initCalcs[`${ri}-${pi}`] = {
+              l: p.l_db || "",
+              w: p.w_db || "",
+              h: p.h_db || "",
+              qtyPerBox: p.pcs_carton_db || "",
+              shipmentCost: "520000",
+              cbmContainer: "65",
+              invoicePct: "1.01",
+              exchangeRate: currentRate,
+              gp: "0.75",
+            };
+          })
+        );
+  
+        setCalcStates(initCalcs);
+  
         const exp: Record<number, boolean> = {};
-        parsed.forEach((_, i) => { exp[i] = true; });
+        parsed.forEach((_, i) => {
+          exp[i] = true;
+        });
         setExpandedRows(exp);
+  
         if (offer?.spf_number) {
           const { data: req } = await supabase
-            .from("spf_request").select("*").eq("spf_number", offer.spf_number).single();
+            .from("spf_request")
+            .select("*")
+            .eq("spf_number", offer.spf_number)
+            .single();
+  
           setRequestData(req ?? null);
         }
       } catch {
@@ -205,8 +317,26 @@ export default function ProcurementDetailPage() {
         setLoading(false);
       }
     }
+  
     if (params.id) load();
   }, [params.id]);
+
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch("https://open.er-api.com/v6/latest/USD");
+        const data = await res.json();
+  
+        if (data?.rates?.PHP) {
+          setLiveExchangeRate(data.rates.PHP.toFixed(4));
+        }
+      } catch (e) {
+        console.error("Auto refresh exchange rate failed", e);
+      }
+    }, 1000 * 60 * 0.1); // every 1 min
+  
+    return () => clearInterval(interval);
+  }, []);
 
   /* ── DERIVED STATE ── */
   const allCells   = useMemo(() => rows.flat(), [rows]);
@@ -238,6 +368,50 @@ export default function ProcurementDetailPage() {
       next[rIdx][pIdx][field] = value;
       return next;
     });
+  };
+
+  /* ── CALCULATOR LOGIC ── */
+  const toggleCalc = (key: string) => setShowCalc(prev => ({ ...prev, [key]: !prev[key] }));
+
+  const updateCalc = (key: string, field: string, val: string) => {
+    setCalcStates(prev => ({
+      ...prev,
+      [key]: {
+        ...(prev[key] || {
+          l: "", w: "", h: "", qtyPerBox: "",
+          shipmentCost: "520000", cbmContainer: "65",
+          invoicePct: "1.01", exchangeRate: liveExchangeRate, gp: "0.75"
+        }),
+        [field]: val
+      }
+    }));
+  };
+
+  const calculateSRP = (unitCost: string, calc: any) => {
+    if (!calc) return { landed: 0, srp: 0 };
+    const l = parseFloat(calc.l) || 0;
+    const w = parseFloat(calc.w) || 0;
+    const h = parseFloat(calc.h) || 0;
+    const qtyPerBox = parseFloat(calc.qtyPerBox) || 0;
+    const shipmentCost = parseFloat(calc.shipmentCost) || 0;
+    const cbmContainer = parseFloat(calc.cbmContainer) || 0;
+    const invoicePct = parseFloat(calc.invoicePct) || 0;
+    const exchangeRate = parseFloat(calc.exchangeRate) || 0;
+    const gp = parseFloat(calc.gp) || 0;
+    const unitPrice = parseFloat(unitCost) || 0;
+
+    if (!l || !w || !h || !qtyPerBox || !cbmContainer || gp >= 1) return { landed: 0, srp: 0 };
+
+    const cbmPerBox = (l * w * h) / 1000000;
+    const boxesPerContainer = cbmContainer / cbmPerBox;
+    const totalItems = boxesPerContainer * qtyPerBox;
+    const shippingPerItem = shipmentCost / totalItems;
+
+    const baseCost = unitPrice * exchangeRate;
+    const landedCost = (baseCost + shippingPerItem) * invoicePct;
+    const srp = landedCost / (1 - gp);
+
+    return { landed: landedCost, srp };
   };
 
   /* ── SAVE ── */
@@ -586,6 +760,16 @@ export default function ProcurementDetailPage() {
                               {/* Product options */}
                               {products.map((p, pIdx) => {
                                 const optionFilled = p.sellingCost !== "-" && p.sellingCost !== "" && p.leadTime !== "-" && p.leadTime !== "";
+                                
+                                // Setup keys & values for calculator instance with DB fallbacks
+                                const calcKey = `${rIdx}-${pIdx}`;
+                                const currentCalc = calcStates[calcKey] || {
+                                  l: p.l_db || "", w: p.w_db || "", h: p.h_db || "", qtyPerBox: p.pcs_carton_db || "",
+                                  shipmentCost: "520000", cbmContainer: "65",
+                                  invoicePct: "1.01", exchangeRate: liveExchangeRate, gp: "0.75"
+                                };
+                                const calcResult = calculateSRP(p.unitCost, currentCalc);
+
                                 return (
                                   <div key={pIdx} className={cn(
                                     "transition-all",
@@ -652,7 +836,7 @@ export default function ProcurementDetailPage() {
                                     {/* Commercials */}
                                     <div className="p-4 space-y-3">
                                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                                        <CommItem icon={Receipt}         label="Unit Cost (PD)" value={formatPHP(p.unitCost)} hi />
+                                        <CommItem icon={Receipt}         label="Unit Cost (PD/USD)" value={`$${parseFloat(p.unitCost || "0").toFixed(2)}`} hi />
                                         <CommItem icon={Box}             label="Qty"             value={`${p.qty} units`} />
                                         <CommItem icon={Truck}           label="Packaging"        value={p.packaging} />
                                         <CommItem icon={BadgeDollarSign} label="PD Subtotal"     value={formatPHP(p.subtotal)} hi />
@@ -667,46 +851,60 @@ export default function ProcurementDetailPage() {
                                         "grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-zinc-100",
                                       )}>
                                         {/* Selling Cost */}
-                                        <div className="space-y-1.5">
-                                          <label className={cn(
-                                            "flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest",
-                                            isLocked ? "text-zinc-400" : "text-blue-600"
-                                          )}>
-                                            <BadgeDollarSign size={9} />
-                                            Selling Cost (PHP)
-                                            {optionFilled && <CheckCircle2 size={9} className="text-emerald-500" />}
-                                            {isLocked && <Lock size={8} className="text-zinc-300" />}
-                                          </label>
+                                        <div className="space-y-1.5 flex flex-col justify-end">
+                                          <div className="flex items-center justify-between h-[18px]">
+                                            <label className={cn(
+                                              "flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest",
+                                              isLocked ? "text-zinc-400" : "text-blue-600"
+                                            )}>
+                                              <BadgeDollarSign size={9} />
+                                              Selling Cost (PHP)
+                                              {optionFilled && <CheckCircle2 size={9} className="text-emerald-500" />}
+                                              {isLocked && <Lock size={8} className="text-zinc-300" />}
+                                            </label>
+                                            {!isLocked && (
+                                              <button
+                                                type="button"
+                                                onClick={() => toggleCalc(calcKey)}
+                                                className="text-[8px] font-black uppercase tracking-widest text-blue-600 hover:text-blue-700 flex items-center gap-1 bg-blue-100/50 hover:bg-blue-100 transition-colors px-2 py-0.5 rounded-md"
+                                              >
+                                                <Calculator size={9} />
+                                                {showCalc[calcKey] ? "Hide Formula" : "Formula"}
+                                              </button>
+                                            )}
+                                          </div>
                                           {isLocked ? (
-                                            <div className="h-12 rounded-2xl border border-zinc-100 bg-zinc-50 px-4 flex items-center">
+                                            <div className="h-12 rounded-2xl border border-zinc-100 bg-zinc-50 px-4 flex items-center mt-1.5">
                                               <p className="text-sm font-black text-zinc-700">
                                                 {p.sellingCost !== "-" ? formatPHP(p.sellingCost) : "—"}
                                               </p>
                                             </div>
                                           ) : (
                                             <Input
-                                              type="number" min={0}
+                                              type="number" min={0} step="any"
                                               placeholder="e.g. 12500"
                                               value={p.sellingCost === "-" ? "" : p.sellingCost}
                                               onChange={e => updateCell(rIdx, pIdx, "sellingCost", e.target.value || "-")}
-                                              className="h-12 rounded-2xl border-zinc-200 bg-blue-50/40 focus-visible:ring-blue-500 font-bold text-sm"
+                                              className="h-12 rounded-2xl border-zinc-200 bg-blue-50/40 focus-visible:ring-blue-500 font-bold text-sm mt-1.5"
                                             />
                                           )}
                                         </div>
 
                                         {/* Lead Time */}
-                                        <div className="space-y-1.5">
-                                          <label className={cn(
-                                            "flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest",
-                                            isLocked ? "text-zinc-400" : "text-violet-600"
-                                          )}>
-                                            <Clock size={9} />
-                                            Lead Time
-                                            {optionFilled && <CheckCircle2 size={9} className="text-emerald-500" />}
-                                            {isLocked && <Lock size={8} className="text-zinc-300" />}
-                                          </label>
+                                        <div className="space-y-1.5 flex flex-col justify-end">
+                                          <div className="flex items-center h-[18px]">
+                                            <label className={cn(
+                                              "flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest",
+                                              isLocked ? "text-zinc-400" : "text-violet-600"
+                                            )}>
+                                              <Clock size={9} />
+                                              Lead Time
+                                              {optionFilled && <CheckCircle2 size={9} className="text-emerald-500" />}
+                                              {isLocked && <Lock size={8} className="text-zinc-300" />}
+                                            </label>
+                                          </div>
                                           {isLocked ? (
-                                            <div className="h-12 rounded-2xl border border-zinc-100 bg-zinc-50 px-4 flex items-center">
+                                            <div className="h-12 rounded-2xl border border-zinc-100 bg-zinc-50 px-4 flex items-center mt-1.5">
                                               <p className="text-sm font-black text-zinc-700">
                                                 {p.leadTime !== "-" ? p.leadTime : "—"}
                                               </p>
@@ -717,11 +915,71 @@ export default function ProcurementDetailPage() {
                                               placeholder="e.g. 30 days"
                                               value={p.leadTime === "-" ? "" : p.leadTime}
                                               onChange={e => updateCell(rIdx, pIdx, "leadTime", e.target.value || "-")}
-                                              className="h-12 rounded-2xl border-zinc-200 bg-violet-50/40 focus-visible:ring-violet-500 font-bold text-sm"
+                                              className="h-12 rounded-2xl border-zinc-200 bg-violet-50/40 focus-visible:ring-violet-500 font-bold text-sm mt-1.5"
                                             />
                                           )}
                                         </div>
                                       </div>
+
+                                      {/* ── CALCULATOR PANEL ── */}
+                                      {!isLocked && showCalc[calcKey] && (
+                                        <div className="mt-4 p-5 rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50/50 to-white shadow-inner animate-in fade-in slide-in-from-top-2 duration-300">
+                                          <div className="flex items-center gap-2 mb-4">
+                                            <div className="p-1.5 bg-blue-100 rounded-lg text-blue-600">
+                                                <Calculator size={12} />
+                                            </div>
+                                            <p className="text-[10px] font-black uppercase tracking-widest text-blue-800">Landed Cost & SRP Calculator</p>
+                                          </div>
+
+                                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                                            <div className="col-span-2 sm:col-span-4 bg-white p-3 rounded-xl border border-zinc-100 grid grid-cols-4 gap-3">
+                                              <p className="col-span-4 text-[8px] font-black text-zinc-400 uppercase tracking-widest mb-1">Packaging (From PD)</p>
+                                              <CalcInput label="L (cm)" value={currentCalc.l} onChange={(e) => updateCalc(calcKey, 'l', e.target.value)} />
+                                              <CalcInput label="W (cm)" value={currentCalc.w} onChange={(e) => updateCalc(calcKey, 'w', e.target.value)} />
+                                              <CalcInput label="H (cm)" value={currentCalc.h} onChange={(e) => updateCalc(calcKey, 'h', e.target.value)} />
+                                              <CalcInput label="Qty/Box" value={currentCalc.qtyPerBox} onChange={(e) => updateCalc(calcKey, 'qtyPerBox', e.target.value)} />
+                                            </div>
+
+                                            <div className="col-span-2 sm:col-span-4 bg-white p-3 rounded-xl border border-zinc-100 grid grid-cols-2 sm:grid-cols-5 gap-3">
+                                              <p className="col-span-2 sm:col-span-5 text-[8px] font-black text-zinc-400 uppercase tracking-widest mb-1">Logistics & Rates</p>
+                                              <CalcInput label="Shipment Cost" value={currentCalc.shipmentCost} onChange={(e) => updateCalc(calcKey, 'shipmentCost', e.target.value)} />
+                                              <CalcInput label="CBM/Cont." value={currentCalc.cbmContainer} onChange={(e) => updateCalc(calcKey, 'cbmContainer', e.target.value)} />
+                                              <CalcInput label="Invoice %" value={currentCalc.invoicePct} onChange={(e) => updateCalc(calcKey, 'invoicePct', e.target.value)} />
+                                              <CalcInput label="Exch. Rate" value={currentCalc.exchangeRate} onChange={(e) => updateCalc(calcKey, 'exchangeRate', e.target.value)} />
+                                              <CalcInput label="Target GP" value={currentCalc.gp} onChange={(e) => updateCalc(calcKey, 'gp', e.target.value)} />
+                                            </div>
+                                          </div>
+
+                                          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-white rounded-xl border border-emerald-100">
+                                            <div className="flex gap-6">
+                                              <div>
+                                                <p className="text-[8px] font-black text-zinc-400 uppercase tracking-widest mb-1">Calculated Landed</p>
+                                                <p className="text-sm font-black text-zinc-700">{formatPHP(calcResult.landed)}</p>
+                                              </div>
+                                              <div>
+                                                <p className="text-[8px] font-black text-emerald-600 uppercase tracking-widest mb-1">Target SRP</p>
+                                                <p className="text-lg font-black text-emerald-600">{formatPHP(calcResult.srp)}</p>
+                                              </div>
+                                            </div>
+                                            <Button
+                                              type="button"
+                                              onClick={() => {
+                                                  if (calcResult.srp > 0) {
+                                                    updateCell(rIdx, pIdx, "sellingCost", calcResult.srp.toFixed(2).toString());
+                                                    toggleCalc(calcKey); // auto hide after apply
+                                                    toast.success("SRP applied to Selling Cost");
+                                                  } else {
+                                                    toast.error("Invalid calculation. Please check your inputs.");
+                                                  }
+                                              }}
+                                              className="h-10 px-6 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-[10px] uppercase tracking-widest w-full sm:w-auto"
+                                            >
+                                              Apply to Selling Cost
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      )}
+
                                     </div>
                                   </div>
                                 );
@@ -1000,6 +1258,15 @@ function InfoBlock({ label, value, fullWidth, icon: Icon }: { label: string; val
         {Icon && <Icon size={13} className="mt-0.5 text-zinc-300 flex-shrink-0" />}
         <p className="text-[13px] font-bold text-zinc-900 leading-snug">{value || "---"}</p>
       </div>
+    </div>
+  );
+}
+
+function CalcInput({ label, value, onChange, placeholder = "" }: { label: string; value: any; onChange: (e: any) => void; placeholder?: string }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">{label}</label>
+      <Input type="number" step="any" value={value} onChange={onChange} placeholder={placeholder} className="h-9 text-[11px] font-bold rounded-lg border-zinc-200 bg-zinc-50/50" />
     </div>
   );
 }
