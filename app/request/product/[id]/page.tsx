@@ -1000,7 +1000,7 @@ React.useEffect(() => {
                                                 <CalcInput label="L (cm)" value={currentCalc.l} onChange={(e: any) => updateCalc(calcKey, 'l', e.target.value)} />
                                                 <CalcInput label="W (cm)" value={currentCalc.w} onChange={(e: any) => updateCalc(calcKey, 'w', e.target.value)} />
                                                 <CalcInput label="H (cm)" value={currentCalc.h} onChange={(e: any) => updateCalc(calcKey, 'h', e.target.value)} />
-                                                <CalcInput label="Qty/Box" value={currentCalc.qtyPerBox} onChange={(e: any) => updateCalc(calcKey, 'qtyPerBox', e.target.value)} />
+                                                <CalcInput label="Pcs/Carton" value={currentCalc.qtyPerBox} onChange={(e: any) => updateCalc(calcKey, 'qtyPerBox', e.target.value)} />
                                               </div>
                                             </div>
 

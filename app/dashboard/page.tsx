@@ -24,6 +24,7 @@ import { collection, query, where, onSnapshot, limit, orderBy, doc } from "fireb
 import { cn } from "@/lib/utils";
 import { isAfter } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
+import { supabase } from "@/utils/supabase";
 
 /* ─────────────────────────────────────────────
    CUSTOM ICON
@@ -289,6 +290,20 @@ export default function EngiconnectDashboard() {
             setNotifications(prev => ({ ...prev, testingActive: active, testingOverdue: overdue }))
         })
 
+        const unsubProduct = onSnapshot(collection(db, "testing_tracker"), snap => {
+            let active = 0; let overdue = 0
+            const today = new Date()
+            snap.docs.forEach(doc => {
+                const d = doc.data()
+                if (!d.releaseDate) {
+                    const target = d.targetDate?.toDate()
+                    if (target && isAfter(today, target)) overdue++
+                    else if (d.arrivalDate) active++
+                }
+            })
+            setNotifications(prev => ({ ...prev, testingActive: active, testingOverdue: overdue }))
+        })
+
         const calculateUnread = (snap: any) => {
             let total = 0
             snap.docs.forEach((doc: any) => {
@@ -304,10 +319,10 @@ export default function EngiconnectDashboard() {
             return total
         }
 
-        const unsubMsgShop   = onSnapshot(collection(db, "shop_drawing_requests"), snap => setNotifications(prev => ({ ...prev, unreadByService: { ...prev.unreadByService, shopDrawing: calculateUnread(snap) } })))
-        const unsubMsgDialux = onSnapshot(collection(db, "dialux_requests"),       snap => setNotifications(prev => ({ ...prev, unreadByService: { ...prev.unreadByService, dialux: calculateUnread(snap) } })))
-        const unsubMsgJob    = onSnapshot(collection(db, "job_requests"),           snap => setNotifications(prev => ({ ...prev, unreadByService: { ...prev.unreadByService, jobRequest: calculateUnread(snap) } })))
-        const unsubMsgSite   = onSnapshot(collection(db, "appointments"),           snap => setNotifications(prev => ({ ...prev, unreadByService: { ...prev.unreadByService, siteVisit: calculateUnread(snap) } })))
+        const unsubMsgShop = onSnapshot(collection(db, "shop_drawing_requests"), snap => setNotifications(prev => ({ ...prev, unreadByService: { ...prev.unreadByService, shopDrawing: calculateUnread(snap) } })))
+        const unsubMsgDialux = onSnapshot(collection(db, "dialux_requests"), snap => setNotifications(prev => ({ ...prev, unreadByService: { ...prev.unreadByService, dialux: calculateUnread(snap) } })))
+        const unsubMsgJob = onSnapshot(collection(db, "job_requests"), snap => setNotifications(prev => ({ ...prev, unreadByService: { ...prev.unreadByService, jobRequest: calculateUnread(snap) } })))
+        const unsubMsgSite = onSnapshot(collection(db, "appointments"), snap => setNotifications(prev => ({ ...prev, unreadByService: { ...prev.unreadByService, siteVisit: calculateUnread(snap) } })))
 
         return () => {
             unsubSite(); unsubShop(); unsubTesting(); unsubJob(); unsubOther()
@@ -325,9 +340,9 @@ export default function EngiconnectDashboard() {
     /* ── RECENT ACTIVITY ── */
     useEffect(() => {
         if (!db) return
-        const qDialux = query(collection(db, "dialux_requests"),      orderBy("createdAt", "desc"), limit(2))
-        const qJob    = query(collection(db, "job_requests"),          orderBy("createdAt", "desc"), limit(2))
-        const qShop   = query(collection(db, "shop_drawing_requests"), orderBy("createdAt", "desc"), limit(2))
+        const qDialux = query(collection(db, "dialux_requests"), orderBy("createdAt", "desc"), limit(2))
+        const qJob = query(collection(db, "job_requests"), orderBy("createdAt", "desc"), limit(2))
+        const qShop = query(collection(db, "shop_drawing_requests"), orderBy("createdAt", "desc"), limit(2))
         const activitiesMap = new Map()
 
         function updateActivity(type: string, docs: any[]) {
@@ -339,8 +354,8 @@ export default function EngiconnectDashboard() {
         }
 
         const unsubDialux = onSnapshot(qDialux, snap => updateActivity("DIAlux", snap.docs))
-        const unsubJob    = onSnapshot(qJob,    snap => updateActivity("Job",    snap.docs))
-        const unsubShop   = onSnapshot(qShop,   snap => updateActivity("Shop",   snap.docs))
+        const unsubJob = onSnapshot(qJob, snap => updateActivity("Job", snap.docs))
+        const unsubShop = onSnapshot(qShop, snap => updateActivity("Shop", snap.docs))
         return () => { unsubDialux(); unsubJob(); unsubShop() }
     }, [])
 
@@ -350,16 +365,65 @@ export default function EngiconnectDashboard() {
         return (userRole === "SUPER ADMIN" || userRole === "MANAGER") ? [...base, "Admin"] : base
     }, [userRole])
 
+    /* ── SPF PRODUCT (SUPABASE - CORRECT) ── */
+    useEffect(() => {
+        const fetchSPFNotifications = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from("spf_creation")
+                    .select("status, final_selling_cost");
+
+                if (error) throw error;
+
+                let count = 0;
+
+                data?.forEach((item) => {
+                    const status = (item.status || "").toUpperCase().trim();
+
+                    const isPending =
+                        status === "PENDING FOR PROCUREMENT" ||
+                        (status.includes("PROCUREMENT") && !status.includes("APPROVED"));
+
+                    if (isPending) count++;
+                });
+
+                setNotifications(prev => ({
+                    ...prev,
+                    productRequest: count
+                }));
+
+            } catch (err) {
+                console.error("SPF notif error:", err);
+            }
+        };
+
+        fetchSPFNotifications();
+
+        // ✅ Realtime sync (same pattern as your procurement page)
+        const channel = supabase
+            .channel("spf_creation_dashboard")
+            .on(
+                "postgres_changes",
+                { event: "*", schema: "public", table: "spf_creation" },
+                fetchSPFNotifications
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, []);
+
     const services = useMemo(() => {
         const all = [
-            { label: "Site Visit Appointment", icon: CalendarCheck,             count: notifications.siteVisit,                                   msgCount: notifications.unreadByService.siteVisit,  path: "/appointments/site-visit", key: "siteVisit" },
-            { label: "Job Request",             icon: FileText,                  count: notifications.jobRequest,                                  msgCount: notifications.unreadByService.jobRequest, path: "/request/job",             key: "jobRequest" },
-            { label: "Dialux Simulation",       icon: Monitor,                   count: notifications.dialuxRequest,                               msgCount: notifications.unreadByService.dialux,     path: "/request/dialux",          key: "dialux" },
-            { label: "Product Recommendation",  icon: ThumbsUp,                  count: 0,                                                         msgCount: 0,                                        path: "/requests/recommendation", key: "recommendation" },
-            { label: "SPF Shop Drawing Request",icon: StreetLightIcon as LucideIcon, count: notifications.shopDrawing,                             msgCount: notifications.unreadByService.shopDrawing,path: "/request/shop-drawing",    key: "shopDrawing" },
-            { label: "Testing Monitoring",      icon: ClipboardCheck,            count: notifications.testingActive + notifications.testingOverdue, msgCount: 0,                                        path: "/request/testing",         key: "testing" },
-            { label: "SPF Product Request",     icon: Package,                   count: notifications.productRequest || 0,                         msgCount: notifications.unreadByService.product || 0, path: "/request/product",        key: "productRequest" },
-            { label: "Other Request",           icon: MoreHorizontal,            count: notifications.otherRequest,                                msgCount: 0,                                        path: "/request/other",           key: "other" },
+            { label: "Site Visit Appointment", icon: CalendarCheck, count: notifications.siteVisit, msgCount: notifications.unreadByService.siteVisit, path: "/appointments/site-visit", key: "siteVisit" },
+            { label: "Job Request", icon: FileText, count: notifications.jobRequest, msgCount: notifications.unreadByService.jobRequest, path: "/request/job", key: "jobRequest" },
+            { label: "Dialux Simulation", icon: Monitor, count: notifications.dialuxRequest, msgCount: notifications.unreadByService.dialux, path: "/request/dialux", key: "dialux" },
+            { label: "Product Recommendation", icon: ThumbsUp, count: 0, msgCount: 0, path: "/requests/recommendation", key: "recommendation" },
+            { label: "SPF Shop Drawing Request", icon: StreetLightIcon as LucideIcon, count: notifications.shopDrawing, msgCount: notifications.unreadByService.shopDrawing, path: "/request/shop-drawing", key: "shopDrawing" },
+            { label: "Testing Monitoring", icon: ClipboardCheck, count: notifications.testingActive + notifications.testingOverdue, msgCount: 0, path: "/request/testing", key: "testing" },
+            { label: "SPF Product Request", icon: Package, count: notifications.productRequest || 0, msgCount: notifications.unreadByService.product || 0, path: "/request/product", key: "productRequest" },
+            { label: "Other Request", icon: MoreHorizontal, count: notifications.otherRequest, msgCount: 0, path: "/request/other", key: "other" },
         ]
 
         if (!userRole || dynamicPermissions.length === 0) return []
@@ -373,7 +437,7 @@ export default function EngiconnectDashboard() {
 
     const itemsPerPage = 6
     const totalPages = Math.ceil(services.length / itemsPerPage)
-    const totalNotifications = notifications.siteVisit + notifications.shopDrawing + notifications.testingOverdue + notifications.jobRequest + notifications.otherRequest + notifications.dialuxRequest
+    const totalNotifications = notifications.siteVisit + notifications.shopDrawing + notifications.testingOverdue + notifications.jobRequest + notifications.otherRequest + notifications.dialuxRequest + notifications.productRequest
 
     const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
         const page = Math.round(e.currentTarget.scrollLeft / e.currentTarget.offsetWidth)
@@ -383,11 +447,11 @@ export default function EngiconnectDashboard() {
     const getWeatherIcon = (condition: string, size: number) => {
         const isNight = currentTime.getHours() >= 18 || currentTime.getHours() < 6
         switch (condition) {
-            case "Rainy":  return <CloudRain size={size} className="text-blue-400" />
+            case "Rainy": return <CloudRain size={size} className="text-blue-400" />
             case "Stormy": return <CloudLightning size={size} className="text-purple-400" />
             case "Cloudy": return isNight ? <CloudMoon size={size} className="text-indigo-300" /> : <Cloud size={size} className="text-gray-400" />
-            case "Clear":  return isNight ? <Moon size={size} className="text-yellow-300" /> : <Sun size={size} className="text-yellow-500" />
-            default:       return isNight ? <CloudMoon size={size} className="text-indigo-200" /> : <CloudSun size={size} className="text-orange-400" />
+            case "Clear": return isNight ? <Moon size={size} className="text-yellow-300" /> : <Sun size={size} className="text-yellow-500" />
+            default: return isNight ? <CloudMoon size={size} className="text-indigo-200" /> : <CloudSun size={size} className="text-orange-400" />
         }
     }
 
@@ -403,8 +467,8 @@ export default function EngiconnectDashboard() {
 
     const activityTypeConfig: Record<string, { bg: string; text: string; icon: any }> = {
         DIAlux: { bg: "bg-indigo-50", text: "text-indigo-600", icon: Monitor },
-        Job:    { bg: "bg-orange-50", text: "text-orange-600", icon: FileText },
-        Shop:   { bg: "bg-emerald-50",text: "text-emerald-600",icon: StreetLightIcon },
+        Job: { bg: "bg-orange-50", text: "text-orange-600", icon: FileText },
+        Shop: { bg: "bg-emerald-50", text: "text-emerald-600", icon: StreetLightIcon },
     }
 
     return (
@@ -712,9 +776,9 @@ export default function EngiconnectDashboard() {
 
                         {/* ── STATS ROW ── */}
                         <section className="grid grid-cols-3 gap-3">
-                            <StatCard label="Pending"   value={isDataLoading ? "--" : totalNotifications}           icon={Layers}        color={totalNotifications > 0 ? "text-[#E33636]" : "text-gray-400"} loading={isDataLoading} onClick={totalNotifications > 0 ? () => setShowNotifDropdown(true) : undefined} />
-                            <StatCard label="Messages"  value={isDataLoading ? "--" : notifications.unreadMessages} icon={MessageSquare} color={notifications.unreadMessages > 0 ? "text-blue-600" : "text-gray-400"} loading={isDataLoading} onClick={() => router.push("/messages")} />
-                            <StatCard label="Success"   value={isDataLoading ? "--" : notifications.dialuxCompleted} icon={CheckCircle2}  color="text-emerald-600" loading={isDataLoading} />
+                            <StatCard label="Pending" value={isDataLoading ? "--" : totalNotifications} icon={Layers} color={totalNotifications > 0 ? "text-[#E33636]" : "text-gray-400"} loading={isDataLoading} onClick={totalNotifications > 0 ? () => setShowNotifDropdown(true) : undefined} />
+                            <StatCard label="Messages" value={isDataLoading ? "--" : notifications.unreadMessages} icon={MessageSquare} color={notifications.unreadMessages > 0 ? "text-blue-600" : "text-gray-400"} loading={isDataLoading} onClick={() => router.push("/messages")} />
+                            <StatCard label="Success" value={isDataLoading ? "--" : notifications.dialuxCompleted} icon={CheckCircle2} color="text-emerald-600" loading={isDataLoading} />
                         </section>
 
                         {/* ── BOTTOM: Activity + Overview (desktop side by side) ── */}
@@ -737,8 +801,8 @@ export default function EngiconnectDashboard() {
                                             const Icon = cfg.icon
                                             const paths: Record<string, string> = {
                                                 DIAlux: `/request/dialux/${item.id}`,
-                                                Job:    `/request/job/${item.id}`,
-                                                Shop:   `/request/shop-drawing/${item.id}`,
+                                                Job: `/request/job/${item.id}`,
+                                                Shop: `/request/shop-drawing/${item.id}`,
                                             }
                                             return (
                                                 <div
@@ -797,10 +861,10 @@ export default function EngiconnectDashboard() {
                                 {/* Tab content */}
                                 {activeTab === "Monitoring" ? (
                                     <div className="grid grid-cols-2 gap-3">
-                                        <ActivityCard label="In-Testing"  value={notifications.testingActive}  icon={ClipboardCheck} loading={isDataLoading} onClick={() => router.push("/request/testing")} />
-                                        <ActivityCard label="Critical"    value={notifications.testingOverdue} icon={AlertTriangle}  loading={isDataLoading} isAlert={notifications.testingOverdue > 0} onClick={() => router.push("/request/testing")} />
-                                        <ActivityCard label="Site Visits" value={notifications.siteVisit}     icon={CalendarCheck}  loading={isDataLoading} onClick={() => router.push("/appointments/site-visit")} />
-                                        <ActivityCard label="Shop Review" value={notifications.shopDrawing}   icon={StreetLightIcon as LucideIcon} loading={isDataLoading} onClick={() => router.push("/request/shop-drawing")} />
+                                        <ActivityCard label="In-Testing" value={notifications.testingActive} icon={ClipboardCheck} loading={isDataLoading} onClick={() => router.push("/request/testing")} />
+                                        <ActivityCard label="Critical" value={notifications.testingOverdue} icon={AlertTriangle} loading={isDataLoading} isAlert={notifications.testingOverdue > 0} onClick={() => router.push("/request/testing")} />
+                                        <ActivityCard label="Site Visits" value={notifications.siteVisit} icon={CalendarCheck} loading={isDataLoading} onClick={() => router.push("/appointments/site-visit")} />
+                                        <ActivityCard label="Shop Review" value={notifications.shopDrawing} icon={StreetLightIcon as LucideIcon} loading={isDataLoading} onClick={() => router.push("/request/shop-drawing")} />
                                     </div>
                                 ) : (
                                     <div className="py-12 flex flex-col items-center justify-center bg-white rounded-2xl border border-dashed border-gray-200">
