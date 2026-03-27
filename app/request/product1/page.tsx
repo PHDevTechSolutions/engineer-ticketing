@@ -204,25 +204,25 @@ export default function ProcurementDetailPage() {
   const [showCalc, setShowCalc] = useState<Record<string, boolean>>({});
   const [calcStates, setCalcStates] = useState<Record<string, any>>({});
 
-  const id = params?.id as string
-  const [userId, setUserId] = React.useState<string | null>(null)
-  const [userDept, setUserDept] = React.useState("")
+  const id = params?.id as string 
+const [userId, setUserId] = React.useState<string | null>(null)
+const [userDept, setUserDept] = React.useState("")
 
-  React.useEffect(() => {
-    const storedId = localStorage.getItem("userId")
-    setUserId(storedId)
+React.useEffect(() => {
+  const storedId = localStorage.getItem("userId")
+  setUserId(storedId)
 
-    const fetchProfile = async () => {
-      try {
-        const res = await fetch(`/api/user?id=${encodeURIComponent(storedId || "")}`)
-        const data = await res.json()
-        setUserDept(data.Department?.toLowerCase() || data.department?.toLowerCase() || "sales")
-      } catch (e) { console.error(e) }
-    }
+  const fetchProfile = async () => {
+    try {
+      const res = await fetch(`/api/user?id=${encodeURIComponent(storedId || "")}`)
+      const data = await res.json()
+      setUserDept(data.Department?.toLowerCase() || data.department?.toLowerCase() || "sales")
+    } catch (e) { console.error(e) }
+  }
 
-    fetchProfile()
-    // fetchEntry()
-  }, [id])
+  fetchProfile()
+  // fetchEntry()
+}, [id])
 
   /* ── FETCH ── */
   useEffect(() => {
@@ -473,7 +473,7 @@ export default function ProcurementDetailPage() {
     <ProtectedPageWrapper>
       {/* FIX: defaultOpen={true} so sidebar shows on desktop; 
           SidebarProvider must wrap AppSidebar + SidebarInset together */}
-      <SidebarProvider defaultOpen={false}>
+      <SidebarProvider defaultOpen={true}>
         <AppSidebar userId={userId} />
 
         <SidebarInset className={cn(
@@ -1291,69 +1291,48 @@ export default function ProcurementDetailPage() {
 
       {/* ── CONFIRM DIALOG ── */}
       <Dialog open={showConfirm} onOpenChange={setShowConfirm}>
-        {/* Added max-w-md for better desktop scaling and ensured padding is consistent */}
-        <DialogContent className="rounded-[24px] max-w-[400px] w-full p-6 overflow-hidden">
+        <DialogContent className="rounded-[24px] max-w-sm mx-4 p-6">
           <DialogHeader>
             <div className="flex items-center gap-3 mb-2">
-              <div className="size-10 rounded-2xl bg-zinc-900 flex items-center justify-center shrink-0">
+              <div className="size-10 rounded-2xl bg-zinc-900 flex items-center justify-center">
                 <Save size={16} className="text-white" />
               </div>
-              <DialogTitle className="text-[13px] font-black uppercase tracking-widest">
-                Save Costing
-              </DialogTitle>
+              <DialogTitle className="text-[13px] font-black uppercase tracking-widest">Save Costing</DialogTitle>
             </div>
-
-            <div className="space-y-3">
-              <DialogDescription className="text-sm text-zinc-500 leading-relaxed">
-                Save selling costs and lead times for this SPF.
-                Choosing <span className="font-black text-emerald-600">Save + Approve</span> will mark this SPF as approved by procurement.
-              </DialogDescription>
-
+            <DialogDescription className="text-sm text-zinc-500 leading-relaxed">
+              Save selling costs and lead times for this SPF.
+              Choosing <span className="font-black text-emerald-600">Save + Approve</span> will mark this SPF as approved by procurement.
               {!allFilled && (
-                <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-xl p-3 text-amber-600">
-                  <span className="text-[14px]">⚠</span>
-                  <span className="font-bold text-[11px] leading-tight">
-                    {totalCount - filledCount} option{totalCount - filledCount !== 1 ? "s" : ""} still need costing filled in.
-                  </span>
-                </div>
+                <span className="block mt-2 text-amber-600 font-bold text-[11px] bg-amber-50 border border-amber-100 rounded-xl p-2">
+                  ⚠ {totalCount - filledCount} option{totalCount - filledCount !== 1 ? "s" : ""} still need costing filled in.
+                </span>
               )}
-            </div>
+            </DialogDescription>
           </DialogHeader>
-
-          {/* Enforced flex-col and removed default sm:flex-row behavior */}
-          <div className="flex flex-col gap-2 mt-6">
+          <DialogFooter className="flex flex-col gap-2 mt-4">
             <Button
               onClick={() => handleSave(true)}
               disabled={isSaving}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest h-12 shadow-sm"
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest h-12"
             >
-              {isSaving ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <>
-                  <CheckCircle2 className="size-3.5 mr-1.5" />
-                  Save + Approved By Procurement
-                </>
-              )}
+              {isSaving ? <Loader2 className="size-4 animate-spin" /> : <><CheckCircle2 className="size-3.5 mr-1.5" /> Save + Approved By Procurement</>}
             </Button>
-
             <Button
               variant="outline"
               onClick={() => handleSave(false)}
               disabled={isSaving}
-              className="w-full rounded-2xl border-zinc-200 font-black text-[10px] uppercase tracking-widest h-12 hover:bg-zinc-50"
+              className="w-full rounded-2xl font-black text-[10px] uppercase tracking-widest h-12"
             >
               Save Only (Keep Pending)
             </Button>
-
             <Button
               variant="ghost"
               onClick={() => setShowConfirm(false)}
-              className="w-full rounded-2xl font-black text-[10px] uppercase tracking-widest h-10 text-zinc-400 hover:text-zinc-600"
+              className="w-full rounded-2xl font-black text-[10px] uppercase tracking-widest h-10 text-zinc-400"
             >
               Cancel
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
