@@ -10,12 +10,14 @@ import {
   Package, CheckCircle2, LayoutGrid, Calendar,
   XCircle, AlertTriangle, ShieldCheck,
   ChevronLeft, ChevronRight, ArrowUpDown,
-  ArrowUp, ArrowDown,
+  ArrowUp, ArrowDown, TrendingUp, DollarSign,
+  Activity, FileDown, Clock3, Globe, Copy, Check,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { supabase } from "@/utils/supabase"
 import { PageHeader } from "@/components/page-header"
+import { toast } from "sonner"
 
 /* ─────────────────────────────────────────────
    TYPES
@@ -30,6 +32,18 @@ interface SPFCreation {
   date_updated?: string
   final_selling_cost?: string
   proj_lead_time?: string
+  product_offer_unit_cost?: string
+  final_unit_cost?: string
+  product_offer_qty?: string
+  product_offer_image?: string
+  // Added fields
+  clientName?: string
+  totalSellingValue?: number
+  expectedMargin?: number
+  isAging?: boolean
+  filledItems?: number
+  totalItems?: number
+  firstImage?: string
 }
 
 type SortField = "date_created" | "date_updated" | "spf_number"
@@ -57,8 +71,9 @@ const STATUS_META: Record<string, { label: string; color: string; bg: string; bo
 
 const FILTERS = [
   { key: null,                      label: "All",                     icon: LayoutGrid,  variant: "default" },
-  { key: "PROCUREMENT",             label: "Pending For Procurement", icon: Clock,       variant: "warning" },
-  { key: "APPROVED BY PROCUREMENT", label: "Approved By Procurement", icon: CheckCircle2,variant: "emerald" },
+  { key: "NEEDS_COSTING",           label: "Needs Costing",           icon: AlertTriangle, variant: "warning" },
+  { key: "PROCUREMENT",             label: "Pending",                 icon: Clock,       variant: "warning" },
+  { key: "APPROVED BY PROCUREMENT", label: "Approved",                icon: CheckCircle2,variant: "emerald" },
   { key: "REJECTED",                label: "Rejected",                icon: XCircle,     variant: "rose"    },
 ]
 
@@ -96,6 +111,72 @@ function relativeTime(dateStr?: string): string {
   if (hours < 24) return `${hours}h ago`
   if (days < 7)   return `${days}d ago`
   return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+}
+
+function formatPHP(val: number) {
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+    maximumFractionDigits: 0
+  }).format(val)
+}
+
+function parseValue(valStr?: string) {
+  if (!valStr) return 0
+  return valStr.split("|ROW|").reduce((sum, row) => {
+    return sum + row.split(",").reduce((rowSum, val) => {
+      const v = val.trim()
+      if (!v || v === "-") return rowSum
+      return rowSum + (parseFloat(v) || 0)
+    }, 0)
+  }, 0)
+}
+
+function parseTotalValue(costStr?: string, qtyStr?: string) {
+  if (!costStr) return 0
+  const rows = costStr.split("|ROW|")
+  const qRows = (qtyStr || "").split("|ROW|")
+  
+  return rows.reduce((sum, row, rIdx) => {
+    const costs = row.split(",")
+    const qtys = qRows[rIdx]?.split(",") || []
+    
+    return sum + costs.reduce((rowSum, cost, pIdx) => {
+      const c = parseFloat(cost.trim()) || 0
+      const q = parseFloat(qtys[pIdx]?.trim()) || 0
+      return rowSum + (c * q)
+    }, 0)
+  }, 0)
+}
+
+/* ─────────────────────────────────────────────
+   DASHBOARD CARD
+───────────────────────────────────────────── */
+function DashboardCard({ label, value, subValue, icon: Icon, colorClass, loading }: {
+  label: string; value: string; subValue?: string; icon: any; colorClass: string; loading?: boolean
+}) {
+  return (
+    <div className="flex-1 bg-white rounded-xl md:rounded-2xl p-2.5 md:p-3 border border-zinc-200/60 shadow-sm flex items-center gap-3 group hover:shadow-md transition-all min-w-0">
+      <div className={cn("p-2 rounded-lg md:rounded-xl flex-shrink-0", colorClass)}>
+        <Icon className="size-3.5 md:size-4" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5 mb-0.5">
+          {loading ? (
+            <div className="h-3.5 md:h-4 w-12 md:w-16 bg-zinc-100 rounded animate-pulse" />
+          ) : (
+            <p className="text-[13px] md:text-[14px] font-black text-zinc-900 leading-none truncate tracking-tight">{value}</p>
+          )}
+          {!loading && subValue && (
+            <span className="hidden xl:inline-block text-[7px] font-black text-zinc-400 uppercase tracking-widest bg-zinc-50 px-1 py-0.5 rounded border border-zinc-100 whitespace-nowrap flex-shrink-0">
+              {subValue}
+            </span>
+          )}
+        </div>
+        <p className="text-[7px] font-black uppercase text-zinc-400 tracking-[0.1em] truncate">{label}</p>
+      </div>
+    </div>
+  )
 }
 
 /* ─────────────────────────────────────────────
@@ -155,20 +236,20 @@ function StatPill({ label, count, icon: Icon, variant, isActive, onClick, loadin
     <button
       onClick={onClick}
       className={cn(
-        "flex items-center gap-2.5 px-4 py-3 rounded-2xl border bg-white shadow-sm transition-all flex-shrink-0 active:scale-95",
-        isActive ? "border-zinc-900 ring-4 ring-zinc-900/5 shadow-md" : "border-zinc-200/60 hover:border-zinc-300 hover:shadow-md"
+        "flex items-center gap-2 px-3 py-1.5 rounded-xl border bg-white shadow-sm transition-all flex-shrink-0 active:scale-95",
+        isActive ? "border-zinc-900 ring-2 ring-zinc-900/5 shadow-md" : "border-zinc-200/60 hover:border-zinc-300 hover:shadow-md"
       )}
     >
-      <div className={cn("p-1.5 rounded-xl", colors[variant] || colors.default)}>
-        <Icon className="size-3.5" />
+      <div className={cn("p-1 rounded-lg", colors[variant] || colors.default)}>
+        <Icon className="size-3" />
       </div>
-      <div className="text-left min-w-[28px]">
+      <div className="text-left min-w-[16px]">
         {loading ? (
-          <div className="h-4 w-5 bg-zinc-100 rounded animate-pulse mb-1" />
+          <div className="h-3 w-3 bg-zinc-100 rounded animate-pulse" />
         ) : (
-          <p className="text-[16px] font-black text-zinc-900 leading-none">{count}</p>
+          <p className="text-[12px] font-black text-zinc-900 leading-none">{count}</p>
         )}
-        <p className="text-[8px] font-black uppercase text-zinc-400 tracking-widest mt-0.5 whitespace-nowrap">{label}</p>
+        <p className="text-[7px] font-black uppercase text-zinc-400 tracking-widest mt-0.5 whitespace-nowrap">{label}</p>
       </div>
     </button>
   )
@@ -217,6 +298,10 @@ export default function ProcurementListPage() {
   const [sortField, setSortField]     = React.useState<SortField>("date_created")
   const [sortDir, setSortDir]         = React.useState<SortDir>("desc")
 
+  // Added States
+  const [exchangeRate, setExchangeRate] = React.useState<string>("60.00")
+  const [rateLoading, setRateLoading]   = React.useState(false)
+
   const searchRef = React.useRef<HTMLInputElement>(null)
 
   /* ── FETCH ── */
@@ -228,22 +313,98 @@ export default function ProcurementListPage() {
 
       let query = supabase
         .from("spf_creation")
-        .select("id, spf_number, referenceid, tsm, status, date_created, date_updated, final_selling_cost, proj_lead_time")
+        .select(`
+          id, spf_number, referenceid, tsm, status, date_created, date_updated, 
+          final_selling_cost, proj_lead_time,
+          product_offer_unit_cost, final_unit_cost, product_offer_qty,
+          product_offer_image
+        `)
         .order("date_created", { ascending: false })
 
       if (!isIT) {
         query = query.or("status.eq.Pending For Procurement,status.eq.Approved By Procurement")
       }
 
-      const { data, error } = await query
+      const { data: creations, error } = await query as { data: SPFCreation[] | null, error: any }
       if (error) throw error
-      setRequests(data || [])
+      
+      if (!creations) {
+        setRequests([])
+        return
+      }
+
+      // Fetch Client Names from spf_request
+      const spfNumbers = creations.map((c: SPFCreation) => c.spf_number)
+      const { data: requestsData } = await supabase
+        .from("spf_request")
+        .select("spf_number, clientName")
+        .in("spf_number", spfNumbers)
+
+      const clientMap: Record<string, string> = {}
+      requestsData?.forEach((r: any) => {
+        if (r.spf_number) clientMap[r.spf_number] = r.clientName || "Unknown Client"
+      })
+
+      const enhanced = creations.map((c: SPFCreation) => {
+        const totalSellingValue = parseTotalValue(c.final_selling_cost, c.product_offer_qty)
+        const totalCostValue = parseTotalValue(c.final_unit_cost || c.product_offer_unit_cost, c.product_offer_qty)
+        
+        // Count filled items
+        const rowData = (c.final_selling_cost || "").split("|ROW|")
+        let totalItems = 0
+        let filledItems = 0
+        rowData.forEach((row: string) => {
+          const cells = row.split(",")
+          totalItems += cells.length
+          filledItems += cells.filter((v: string) => v && v.trim() !== "-").length
+        })
+
+        // First image
+        const firstImg = (c.product_offer_image || "").split("|ROW|")[0]?.split(",")[0]?.trim() || ""
+
+        // Calculate margin
+        let margin = 0
+        if (totalSellingValue > 0) {
+          margin = ((totalSellingValue - totalCostValue) / totalSellingValue) * 100
+        }
+
+        // Aging check (more than 3 days)
+        const daysOld = Math.floor((Date.now() - new Date(c.date_created).getTime()) / 86400000)
+        const isAging = daysOld >= 3 && isPendingStatus(c.status)
+
+        return {
+          ...c,
+          clientName: clientMap[c.spf_number] || "Unknown Client",
+          totalSellingValue,
+          expectedMargin: margin,
+          isAging,
+          totalItems,
+          filledItems,
+          firstImage: firstImg
+        }
+      })
+
+      setRequests(enhanced)
     } catch (err) {
       console.error(err)
     } finally {
       setIsLoading(false)
     }
   }, [userDepartment])
+
+  /* ── FETCH RATE ── */
+  const fetchRate = async () => {
+    setRateLoading(true)
+    try {
+      const res = await fetch("https://open.er-api.com/v6/latest/USD")
+      const data = await res.json()
+      if (data?.rates?.PHP) setExchangeRate(data.rates.PHP.toFixed(2))
+    } catch (e) {
+      console.error("Exchange rate error:", e)
+    } finally {
+      setRateLoading(false)
+    }
+  }
 
   /* ── INIT ── */
   React.useEffect(() => {
@@ -252,6 +413,7 @@ export default function ProcurementListPage() {
     setUserId(uid)
     setUserDept(dept)
     fetchRequests(dept)
+    fetchRate()
 
     const fetchStaff = async () => {
       try {
@@ -296,10 +458,11 @@ export default function ProcurementListPage() {
 
   const filtered = React.useMemo(() => {
     let list = requests.filter(r => {
-      const s = `${r.spf_number} ${r.referenceid || ""} ${r.tsm || ""}`.toLowerCase()
+      const s = `${r.spf_number} ${r.clientName} ${r.referenceid || ""} ${r.tsm || ""}`.toLowerCase()
       const matchSearch = s.includes(searchTerm.toLowerCase())
       const matchStatus = (() => {
         if (filterStatus === null) return true
+        if (filterStatus === "NEEDS_COSTING") return isPendingStatus(r.status) && (r.filledItems || 0) < (r.totalItems || 0)
         const st = (r.status || "").toUpperCase().trim()
         if (filterStatus === "PROCUREMENT")             return isPendingStatus(r.status)
         if (filterStatus === "APPROVED BY PROCUREMENT") return st.includes("APPROVED")
@@ -326,6 +489,7 @@ export default function ProcurementListPage() {
   const countFor = (key: string | null) => {
     if (key === null) return requests.length
     return requests.filter(r => {
+      if (key === "NEEDS_COSTING") return isPendingStatus(r.status) && (r.filledItems || 0) < (r.totalItems || 0)
       const s = (r.status || "").toUpperCase().trim()
       if (key === "PROCUREMENT")             return isPendingStatus(r.status)
       if (key === "APPROVED BY PROCUREMENT") return s.includes("APPROVED")
@@ -348,6 +512,47 @@ export default function ProcurementListPage() {
     setSortDir("desc")
     fetchRequests(userDepartment)
   }
+
+  const handleExport = () => {
+    if (filtered.length === 0) return
+    const headers = ["SPF#", "Client", "Reference ID", "TSM", "Status", "Date Created", "Selling Value", "Expected Margin"]
+    const rows = filtered.map(r => [
+      r.spf_number,
+      r.clientName,
+      staffNames[r.referenceid || ""] || r.referenceid || "-",
+      staffNames[r.tsm || ""] || r.tsm || "-",
+      r.status,
+      new Date(r.date_created).toLocaleDateString(),
+      r.totalSellingValue || 0,
+      `${(r.expectedMargin || 0).toFixed(1)}%`
+    ])
+    const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n")
+    const encodedUri = encodeURI(csvContent)
+    const link = document.createElement("a")
+    link.setAttribute("href", encodedUri)
+    link.setAttribute("download", `SPF_Procurement_List_${new Date().toISOString().split('T')[0]}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  /* ── CALCULATE DASHBOARD STATS ── */
+  const stats = React.useMemo(() => {
+    const pendingRequests = requests.filter(r => isPendingStatus(r.status))
+    const totalPendingValue = pendingRequests.reduce((sum, r) => sum + (r.totalSellingValue || 0), 0)
+    const agingCount = pendingRequests.filter(r => r.isAging).length
+    
+    const approvedRequests = requests.filter(r => r.status.toUpperCase().includes("APPROVED"))
+    const avgMargin = approvedRequests.length > 0
+      ? approvedRequests.reduce((sum, r) => sum + (r.expectedMargin || 0), 0) / approvedRequests.length
+      : 0
+
+    return {
+      totalPendingValue,
+      agingCount,
+      avgMargin
+    }
+  }, [requests])
 
   /* ── EMPTY STATE MESSAGE ── */
   const emptyMessage = () => {
@@ -374,9 +579,9 @@ export default function ProcurementListPage() {
 
             {/* ── IT BANNER ── */}
             {!isLoading && isIT && (
-              <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3">
-                <ShieldCheck className="size-4 text-blue-500 flex-shrink-0" />
-                <p className="text-[11px] font-black text-blue-700">
+              <div className="flex items-center gap-2 md:gap-3 bg-blue-50 border border-blue-200 rounded-xl md:rounded-2xl px-3 md:px-4 py-2 md:py-3">
+                <ShieldCheck className="size-3.5 md:size-4 text-blue-500 flex-shrink-0" />
+                <p className="text-[10px] md:text-[11px] font-black text-blue-700">
                   IT Access — viewing all records across all statuses.
                 </p>
               </div>
@@ -384,78 +589,128 @@ export default function ProcurementListPage() {
 
             {/* ── NEEDS COSTING BANNER ── */}
             {!isLoading && !isIT && pendingCosting > 0 && (
-              <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
+              <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-xl md:rounded-2xl px-3 md:px-4 py-2 md:py-3">
                 <div className="flex items-center gap-2">
-                  <AlertTriangle className="size-4 text-amber-500 flex-shrink-0" />
-                  <p className="text-[11px] font-black text-amber-700">
+                  <AlertTriangle className="size-3.5 md:size-4 text-amber-500 flex-shrink-0" />
+                  <p className="text-[10px] md:text-[11px] font-black text-amber-700">
                     {pendingCosting} record{pendingCosting > 1 ? "s" : ""} still need costing filled in.
                   </p>
                 </div>
                 <button
                   onClick={() => { setFilter("PROCUREMENT"); setPage(1) }}
-                  className="text-[9px] font-black text-amber-700 underline underline-offset-2 flex-shrink-0"
+                  className="text-[9px] md:text-[10px] font-black text-amber-700 underline underline-offset-2 flex-shrink-0"
                 >
                   View →
                 </button>
               </div>
             )}
 
-            {/* ── STAT FILTER PILLS ── */}
-            <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-none">
-              {FILTERS.map(f => (
-                <StatPill
-                  key={String(f.key)}
-                  label={f.label}
-                  count={String(countFor(f.key))}
-                  icon={f.icon}
-                  variant={f.variant}
-                  isActive={filterStatus === f.key}
-                  onClick={() => setFilter(f.key)}
-                  loading={isLoading}
-                />
-              ))}
+            {/* ── DASHBOARD CARDS ── */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+              <DashboardCard
+                label="Exchange Rate"
+                value={`₱${exchangeRate}`}
+                subValue="USD/PHP"
+                icon={Globe}
+                colorClass="text-blue-600 bg-blue-50"
+                loading={rateLoading || isLoading}
+              />
+              <DashboardCard
+                label="Pending Value"
+                value={formatPHP(stats.totalPendingValue)}
+                subValue={`${countFor("PROCUREMENT")} reqs`}
+                icon={DollarSign}
+                colorClass="text-emerald-600 bg-emerald-50"
+                loading={isLoading}
+              />
+              <DashboardCard
+                label="Avg Margin"
+                value={`${stats.avgMargin.toFixed(1)}%`}
+                subValue="Approved"
+                icon={TrendingUp}
+                colorClass="text-violet-600 bg-violet-50"
+                loading={isLoading}
+              />
+              <DashboardCard
+                label="Aging Requests"
+                value={String(stats.agingCount)}
+                subValue="3+ days"
+                icon={Clock3}
+                colorClass="text-rose-600 bg-rose-50"
+                loading={isLoading}
+              />
             </div>
 
-            {/* ── SEARCH + RESET ── */}
-            <div className="flex gap-2">
-              <div className="relative flex-1 group">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-zinc-300 group-focus-within:text-zinc-800 transition-colors" />
-                <input
-                  ref={searchRef}
-                  placeholder='Search SPF#, Reference ID, or TSM... (Press "/" to focus)'
-                  value={searchTerm}
-                  onChange={e => setSearch(e.target.value)}
-                  className="w-full pl-11 pr-10 h-12 rounded-2xl bg-white shadow-sm ring-1 ring-zinc-200 outline-none focus:ring-2 focus:ring-zinc-900 transition-all text-sm font-bold"
-                />
-                {searchTerm && (
-                  <button
-                    onClick={() => setSearch("")}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-300 hover:text-zinc-600 transition-colors"
-                  >
-                    <XCircle className="size-4" />
-                  </button>
-                )}
+            {/* ── ACTIONS BAR ── */}
+            <div className="flex flex-col xl:flex-row xl:items-center gap-3 bg-white/50 p-2 rounded-[24px] border border-zinc-200/40 shadow-sm">
+              {/* Stat Filter Pills */}
+              <div className="flex gap-1.5 overflow-x-auto pb-1 xl:pb-0 scrollbar-none flex-1">
+                {FILTERS.map(f => (
+                  <StatPill
+                    key={String(f.key)}
+                    label={f.label}
+                    count={String(countFor(f.key))}
+                    icon={f.icon}
+                    variant={f.variant}
+                    isActive={filterStatus === f.key}
+                    onClick={() => setFilter(f.key)}
+                    loading={isLoading}
+                  />
+                ))}
               </div>
-              <Button
-                variant="outline"
-                onClick={handleReset}
-                className="size-12 rounded-2xl bg-white border-zinc-200 hover:bg-zinc-50 flex-shrink-0 p-0"
-                title="Reset all filters"
-              >
-                <RotateCcw className="size-4 text-zinc-400" />
-              </Button>
+
+              <div className="flex flex-col md:flex-row gap-2 xl:min-w-[450px]">
+                <div className="relative flex-1 group">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-300 group-focus-within:text-zinc-800 transition-colors" />
+                  <input
+                    ref={searchRef}
+                    placeholder='Search SPF#, Client...'
+                    value={searchTerm}
+                    onChange={e => setSearch(e.target.value)}
+                    className="w-full pl-10 pr-9 h-10 rounded-xl bg-white shadow-sm ring-1 ring-zinc-200 outline-none focus:ring-2 focus:ring-zinc-900 transition-all text-xs font-bold"
+                  />
+                  {searchTerm && (
+                    <button
+                      onClick={() => setSearch("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-300 hover:text-zinc-600 transition-colors"
+                    >
+                      <XCircle className="size-3.5" />
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={handleReset}
+                    className="h-10 w-10 rounded-xl bg-white border-zinc-200 hover:bg-zinc-50 flex items-center justify-center p-0 flex-shrink-0"
+                    title="Reset all filters"
+                  >
+                    <RotateCcw className="size-3.5 text-zinc-400" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleExport}
+                    className="h-10 rounded-xl bg-white border-zinc-200 hover:bg-zinc-50 flex items-center gap-2 px-4 text-zinc-600 font-bold text-xs flex-1 md:flex-none"
+                    disabled={filtered.length === 0}
+                  >
+                    <FileDown className="size-3.5" />
+                    <span>Export</span>
+                  </Button>
+                </div>
+              </div>
             </div>
 
             {/* ── TABLE ── */}
             <div className="bg-white rounded-[28px] shadow-sm border border-zinc-200/60 overflow-hidden">
 
               {/* Desktop column headers with sort */}
-              <div className="hidden md:grid grid-cols-[44px_1.6fr_1.2fr_0.7fr_1.4fr_1fr_44px] bg-zinc-50/80 px-6 py-4 border-b gap-4 items-center">
+              <div className="hidden md:grid grid-cols-[44px_2fr_1.4fr_1fr_1.2fr_1.2fr_1fr_44px] bg-zinc-50/80 px-6 py-4 border-b gap-4 items-center">
                 <span />
-                <SortButton label="SPF # / Date"   field="spf_number"   currentField={sortField} dir={sortDir} onSort={handleSort} />
-                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-400">Reference ID</span>
-                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-400">TSM</span>
+                <SortButton label="SPF# / Client"   field="spf_number"   currentField={sortField} dir={sortDir} onSort={handleSort} />
+                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-400">Reference / TSM</span>
+                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-400">Value / Margin</span>
                 <span className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-400">Status</span>
+                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-400">Progress</span>
                 <SortButton label="Last Updated"   field="date_updated" currentField={sortField} dir={sortDir} onSort={handleSort} />
                 <span />
               </div>
@@ -489,56 +744,105 @@ export default function ProcurementListPage() {
                     const meta    = getStatusMeta(r.status)
                     const filled  = isCostingFilled(r)
                     const pending = isPendingStatus(r.status)
+                    const progress = r.totalItems && r.totalItems > 0 ? (r.filledItems || 0) / r.totalItems : 0
 
                     return (
                       <div
                         key={r.id}
                         className="group cursor-pointer hover:bg-zinc-50/80 active:bg-zinc-100/60 transition-colors"
-                        onClick={() => router.push(`/request/product/${r.id}`)}
                       >
                         {/* ── DESKTOP ROW ── */}
-                        <div className="hidden md:grid grid-cols-[44px_1.6fr_1.2fr_0.7fr_1.4fr_1fr_44px] px-6 py-4 items-center gap-4">
-                          <div className="size-9 rounded-xl bg-zinc-50 border border-zinc-100 flex items-center justify-center group-hover:bg-zinc-900 group-hover:border-zinc-900 transition-all">
-                            <Package size={14} className="text-zinc-300 group-hover:text-white transition-colors" />
+                        <div className="hidden md:grid grid-cols-[44px_2fr_1.4fr_1fr_1.2fr_1.2fr_1fr_44px] px-6 py-3.5 items-center gap-4">
+                          <div 
+                            className="size-9 rounded-xl border border-zinc-100 flex items-center justify-center group-hover:bg-zinc-900 group-hover:border-zinc-900 transition-all overflow-hidden bg-zinc-50"
+                            onClick={() => router.push(`/request/product/${r.id}`)}
+                          >
+                            {r.firstImage ? (
+                              <img src={r.firstImage} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" alt="product" />
+                            ) : (
+                              <Package size={14} className="text-zinc-300 group-hover:text-white transition-colors" />
+                            )}
                           </div>
 
-                          <div>
+                          <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <p className="text-[12px] font-mono font-black text-zinc-900">{r.spf_number}</p>
-                              {pending && !filled && (
-                                <span className="text-[8px] font-black text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-lg uppercase tracking-wide">
-                                  ⚠ Needs Costing
+                              <p className="text-[12px] font-mono font-black text-zinc-900 leading-none">{r.spf_number}</p>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  navigator.clipboard.writeText(r.spf_number)
+                                  toast.success(`Copied: ${r.spf_number}`)
+                                }}
+                                className="p-1 hover:bg-zinc-100 rounded-md text-zinc-300 hover:text-zinc-600 transition-colors"
+                              >
+                                <Copy size={10} />
+                              </button>
+                              {r.isAging && (
+                                <span className="text-[7px] font-black text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded-lg uppercase tracking-wide flex items-center gap-1">
+                                  <Clock3 size={7} /> Aging
                                 </span>
                               )}
                             </div>
-                            <p className="text-[9px] text-zinc-400 font-bold mt-0.5 flex items-center gap-1">
-                              <Calendar size={9} />
-                              {r.date_created ? new Date(r.date_created).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "---"}
-                            </p>
-                          </div>
-
-                          <p className="text-[11px] font-bold text-zinc-600 truncate pr-2">{staffNames[r.referenceid || ""] || r.referenceid || "—"}</p>
-                          <p className="text-[11px] font-bold text-zinc-700 uppercase truncate">{staffNames[r.tsm || ""] || r.tsm || "—"}</p>
-
-                          <div className="flex items-center gap-2">
-                            <div className={cn("size-2 rounded-full flex-shrink-0 animate-pulse", meta.dot,
-                              pending && !filled ? "animate-pulse" : "animate-none"
-                            )} />
-                            <span className={cn("text-[10px] font-black uppercase tracking-wide truncate", meta.color)}>
-                              {r.status || "Pending For Procurement"}
-                            </span>
-                          </div>
-
-                          <div>
-                            <p className="text-[10px] font-bold text-zinc-700">{relativeTime(r.date_updated)}</p>
-                            {r.date_updated && (
-                              <p className="text-[8px] text-zinc-400 mt-0.5">
-                                {new Date(r.date_updated).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                            {r.clientName && r.clientName !== "Unknown Client" && (
+                              <p 
+                                className="text-[10px] text-zinc-800 font-black uppercase tracking-tight truncate mt-1 hover:text-blue-600 cursor-pointer"
+                                onClick={() => router.push(`/request/product/${r.id}`)}
+                              >
+                                {r.clientName}
                               </p>
                             )}
                           </div>
 
-                          <div className="flex justify-end">
+                          <div className="min-w-0" onClick={() => router.push(`/request/product/${r.id}`)}>
+                            <p className="text-[11px] font-bold text-zinc-600 truncate leading-none">{staffNames[r.referenceid || ""] || r.referenceid || "—"}</p>
+                            <p className="text-[9px] font-black text-zinc-400 uppercase truncate mt-1 leading-none">{staffNames[r.tsm || ""] || r.tsm || "—"}</p>
+                          </div>
+
+                          <div onClick={() => router.push(`/request/product/${r.id}`)}>
+                            <p className="text-[11px] font-black text-zinc-900 leading-none">{formatPHP(r.totalSellingValue || 0)}</p>
+                            {r.expectedMargin !== undefined && (
+                              <div className="flex items-center gap-1 mt-1 leading-none">
+                                <Activity size={8} className={cn(r.expectedMargin > 30 ? "text-emerald-500" : "text-amber-500")} />
+                                <span className={cn("text-[9px] font-black", r.expectedMargin > 30 ? "text-emerald-600" : "text-amber-600")}>
+                                  {r.expectedMargin.toFixed(1)}% Margin
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2" onClick={() => router.push(`/request/product/${r.id}`)}>
+                            <div className={cn("size-2 rounded-full flex-shrink-0", meta.dot,
+                              pending && !filled ? "animate-pulse" : "animate-none"
+                            )} />
+                            <span className={cn("text-[9px] font-black uppercase tracking-wide truncate", meta.color)}>
+                              {r.status || "Pending For Procurement"}
+                            </span>
+                          </div>
+
+                          <div className="min-w-0" onClick={() => router.push(`/request/product/${r.id}`)}>
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">
+                                {r.filledItems}/{r.totalItems} Items
+                              </span>
+                              <span className="text-[9px] font-black text-zinc-900">{Math.round(progress * 100)}%</span>
+                            </div>
+                            <div className="h-1 w-full bg-zinc-100 rounded-full overflow-hidden">
+                              <div 
+                                className={cn("h-full transition-all duration-500", progress === 1 ? "bg-emerald-500" : "bg-blue-500")} 
+                                style={{ width: `${progress * 100}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          <div onClick={() => router.push(`/request/product/${r.id}`)}>
+                            <p className="text-[10px] font-bold text-zinc-700 leading-none">{relativeTime(r.date_updated || r.date_created)}</p>
+                            <p className="text-[8px] text-zinc-400 mt-1 flex items-center gap-1 leading-none">
+                              <Calendar size={8} />
+                              {new Date(r.date_created).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                            </p>
+                          </div>
+
+                          <div className="flex justify-end" onClick={() => router.push(`/request/product/${r.id}`)}>
                             <div className="size-8 flex items-center justify-center rounded-xl border border-transparent group-hover:border-zinc-200 group-hover:bg-white transition-all">
                               <ArrowRight className="size-3.5 text-zinc-300 group-hover:text-zinc-800 transition-colors" />
                             </div>
@@ -546,44 +850,61 @@ export default function ProcurementListPage() {
                         </div>
 
                         {/* ── MOBILE CARD ── */}
-                        <div className="md:hidden px-4 py-4">
-                          <div className="flex items-start justify-between gap-2 mb-2.5">
+                        <div className="md:hidden px-4 py-3.5" onClick={() => router.push(`/request/product/${r.id}`)}>
+                          <div className="flex items-start justify-between gap-2 mb-2">
                             <div className="flex items-center gap-3 min-w-0">
-                              <div className="size-10 rounded-xl bg-zinc-50 border border-zinc-100 flex items-center justify-center flex-shrink-0 group-hover:bg-zinc-900 transition-all">
-                                <Package size={14} className="text-zinc-300 group-hover:text-white" />
+                              <div className="size-9 rounded-xl border border-zinc-100 flex items-center justify-center flex-shrink-0 group-hover:bg-zinc-900 transition-all overflow-hidden bg-zinc-50">
+                                {r.firstImage ? (
+                                  <img src={r.firstImage} className="w-full h-full object-cover" alt="product" />
+                                ) : (
+                                  <Package size={14} className="text-zinc-300 group-hover:text-white" />
+                                )}
                               </div>
                               <div className="min-w-0">
-                                <p className="text-[13px] font-mono font-black text-zinc-900 leading-tight truncate">{r.spf_number}</p>
-                                <p className="text-[10px] text-zinc-400 font-bold truncate">{staffNames[r.referenceid || ""] || r.referenceid || "No Reference ID"}</p>
+                                <p className="text-[12px] font-mono font-black text-zinc-900 leading-tight truncate">{r.spf_number}</p>
+                                {r.clientName && r.clientName !== "Unknown Client" && (
+                                  <p className="text-[10px] text-zinc-800 font-black truncate">{r.clientName}</p>
+                                )}
                               </div>
                             </div>
-                            <div className={cn("flex items-center gap-1.5 px-2.5 py-1 rounded-xl border flex-shrink-0", meta.bg, meta.border)}>
-                              <div className={cn("size-1.5 rounded-full", meta.dot)} />
-                              <span className={cn("text-[8px] font-black uppercase tracking-wide", meta.color)}>
+                            <div className={cn("flex items-center gap-1.5 px-2 py-0.5 rounded-lg border flex-shrink-0", meta.bg, meta.border)}>
+                              <div className={cn("size-1 rounded-full", meta.dot)} />
+                              <span className={cn("text-[7px] font-black uppercase tracking-wide", meta.color)}>
                                 {meta.label}
                               </span>
                             </div>
                           </div>
 
-                          <div className="flex items-center justify-between pl-[52px]">
-                            <div className="flex flex-wrap items-center gap-2">
-                              {r.tsm && (
-                                <span className="text-[9px] bg-zinc-100 rounded-lg px-2 py-0.5 uppercase font-bold text-zinc-600">{staffNames[r.tsm || ""] || r.tsm || "—"}</span>
+                          <div className="flex items-center justify-between pl-[48px] mb-2">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[9px] bg-zinc-100 rounded-lg px-2 py-0.5 uppercase font-bold text-zinc-600">{formatPHP(r.totalSellingValue || 0)}</span>
+                              {r.expectedMargin !== undefined && (
+                                <span className={cn("text-[9px] font-black px-1.5 py-0.5 rounded-lg", r.expectedMargin > 30 ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600")}>
+                                  {r.expectedMargin.toFixed(0)}%
+                                </span>
                               )}
-                              <span className="flex items-center gap-1 text-[9px] text-zinc-400 font-bold">
-                                <Calendar size={9} />
-                                {r.date_created ? new Date(r.date_created).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" }) : "---"}
-                              </span>
-                              {r.date_updated && (
-                                <span className="text-[9px] text-zinc-400 font-bold">· {relativeTime(r.date_updated)}</span>
-                              )}
-                              {pending && !filled && (
-                                <span className="text-amber-600 font-black text-[8px] bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-lg">
-                                  ⚠ Needs Costing
+                              {r.isAging && (
+                                <span className="text-rose-600 font-black text-[7px] bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded-lg flex items-center gap-1">
+                                  <Clock3 size={7} /> Aging
                                 </span>
                               )}
                             </div>
-                            <ArrowRight className="size-4 text-zinc-200 group-hover:text-zinc-500 transition-colors flex-shrink-0 ml-2" />
+                            <div className="flex items-center gap-2">
+                              <span className="text-[8px] text-zinc-400 font-bold">{relativeTime(r.date_updated || r.date_created)}</span>
+                              <ArrowRight className="size-3.5 text-zinc-200 group-hover:text-zinc-500 transition-colors flex-shrink-0" />
+                            </div>
+                          </div>
+
+                          <div className="pl-[48px]">
+                            <div className="h-1 w-full bg-zinc-100 rounded-full overflow-hidden">
+                              <div 
+                                className={cn("h-full transition-all duration-500", progress === 1 ? "bg-emerald-500" : "bg-blue-500")} 
+                                style={{ width: `${progress * 100}%` }}
+                              />
+                            </div>
+                            <p className="text-[8px] font-black text-zinc-400 uppercase tracking-widest mt-1">
+                              {r.filledItems}/{r.totalItems} Costing Items Done
+                            </p>
                           </div>
                         </div>
                       </div>
