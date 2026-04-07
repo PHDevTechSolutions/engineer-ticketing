@@ -193,6 +193,7 @@ export default function OtherRequestReviewPage() {
               profilePicture={userContext.profilePicture}
               userRole={userContext.role}
               status={status}
+              title={data?.title || "dsiconnect"}
             />
           </div>
 

@@ -488,6 +488,7 @@ export default function DialuxRequestReviewPage() {
               profilePicture={userContext.profilePicture}
               userRole={userContext.role}
               status={status}
+              title={data?.title || "dsiconnect"}
             />
           </div>
 

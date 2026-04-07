@@ -590,13 +590,12 @@ export default function ProcurementListPage() {
     <ProtectedPageWrapper>
       <SidebarProvider defaultOpen={false} className="overflow-visible">
         <AppSidebar userId={userId} />
-        <SidebarInset className="bg-[#F8FAFA] pb-24 md:pb-10 min-h-screen pt-14 md:pt-16">
+        <SidebarInset className="bg-[#F8FAFA] pb-24 md:pb-10 min-h-screen m-0 rounded-none border-none shadow-none overflow-visible pt-14 md:pt-16">
           <PageHeader
             title="SPF PROCUREMENT"
             version="V1.0"
             showBackButton
             trigger={<SidebarTrigger className="mr-2" />}
-            className="md:left-[calc(var(--sidebar-width-icon)+1rem)] group-data-[state=expanded]/sidebar-wrapper:md:left-[calc(var(--sidebar-width)+1rem)] transition-[left] duration-200"
           />
 
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-4">

@@ -13,7 +13,12 @@ import {
   RotateCcw, XCircle, ArrowRight, ArrowUpDown, ArrowUp,
   Calendar, Activity, Percent, Building2, Settings2,
   HelpCircle, Info, Lightbulb, MousePointer2, Sparkles,
+  MessageSquare,
 } from "lucide-react";
+
+import { db } from "@/lib/firebase";
+import { doc, onSnapshot } from "firebase/firestore";
+import { CollaborationHub } from "@/components/collaboration-hub";
 
 import { supabase } from "@/utils/supabase";
 import { toast } from "sonner";
@@ -266,9 +271,47 @@ export default function ProcurementDetailPage() {
   const [verifiedOptions, setVerifiedStatus] = useState<Record<string, boolean>>({});
   const [staffNames, setStaffNames] = useState<Record<string, string>>({});
 
+  // Chat/Collaboration States
+  const [userContext, setUserContext] = useState({
+    role: "", id: "", name: "", profilePicture: ""
+  });
+  const [chatData, setChatData] = useState<any>(null);
+
   const id = params?.id as string
   const [userId, setUserId] = React.useState<string | null>(null)
   const [userDept, setUserDept] = React.useState("")
+
+  // Collaboration Hub Sync
+  useEffect(() => {
+    let unsubscribe: () => void;
+    if (!id || !userId) return;
+
+    const loadUserAndChat = async () => {
+      try {
+        const res = await fetch(`/api/user?id=${encodeURIComponent(userId)}`);
+        const user = await res.json();
+        setUserContext({
+          role: (user.Department || "staff").toLowerCase(),
+          id: userId,
+          name: `${user.Firstname || ""} ${user.Lastname || ""}`.trim(),
+          profilePicture: user.profilePicture || ""
+        });
+
+        // Use "spf_creations" collection for collaboration
+        const docRef = doc(db, "spf_creations", id);
+        unsubscribe = onSnapshot(docRef, (docSnap) => {
+          if (docSnap.exists()) {
+            setChatData(docSnap.data());
+          }
+        });
+      } catch (err) {
+        console.error("Chat sync failed", err);
+      }
+    };
+
+    loadUserAndChat();
+    return () => unsubscribe?.();
+  }, [id, userId]);
 
   React.useEffect(() => {
     const storedId = localStorage.getItem("userId")
@@ -886,10 +929,7 @@ export default function ProcurementDetailPage() {
       <SidebarProvider defaultOpen={false}>
         <AppSidebar userId={userId} />
 
-        <SidebarInset className={cn(
-          "bg-[#F8FAFA] min-h-screen",
-          !isLocked ? "pb-28 lg:pb-10" : "pb-10"
-        )}>
+        <SidebarInset className="bg-[#F8FAFA] min-h-screen m-0 rounded-none border-none shadow-none overflow-visible pt-14 md:pt-16">
           <PageHeader
             title={`PROCUREMENT / ${spfData?.spf_number ?? "---"}`}
             version="V1.0"
@@ -2250,6 +2290,21 @@ Recommended SRP: ${formatPHP(calcResult.srp)}
                       </p>
                     </div>
                   )}
+
+                  {/* Collaboration Hub */}
+                  <div className="bg-white rounded-[24px] border border-zinc-200/60 shadow-sm overflow-hidden">
+                    <CollaborationHub
+                      requestId={id}
+                      collectionName="spf_creations"
+                      messages={chatData?.messages || []}
+                      currentUserId={userContext.id}
+                      userName={userContext.name}
+                      profilePicture={userContext.profilePicture}
+                      userRole={userContext.role}
+                      status={spfData?.status || "PENDING"}
+                      title={spfData?.spf_number || "dsiconnect"}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -2291,6 +2346,21 @@ Recommended SRP: ${formatPHP(calcResult.srp)}
                   <p className="text-[11px] text-zinc-600 italic leading-relaxed">"{requestData.special_instructions}"</p>
                 </div>
               )}
+
+              {/* Mobile Collaboration Hub */}
+              <div className="mt-4 pt-4 border-t border-zinc-100">
+                <CollaborationHub
+                  requestId={id}
+                  collectionName="spf_creations"
+                  messages={chatData?.messages || []}
+                  currentUserId={userContext.id}
+                  userName={userContext.name}
+                  profilePicture={userContext.profilePicture}
+                  userRole={userContext.role}
+                  status={spfData?.status || "PENDING"}
+                  title={spfData?.spf_number || "dsiconnect"}
+                />
+              </div>
             </div>
 
           </main>

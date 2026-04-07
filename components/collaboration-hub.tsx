@@ -53,6 +53,7 @@ interface CollaborationHubProps {
   profilePicture?: string;
   userRole: string;
   status: string;
+  title?: string;
 }
 
 export function CollaborationHub({
@@ -63,7 +64,8 @@ export function CollaborationHub({
   userName,
   profilePicture,
   userRole,
-  status
+  status,
+  title = "dsiconnect"
 }: CollaborationHubProps) {
   const [chatMessage, setChatMessage] = useState("");
   const [isOpen, setIsOpen] = useState(false);
@@ -259,30 +261,60 @@ export function CollaborationHub({
 
     try {
       const docRef = doc(db, collectionName, requestId); 
-      await updateDoc(docRef, {
-        messages: arrayUnion({
-          id: Math.random().toString(36).substring(2, 11),
-          text: content,
-          senderId: currentUserId,
-          senderName: userName, 
-          senderImage: profilePicture || "",
-          role: userRole,
-          time: new Date().toISOString(),
-          isResolved: false,
-          seenBy: [currentUserId],
-          reactions: {},
-          replyTo: currentReply ? {
-            text: currentReply.text,
-            senderName: currentReply.senderName,
-            originalMsgId: currentReply.id
-          } : null
-        }),
-        updatedAt: serverTimestamp()
-      });
+      try {
+        await updateDoc(docRef, {
+          messages: arrayUnion({
+            id: Math.random().toString(36).substring(2, 11),
+            text: content,
+            senderId: currentUserId,
+            senderName: userName, 
+            senderImage: profilePicture || "",
+            role: userRole,
+            time: new Date().toISOString(),
+            isResolved: false,
+            seenBy: [currentUserId],
+            reactions: {},
+            replyTo: currentReply ? {
+              text: currentReply.text,
+              senderName: currentReply.senderName,
+              originalMsgId: currentReply.id
+            } : null
+          }),
+          updatedAt: serverTimestamp()
+        });
+      } catch (docError: any) {
+        // If document doesn't exist, create it
+        if (docError.code === 'not-found') {
+          await setDoc(docRef, {
+            messages: [{
+              id: Math.random().toString(36).substring(2, 11),
+              text: content,
+              senderId: currentUserId,
+              senderName: userName, 
+              senderImage: profilePicture || "",
+              role: userRole,
+              time: new Date().toISOString(),
+              isResolved: false,
+              seenBy: [currentUserId],
+              reactions: {},
+              replyTo: currentReply ? {
+                text: currentReply.text,
+                senderName: currentReply.senderName,
+                originalMsgId: currentReply.id
+              } : null
+            }],
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
+        } else {
+          throw docError;
+        }
+      }
       sentSound.current?.play().catch(() => {});
       setLastSeenTime(Date.now());
       setTimeout(() => scrollToBottom("auto"), 100);
     } catch (e) {
+      console.error("Firebase send error:", e);
       toast.error("Message failed to send.");
       setChatMessage(content);
     } finally {
@@ -356,7 +388,7 @@ export function CollaborationHub({
                 <div className="flex items-center gap-3">
                   <EngiConnectLogo />
                   <div>
-                    <h3 className="text-sm font-bold tracking-tight text-white">engiconnect</h3>
+                    <h3 className="text-sm font-bold tracking-tight text-white uppercase">{title}</h3>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <div className="size-1.5 bg-green-400 rounded-full animate-pulse" />
                       <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Online</p>

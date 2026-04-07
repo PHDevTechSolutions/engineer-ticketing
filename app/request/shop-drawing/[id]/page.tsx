@@ -300,6 +300,7 @@ export default function EngineeringReviewPage() {
                 profilePicture={userContext.profilePicture}
                 userRole={userContext.role}
                 status={status}
+                title={data?.title || "dsiconnect"}
               />
             </div>
 

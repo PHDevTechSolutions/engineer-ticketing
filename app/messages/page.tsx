@@ -357,6 +357,7 @@ function MessagesContent() {
                                 userRole={userData?.Position || "Staff"}
                                 status={activeData.status || "PENDING"}
                                 profilePicture={userData?.Image}
+                                title={activeData.projectName || "dsiconnect"}
                             />
                         </div>
                     </div>
@@ -371,7 +372,7 @@ function MessagesContent() {
                                 <Sparkles size={18} className="text-amber-500" />
                             </div>
                         </div>
-                        <h3 className="text-[12px] font-black text-slate-900 uppercase tracking-[0.4em] mb-3">EngiConnect Hub</h3>
+                        <h3 className="text-[12px] font-black text-slate-900 uppercase tracking-[0.4em] mb-3">DSIConnect Hub</h3>
                         <p className="text-[11px] font-bold text-slate-400 uppercase max-w-[280px] leading-relaxed">
                             Select a project cluster from the sidebar to begin internal collaboration
                         </p>
