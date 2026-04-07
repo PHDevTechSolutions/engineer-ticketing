@@ -9,7 +9,10 @@ import {
   Receipt, Truck, Factory, Anchor, Save, FileDown,
   FileText, ChevronDown, ChevronUp, Users, ClipboardList,
   AlertTriangle, TrendingUp, Lock, Calculator, RefreshCw,
-  DollarSign, BarChart2, Copy, ExternalLink,
+  DollarSign, BarChart2, Copy, ExternalLink, Globe, Zap,
+  RotateCcw, XCircle, ArrowRight, ArrowUpDown, ArrowUp,
+  Calendar, Activity, Percent, Building2, Settings2,
+  HelpCircle, Info, Lightbulb, MousePointer2, Sparkles,
 } from "lucide-react";
 
 import { supabase } from "@/utils/supabase";
@@ -50,7 +53,13 @@ interface ProductCell {
   w_db: string;
   h_db: string;
   pcs_carton_db: string;
-
+  itemCode: string;
+  priceValidity: string;
+  tds: string;
+  dimDrawing: string;
+  illuDrawing: string;
+  finalUnitCost: string;
+  finalSubtotal: string;
 }
 
 
@@ -148,16 +157,27 @@ function parseAllProducts(offers: any): ProductCell[][] {
   const rowSelling = split(offers.final_selling_cost);
   const rowLeadTimes = split(offers.proj_lead_time);
   const rowPcsCartons = split(offers.product_offer_pcs_per_carton ?? "");
+  const rowItemCodes = split(offers.item_code ?? "");
+  const rowPriceValidity = split(offers.price_validity ?? "");
+  const rowTDS = split(offers.tds ?? "");
+  const rowDimDrawings = split(offers.dimensional_drawing ?? "");
+  const rowIlluDrawings = split(offers.illuminance_drawing ?? "");
+  const rowFinalUnitCosts = split(offers.final_unit_cost ?? "");
+  const rowFinalSubtotals = split(offers.final_subtotal ?? "");
 
   return rowImages.map((rowStr, rIdx) =>
     rowStr.split(",").map((img, pIdx) => {
       const packagingStr = rowPackaging[rIdx]?.split(",")[pIdx]?.trim() ?? "";
       const dims = extractDimensions(packagingStr);
+      const qtyStr = rowQtys[rIdx]?.split(",")[pIdx]?.trim() ?? "0";
+      const unitCostStr = rowUnitCosts[rIdx]?.split(",")[pIdx]?.trim() ?? "0";
+      const finalUnitCostStr = rowFinalUnitCosts[rIdx]?.split(",")[pIdx]?.trim() ?? unitCostStr;
+      
       return {
         image: img.trim(),
-        qty: rowQtys[rIdx]?.split(",")[pIdx]?.trim() ?? "0",
+        qty: qtyStr,
         specs: parseSpecs(rowSpecs[rIdx]?.split(" || ")[pIdx] ?? ""),
-        unitCost: rowUnitCosts[rIdx]?.split(",")[pIdx]?.trim() ?? "0",
+        unitCost: unitCostStr,
         packaging: packagingStr,
         factory: rowFactories[rIdx]?.split(",")[pIdx]?.trim() ?? "-",
         port: rowPorts[rIdx]?.split(",")[pIdx]?.trim() ?? "-",
@@ -172,6 +192,15 @@ function parseAllProducts(offers: any): ProductCell[][] {
         w_db: dims.w,
         h_db: dims.h,
         pcs_carton_db: rowPcsCartons[rIdx]?.split(",")[pIdx]?.trim() ?? "",
+        itemCode: rowItemCodes[rIdx]?.split(",")[pIdx]?.trim() ?? "-",
+        priceValidity: rowPriceValidity[rIdx]?.split(",")[pIdx]?.trim() ?? "-",
+        tds: rowTDS[rIdx]?.split(",")[pIdx]?.trim() ?? "-",
+        dimDrawing: rowDimDrawings[rIdx]?.split(",")[pIdx]?.trim() ?? "-",
+        illuDrawing: rowIlluDrawings[rIdx]?.split(",")[pIdx]?.trim() ?? "-",
+        finalUnitCost: (finalUnitCostStr === "-" || finalUnitCostStr === "") ? unitCostStr : finalUnitCostStr,
+        finalSubtotal: (rowFinalSubtotals[rIdx]?.split(",")[pIdx]?.trim() === "-" || !rowFinalSubtotals[rIdx]?.split(",")[pIdx])
+          ? (parseFloat(qtyStr) * (finalUnitCostStr === "-" ? parseFloat(unitCostStr) : parseFloat(finalUnitCostStr))).toString()
+          : rowFinalSubtotals[rIdx]?.split(",")[pIdx]?.trim(),
         rowIndex: rIdx,
         productIndex: pIdx,
       };
@@ -203,6 +232,26 @@ export default function ProcurementDetailPage() {
   // Calculator States
   const [showCalc, setShowCalc] = useState<Record<string, boolean>>({});
   const [calcStates, setCalcStates] = useState<Record<string, any>>({});
+  const [globalSettings, setGlobalSettings] = useState({
+    exchangeRate: "60",
+    shipmentCost: "520000",
+    cbmContainer: "65",
+    invoicePct: "1.01",
+    gp: "75",
+    lpc_containerCost: "600000",
+    lpc_invoicePct: "1.01",
+    lpc_gp: "54",
+    nc_multiplier: "1.65",
+    nc_gp: "45",
+    ll_multiplier: "1.25",
+    llp_multiplier: "1.25",
+    llp_deliveryFee: "5000",
+  });
+  const [showGlobalSettings, setShowGlobalSettings] = useState(false);
+  const [supplierAdjustments, setSupplierAdjustments] = useState<Record<string, string>>({});
+  const [showGuide, setShowGuide] = useState(false);
+  const [verifiedOptions, setVerifiedStatus] = useState<Record<string, boolean>>({});
+  const [staffNames, setStaffNames] = useState<Record<string, string>>({});
 
   const id = params?.id as string
   const [userId, setUserId] = React.useState<string | null>(null)
@@ -222,6 +271,21 @@ export default function ProcurementDetailPage() {
 
     fetchProfile()
     // fetchEntry()
+
+    const fetchStaff = async () => {
+      try {
+        const res = await fetch('/api/user')
+        const allUsers = await res.json()
+        const mapping: Record<string, string> = {}
+        allUsers.forEach((u: any) => {
+          if (u.ReferenceID) {
+            mapping[u.ReferenceID] = `${u.Firstname || ""} ${u.Lastname || ""}`.trim()
+          }
+        })
+        setStaffNames(mapping)
+      } catch (e) { console.error(e) }
+    }
+    fetchStaff()
   }, [id])
 
   /* ── FETCH ── */
@@ -253,6 +317,7 @@ export default function ProcurementDetailPage() {
           }
         }
         setLiveExchangeRate(currentRate);
+        setGlobalSettings(prev => ({ ...prev, exchangeRate: currentRate }));
 
         const { data: offer, error } = await supabase
           .from("spf_creation")
@@ -270,6 +335,8 @@ export default function ProcurementDetailPage() {
         parsed.forEach((r, ri) =>
           r.forEach((p, pi) => {
             initCalcs[`${ri}-${pi}`] = {
+              formulaType: "spf_china",
+              // SPF China
               l: p.l_db || "",
               w: p.w_db || "",
               h: p.h_db || "",
@@ -278,7 +345,24 @@ export default function ProcurementDetailPage() {
               cbmContainer: "65",
               invoicePct: "1.01",
               exchangeRate: currentRate,
-              gp: "0.75",
+              gp: "75",
+              // Lamp Post China
+              lpc_containerCost: "600000",
+              lpc_pcsPerContainer: "",
+              lpc_invoicePct: "1.01",
+              lpc_exchangeRate: currentRate,
+              lpc_gp: "54",
+              // SPF Non-China
+              nc_multiplier: "1.65",
+              nc_exchangeRate: currentRate,
+              nc_gp: "45",
+              // SPF Local Lighting
+              ll_srpVatInc: "",
+              ll_multiplier: "1.25",
+              // SPF Local Lamp Post
+              llp_srpVatInc: "",
+              llp_multiplier: "1.25",
+              llp_deliveryFee: "5000",
             };
           })
         );
@@ -359,6 +443,17 @@ export default function ProcurementDetailPage() {
   const progressPct = totalCount > 0 ? Math.round((filledCount / totalCount) * 100) : 0;
   const grandTotalSelling = allCells.reduce((sum, p) => sum + (parseFloat(p.sellingCost) || 0), 0);
   const grandTotalPD = allCells.reduce((sum, p) => sum + (parseFloat(p.subtotal) || 0), 0);
+  const grandTotalFinalPD = allCells.reduce((sum, p) => sum + (parseFloat(p.finalSubtotal) || 0), 0);
+  const grandTotalProfit = grandTotalSelling - grandTotalFinalPD;
+  const avgMarginPct = grandTotalSelling > 0 ? (grandTotalProfit / grandTotalSelling) * 100 : 0;
+  
+  const projectHealth = avgMarginPct >= 45 ? "excellent" : avgMarginPct >= 30 ? "good" : avgMarginPct > 0 ? "warning" : "critical";
+  const healthColors = {
+    excellent: "bg-emerald-500 text-white shadow-emerald-200",
+    good: "bg-blue-500 text-white shadow-blue-200",
+    warning: "bg-amber-500 text-white shadow-amber-200",
+    critical: "bg-rose-500 text-white shadow-rose-200",
+  };
 
   const itemDescriptions = (requestData?.item_description || "").split(",").map((s: string) => s.trim());
   const itemPhotos = (requestData?.item_photo || "").split(",").map((s: string) => s.trim());
@@ -371,11 +466,21 @@ export default function ProcurementDetailPage() {
   const isLocked = isApproved || isRejected;
 
   /* ── EDIT ── */
-  const updateCell = (rIdx: number, pIdx: number, field: "sellingCost" | "leadTime", value: string) => {
+  const updateCell = (rIdx: number, pIdx: number, field: "sellingCost" | "leadTime" | "finalUnitCost", value: string) => {
     if (isLocked) return;
     setRows(prev => {
       const next = prev.map(r => r.map(p => ({ ...p })));
       next[rIdx][pIdx][field] = value;
+      
+      // Auto-calculate finalSubtotal if finalUnitCost changes
+      if (field === "finalUnitCost") {
+        const qty = parseFloat(next[rIdx][pIdx].qty) || 0;
+        const pdUnitCost = parseFloat(next[rIdx][pIdx].unitCost) || 0;
+        // If input is empty or "-", use PD cost
+        const effectiveUnitCost = (value === "-" || value === "") ? pdUnitCost : parseFloat(value) || 0;
+        next[rIdx][pIdx].finalSubtotal = (qty * effectiveUnitCost).toString();
+      }
+      
       return next;
     });
   };
@@ -388,9 +493,9 @@ export default function ProcurementDetailPage() {
       ...prev,
       [key]: {
         ...(prev[key] || {
+          formulaType: "spf_china",
           l: "", w: "", h: "", qtyPerBox: "",
-          shipmentCost: "520000", cbmContainer: "65",
-          invoicePct: "1.01", exchangeRate: liveExchangeRate, gp: "0.75"
+          ...globalSettings
         }),
         [field]: val
       }
@@ -398,26 +503,172 @@ export default function ProcurementDetailPage() {
   };
 
   const calculateSRP = (unitCost: string, calc: any) => {
-    if (!calc) return { landed: 0, srp: 0 };
-    const l = parseFloat(calc.l) || 0;
-    const w = parseFloat(calc.w) || 0;
-    const h = parseFloat(calc.h) || 0;
-    const qtyPerBox = parseFloat(calc.qtyPerBox) || 0;
-    const shipmentCost = parseFloat(calc.shipmentCost) || 0;
-    const cbmContainer = parseFloat(calc.cbmContainer) || 0;
-    const invoicePct = parseFloat(calc.invoicePct) || 0;
-    const exchangeRate = parseFloat(calc.exchangeRate) || 0;
-    const gp = parseFloat(calc.gp) || 0;
+    if (!calc) return { landed: 0, srp: 0, breakdown: null };
+    const formulaType = calc.formulaType || "spf_china";
     const unitPrice = parseFloat(unitCost) || 0;
-    if (!l || !w || !h || !qtyPerBox || !cbmContainer || gp >= 1) return { landed: 0, srp: 0 };
-    const cbmPerBox = (l * w * h) / 1000000;
-    const boxesPerContainer = cbmContainer / cbmPerBox;
-    const totalItems = boxesPerContainer * qtyPerBox;
-    const shippingPerItem = shipmentCost / totalItems;
-    const baseCost = unitPrice * exchangeRate;
-    const landedCost = (baseCost + shippingPerItem) * invoicePct;
-    const srp = landedCost / (1 - gp);
-    return { landed: landedCost, srp };
+
+    if (formulaType === "spf_china") {
+      const l = parseFloat(calc.l) || 0;
+      const w = parseFloat(calc.w) || 0;
+      const h = parseFloat(calc.h) || 0;
+      const qtyPerBox = parseFloat(calc.qtyPerBox) || 0;
+      const shipmentCost = parseFloat(calc.shipmentCost) || 0;
+      const cbmContainer = parseFloat(calc.cbmContainer) || 0;
+      const invoicePct = parseFloat(calc.invoicePct) || 0;
+      const exchangeRate = parseFloat(calc.exchangeRate) || 0;
+      const gp = (parseFloat(calc.gp) || 0) / 100;
+      if (!l || !w || !h || !qtyPerBox || !cbmContainer || gp >= 1) return { landed: 0, srp: 0, breakdown: null };
+      const cbmPerBox = (l * w * h) / 1000000;
+      const boxesPerContainer = cbmContainer / cbmPerBox;
+      const totalItems = boxesPerContainer * qtyPerBox;
+      const shippingPerItem = shipmentCost / totalItems;
+      const baseCostPHP = unitPrice * exchangeRate;
+      const landedCost = (baseCostPHP + shippingPerItem) * invoicePct;
+      const srp = landedCost / (1 - gp);
+      return {
+        landed: landedCost,
+        srp,
+        breakdown: {
+          baseCostPHP,
+          shippingPerItem,
+          invoiceFee: landedCost - (baseCostPHP + shippingPerItem),
+          margin: srp - landedCost,
+        }
+      };
+    }
+
+    if (formulaType === "lamp_post_china") {
+      const exchangeRate = parseFloat(calc.lpc_exchangeRate) || 0;
+      const containerCost = parseFloat(calc.lpc_containerCost) || 0;
+      const pcsPerContainer = parseFloat(calc.lpc_pcsPerContainer) || 0;
+      const invoicePct = parseFloat(calc.lpc_invoicePct) || 0;
+      const gp = (parseFloat(calc.lpc_gp) || 0) / 100;
+      if (!pcsPerContainer || gp >= 1) return { landed: 0, srp: 0, breakdown: null };
+      const baseCostPHP = unitPrice * exchangeRate;
+      const shippingPerItem = containerCost / pcsPerContainer;
+      const landedCost = (baseCostPHP + shippingPerItem) * invoicePct;
+      const srp = landedCost / (1 - gp);
+      return {
+        landed: landedCost,
+        srp,
+        breakdown: {
+          baseCostPHP,
+          shippingPerItem,
+          invoiceFee: landedCost - (baseCostPHP + shippingPerItem),
+          margin: srp - landedCost,
+        }
+      };
+    }
+
+    if (formulaType === "spf_non_china") {
+      const multiplier = parseFloat(calc.nc_multiplier) || 0;
+      const exchangeRate = parseFloat(calc.nc_exchangeRate) || 0;
+      const gp = (parseFloat(calc.nc_gp) || 0) / 100;
+      if (gp >= 1) return { landed: 0, srp: 0, breakdown: null };
+      const baseCostPHP = unitPrice * exchangeRate;
+      const landedCost = baseCostPHP * multiplier;
+      const srp = landedCost / (1 - gp);
+      return {
+        landed: landedCost,
+        srp,
+        breakdown: {
+          baseCostPHP,
+          multiplierEffect: landedCost - baseCostPHP,
+          margin: srp - landedCost,
+        }
+      };
+    }
+
+    if (formulaType === "local_lighting") {
+      const srpVatInc = parseFloat(calc.ll_srpVatInc) || 0;
+      const multiplier = parseFloat(calc.ll_multiplier) || 0;
+      const srp = srpVatInc * multiplier;
+      return {
+        landed: 0,
+        srp,
+        breakdown: {
+          supplierPrice: srpVatInc,
+          markup: srp - srpVatInc,
+        }
+      };
+    }
+
+    if (formulaType === "local_lamp_post") {
+      const srpVatInc = parseFloat(calc.llp_srpVatInc) || 0;
+      const multiplier = parseFloat(calc.llp_multiplier) || 0;
+      const deliveryFee = parseFloat(calc.llp_deliveryFee) || 0;
+      const srp = (srpVatInc + deliveryFee) * multiplier;
+      return {
+        landed: 0,
+        srp,
+        breakdown: {
+          supplierPrice: srpVatInc,
+          deliveryFee,
+          markup: srp - (srpVatInc + deliveryFee),
+        }
+      };
+    }
+
+    return { landed: 0, srp: 0, breakdown: null };
+  };
+
+  const calculateMaxUnitCost = (targetSRP: string, calc: any) => {
+    if (!calc) return 0;
+    const target = parseFloat(targetSRP) || 0;
+    const formulaType = calc.formulaType || "spf_china";
+    const exchangeRate = parseFloat(calc.exchangeRate || calc.lpc_exchangeRate || calc.nc_exchangeRate || liveExchangeRate) || 1;
+    const gp = (parseFloat(calc.gp || calc.lpc_gp || calc.nc_gp) || 0) / 100;
+    const invoicePct = parseFloat(calc.invoicePct || calc.lpc_invoicePct) || 1;
+
+    if (formulaType === "spf_china") {
+      const l = parseFloat(calc.l) || 0;
+      const w = parseFloat(calc.w) || 0;
+      const h = parseFloat(calc.h) || 0;
+      const qtyPerBox = parseFloat(calc.qtyPerBox) || 0;
+      const shipmentCost = parseFloat(calc.shipmentCost) || 0;
+      const cbmContainer = parseFloat(calc.cbmContainer) || 0;
+      if (!l || !w || !h || !qtyPerBox || !cbmContainer || gp >= 1) return 0;
+      
+      const cbmPerBox = (l * w * h) / 1000000;
+      const boxesPerContainer = cbmContainer / cbmPerBox;
+      const totalItems = boxesPerContainer * qtyPerBox;
+      const shippingPerItem = shipmentCost / totalItems;
+      
+      // UnitCost = ((SRP * (1 - GP) / InvoicePct) - ShippingPerItem) / Rate
+      const maxUnitCost = ((target * (1 - gp) / invoicePct) - shippingPerItem) / exchangeRate;
+      return Math.max(0, maxUnitCost);
+    }
+
+    if (formulaType === "lamp_post_china") {
+      const containerCost = parseFloat(calc.lpc_containerCost) || 0;
+      const pcsPerContainer = parseFloat(calc.lpc_pcsPerContainer) || 0;
+      if (!pcsPerContainer || gp >= 1) return 0;
+      const shippingPerItem = containerCost / pcsPerContainer;
+      const maxUnitCost = ((target * (1 - gp) / invoicePct) - shippingPerItem) / exchangeRate;
+      return Math.max(0, maxUnitCost);
+    }
+
+    if (formulaType === "spf_non_china") {
+      const multiplier = parseFloat(calc.nc_multiplier) || 1;
+      if (gp >= 1 || multiplier === 0) return 0;
+      const maxUnitCost = (target * (1 - gp)) / (multiplier * exchangeRate);
+      return Math.max(0, maxUnitCost);
+    }
+
+    if (formulaType === "local_lighting") {
+      const multiplier = parseFloat(calc.ll_multiplier) || 1;
+      if (multiplier === 0) return 0;
+      return target / multiplier;
+    }
+
+    if (formulaType === "local_lamp_post") {
+      const multiplier = parseFloat(calc.llp_multiplier) || 1;
+      const deliveryFee = parseFloat(calc.llp_deliveryFee) || 0;
+      if (multiplier === 0) return 0;
+      return (target / multiplier) - deliveryFee;
+    }
+
+    return 0;
   };
 
   /* ── SAVE ── */
@@ -428,6 +679,8 @@ export default function ProcurementDetailPage() {
       const update: any = {
         final_selling_cost: rebuildStr(rows, p => p.sellingCost),
         proj_lead_time: rebuildStr(rows, p => p.leadTime),
+        final_unit_cost: rebuildStr(rows, p => p.finalUnitCost),
+        final_subtotal: rebuildStr(rows, p => p.finalSubtotal),
         date_updated: new Date().toISOString(),
       };
       if (markCostingDone) {
@@ -471,6 +724,139 @@ export default function ProcurementDetailPage() {
 
   return (
     <ProtectedPageWrapper>
+      {/* ── HELP GUIDE MODAL ── */}
+      {showGuide && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-zinc-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col border border-zinc-100 scale-in-center animate-in zoom-in-95 duration-300">
+            {/* Header */}
+            <div className="p-6 md:p-8 bg-zinc-900 text-white relative">
+              <div className="relative z-10 flex items-center justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-blue-500 rounded-xl text-white">
+                      <Info size={18} />
+                    </div>
+                    <h2 className="text-xl font-black uppercase tracking-tight">Procurement Pro Guide</h2>
+                  </div>
+                  <p className="text-xs text-zinc-400 font-bold uppercase tracking-widest ml-1">Mastering the costing engine</p>
+                </div>
+                <button 
+                  onClick={() => setShowGuide(false)}
+                  className="p-2 rounded-full hover:bg-white/10 text-zinc-400 transition-colors"
+                >
+                  <XCircle size={24} />
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8 custom-scrollbar">
+              
+              {/* Feature 1 */}
+              <div className="flex gap-4">
+                <div className="flex-shrink-0 size-10 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 border border-blue-100">
+                  <Settings2 size={20} />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-sm font-black uppercase tracking-tight text-zinc-800">1. Global Parameters</h3>
+                  <p className="text-xs text-zinc-500 leading-relaxed font-medium">
+                    Set project-wide defaults for <span className="font-bold text-zinc-700 underline decoration-blue-200">Exchange Rates, Shipment Costs, and Target GP</span>. 
+                    Use the <strong>"Sync All Options"</strong> button to instantly update every item in the request.
+                  </p>
+                </div>
+              </div>
+
+              {/* Feature 2 */}
+              <div className="flex gap-4">
+                <div className="flex-shrink-0 size-10 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-600 border border-emerald-100">
+                  <Percent size={20} />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-sm font-black uppercase tracking-tight text-zinc-800">2. Bulk Supplier Adjustments</h3>
+                  <p className="text-xs text-zinc-500 leading-relaxed font-medium">
+                    Negotiated a project discount? Select a supplier in the Global panel and apply a <span className="font-bold text-emerald-600">-5% or +10%</span> adjustment to 
+                    all their products simultaneously.
+                  </p>
+                </div>
+              </div>
+
+              {/* Feature 3 */}
+              <div className="flex gap-4">
+                <div className="flex-shrink-0 size-10 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-600 border border-amber-100">
+                  <Activity size={20} />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-sm font-black uppercase tracking-tight text-zinc-800">3. Risk Sensitivity Analysis</h3>
+                  <p className="text-xs text-zinc-500 leading-relaxed font-medium">
+                    Check the "Analysis Breakdown" inside each calculator. It shows exactly how a <span className="font-bold text-amber-600">±1 PHP change</span> in exchange rate 
+                    impacts your final SRP, helping you manage currency risk.
+                  </p>
+                </div>
+              </div>
+
+              {/* Feature 4 */}
+              <div className="flex gap-4">
+                <div className="flex-shrink-0 size-10 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 border border-blue-100">
+                  <TrendingUp size={20} />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-sm font-black uppercase tracking-tight text-zinc-800">4. Negotiation Helper</h3>
+                  <p className="text-xs text-zinc-500 leading-relaxed font-medium">
+                    Need to hit a specific price? Use the <span className="font-bold text-blue-600 italic">Negotiation Helper</span> inside any calculator. Enter a target SRP to instantly see the 
+                    <strong>Maximum Unit Cost</strong> you can afford to pay the supplier.
+                  </p>
+                </div>
+              </div>
+
+              {/* Feature 5 */}
+              <div className="flex gap-4">
+                <div className="flex-shrink-0 size-10 rounded-2xl bg-violet-50 flex items-center justify-center text-violet-600 border border-violet-100">
+                  <MousePointer2 size={20} />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-sm font-black uppercase tracking-tight text-zinc-800">5. Override & Verification</h3>
+                  <p className="text-xs text-zinc-500 leading-relaxed font-medium">
+                    Blue values are overrides. Use the <strong>"Verify"</strong> toggle on each option to track your progress. Once done, use <strong>"Mark All as Verified"</strong> in the Global panel.
+                  </p>
+                </div>
+              </div>
+
+              {/* Feature 6 */}
+              <div className="flex gap-4">
+                <div className="flex-shrink-0 size-10 rounded-2xl bg-zinc-900 flex items-center justify-center text-white border border-zinc-800">
+                  <BarChart2 size={20} />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-sm font-black uppercase tracking-tight text-zinc-800">6. Project Health Analytics</h3>
+                  <p className="text-xs text-zinc-500 leading-relaxed font-medium">
+                    Watch the <span className="font-bold text-zinc-900">Project Health</span> ticker in the sidebar. It monitors your weighted average margin and alerts you if the overall project profitability is at risk.
+                  </p>
+                </div>
+              </div>
+
+              {/* Warning */}
+              <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl flex items-start gap-3">
+                <AlertTriangle size={16} className="text-rose-500 flex-shrink-0 mt-0.5" />
+                <p className="text-[10px] font-bold text-rose-700 leading-normal uppercase tracking-tight">
+                  <span className="font-black">Landed Cost Guardrail:</span> Row backgrounds turn light red if your Selling Cost falls below the calculated Landed Cost. Always check the "BELOW LANDED" warning.
+                </p>
+              </div>
+
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 bg-zinc-50 border-t border-zinc-100 flex justify-end">
+              <Button 
+                onClick={() => setShowGuide(false)}
+                className="h-11 px-8 rounded-2xl bg-zinc-900 text-white font-black text-xs uppercase tracking-widest hover:scale-[1.02] transition-transform"
+              >
+                Proceed to Costing
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* FIX: defaultOpen={true} so sidebar shows on desktop; 
           SidebarProvider must wrap AppSidebar + SidebarInset together */}
       <SidebarProvider defaultOpen={false}>
@@ -532,12 +918,17 @@ export default function ProcurementDetailPage() {
                       <div className="flex flex-wrap items-center gap-1.5 mt-1">
                         {spfData?.tsm && (
                           <span className="text-[9px] font-black text-zinc-400 uppercase bg-zinc-100 px-2 py-0.5 rounded-lg">
-                            TSM: {spfData.tsm}
+                            TSM: {staffNames[spfData.tsm] || spfData.tsm}
                           </span>
                         )}
                         {spfData?.referenceid && (
                           <span className="text-[9px] font-black text-zinc-400 uppercase bg-zinc-100 px-2 py-0.5 rounded-lg">
-                            Ref: {spfData.referenceid}
+                            Ref: {staffNames[spfData.referenceid] || spfData.referenceid}
+                          </span>
+                        )}
+                        {spfData?.manager && (
+                          <span className="text-[9px] font-black text-blue-400 uppercase bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-lg flex items-center gap-1">
+                            <ShieldCheck size={8} /> Manager: {staffNames[spfData.manager] || spfData.manager}
                           </span>
                         )}
                         <button
@@ -705,26 +1096,190 @@ export default function ProcurementDetailPage() {
               <div className="lg:col-span-2 space-y-3 md:space-y-4">
 
                 {/* Exchange Rate Ticker */}
-                <div className="flex items-center justify-between bg-white border border-zinc-200/60 rounded-2xl px-4 py-2.5 shadow-sm">
-                  <div className="flex items-center gap-2">
-                    <DollarSign size={13} className="text-emerald-500" />
-                    <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Live USD/PHP</p>
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-white border border-zinc-200/60 rounded-2xl px-3 py-2.5 md:px-4 shadow-sm gap-3">
+                    <div className="flex items-center justify-between sm:justify-start gap-4">
+                      <div className="flex items-center gap-2">
+                        <DollarSign size={13} className="text-emerald-500" />
+                        <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Live USD/PHP</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-black text-zinc-800">₱{liveExchangeRate}</p>
+                        <button
+                          onClick={refreshRate}
+                          disabled={rateLoading}
+                          className="p-1.5 rounded-lg bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 transition-colors"
+                        >
+                          <RefreshCw size={10} className={cn("text-zinc-400", rateLoading && "animate-spin")} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto no-scrollbar py-0.5">
+                      {rateLastUpdated && (
+                        <p className="text-[8px] text-zinc-300 font-bold hidden lg:block">
+                          Updated {rateLastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      )}
+                      <div className="hidden sm:block w-px h-4 bg-zinc-100 mx-1" />
+                      <button
+                        onClick={() => setShowGuide(true)}
+                        className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all text-[9px] font-black uppercase tracking-widest border border-blue-100 whitespace-nowrap"
+                      >
+                        <HelpCircle size={10} />
+                        Quick Guide
+                      </button>
+                      <div className="w-px h-4 bg-zinc-100 mx-0.5 sm:mx-1" />
+                      <button
+                        onClick={() => setShowGlobalSettings(!showGlobalSettings)}
+                        className={cn(
+                          "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl transition-all text-[9px] font-black uppercase tracking-widest whitespace-nowrap",
+                          showGlobalSettings ? "bg-zinc-900 text-white shadow-md" : "bg-zinc-50 text-zinc-500 hover:bg-zinc-100"
+                        )}
+                      >
+                        <Calculator size={10} />
+                        Global Parameters
+                        {showGlobalSettings ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <p className="text-sm font-black text-zinc-800">₱{liveExchangeRate}</p>
-                    {rateLastUpdated && (
-                      <p className="text-[8px] text-zinc-300 font-bold hidden sm:block">
-                        Updated {rateLastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+
+                  {/* ── GLOBAL SETTINGS PANEL ── */}
+                  {showGlobalSettings && (
+                    <div className="bg-white rounded-[24px] border border-zinc-200/60 shadow-lg p-5 animate-in fade-in slide-in-from-top-2 duration-300">
+                      <div className="flex items-center justify-between mb-5">
+                        <SectionHeader icon={Globe} title="Global Pricing Parameters" />
+                        <Button
+                          onClick={() => {
+                            setCalcStates(prev => {
+                              const next = { ...prev };
+                              Object.keys(next).forEach(k => {
+                                next[k] = { 
+                                  ...next[k], 
+                                  ...globalSettings,
+                                  // Keep unique fields like dimensions and formula type
+                                  l: next[k].l, w: next[k].w, h: next[k].h, 
+                                  qtyPerBox: next[k].qtyPerBox,
+                                  formulaType: next[k].formulaType,
+                                  lpc_pcsPerContainer: next[k].lpc_pcsPerContainer,
+                                  ll_srpVatInc: next[k].ll_srpVatInc,
+                                  llp_srpVatInc: next[k].llp_srpVatInc,
+                                };
+                              });
+                              return next;
+                            });
+                            toast.success("Global parameters applied to all options ✓");
+                          } }
+                          className="h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-[9px] uppercase tracking-widest"
+                        >
+                          Sync All Options
+                        </Button>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* 1. Global Defaults */}
+                        <div className="md:col-span-2 space-y-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Settings2 size={12} className="text-blue-500" />
+                            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Global Formula Defaults</p>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-3 p-4 bg-zinc-50/50 rounded-2xl border border-zinc-100">
+                              <p className="text-[8px] font-black text-zinc-400 uppercase tracking-widest">China SPF Defaults</p>
+                              <div className="grid grid-cols-2 gap-3">
+                                <CalcInput label="Shipment (₱)" value={globalSettings.shipmentCost} onChange={(e: any) => setGlobalSettings(prev => ({...prev, shipmentCost: e.target.value}))} icon={Truck} />
+                                <CalcInput label="CBM/Cont." value={globalSettings.cbmContainer} onChange={(e: any) => setGlobalSettings(prev => ({...prev, cbmContainer: e.target.value}))} icon={Layers} />
+                            <CalcInput label="Target GP" value={globalSettings.gp} onChange={(e: any) => setGlobalSettings(prev => ({...prev, gp: e.target.value}))} icon={TrendingUp} suffix="%" />
+                            <CalcInput label="Invoice %" value={globalSettings.invoicePct} onChange={(e: any) => setGlobalSettings(prev => ({...prev, invoicePct: e.target.value}))} icon={FileText} />
+                              </div>
+                            </div>
+                            <div className="space-y-3 p-4 bg-zinc-50/50 rounded-2xl border border-zinc-100">
+                              <p className="text-[8px] font-black text-zinc-400 uppercase tracking-widest">Non-China / Lamp Post</p>
+                              <div className="grid grid-cols-2 gap-3">
+                                <CalcInput label="NC Multiplier" value={globalSettings.nc_multiplier} onChange={(e: any) => setGlobalSettings(prev => ({...prev, nc_multiplier: e.target.value}))} icon={RefreshCw} />
+                            <CalcInput label="NC Target GP" value={globalSettings.nc_gp} onChange={(e: any) => setGlobalSettings(prev => ({...prev, nc_gp: e.target.value}))} icon={TrendingUp} suffix="%" />
+                            <CalcInput label="LP Cont. Cost" value={globalSettings.lpc_containerCost} onChange={(e: any) => setGlobalSettings(prev => ({...prev, lpc_containerCost: e.target.value}))} icon={Truck} />
+                            <CalcInput label="LP Target GP" value={globalSettings.lpc_gp} onChange={(e: any) => setGlobalSettings(prev => ({...prev, lpc_gp: e.target.value}))} icon={TrendingUp} suffix="%" />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 2. Supplier Bulk Adjustment (New Feature) */}
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Percent size={12} className="text-emerald-500" />
+                            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Bulk Supplier Adjustment</p>
+                          </div>
+                          <div className="p-4 bg-emerald-50/30 rounded-2xl border border-emerald-100/50 space-y-4">
+                            <p className="text-[8px] font-black text-emerald-600 uppercase tracking-widest leading-tight">
+                              Apply a percentage discount/markup to all items from a specific company
+                            </p>
+                            
+                            {(() => {
+                              const uniqueSuppliers = Array.from(new Set(allCells.map(p => p.companyName).filter(c => c !== "-")));
+                              if (uniqueSuppliers.length === 0) return <p className="text-[9px] text-zinc-400 italic">No suppliers found</p>;
+                              
+                              return (
+                                <div className="space-y-3">
+                                  <select 
+                                    className="w-full h-10 px-3 rounded-xl border border-zinc-200 bg-white text-[11px] font-bold text-zinc-700 outline-none focus:ring-2 focus:ring-emerald-500/20"
+                                    onChange={(e) => {
+                                      const supplier = e.target.value;
+                                      if (!supplier) return;
+                                      const pct = prompt(`Enter percentage adjustment for ${supplier} (e.g., -5 for 5% discount, 10 for 10% markup):`);
+                                      if (pct && !isNaN(parseFloat(pct))) {
+                                        const factor = 1 + (parseFloat(pct) / 100);
+                                        setRows(prev => prev.map(r => r.map(p => {
+                                          if (p.companyName === supplier) {
+                                            const newCost = (parseFloat(p.finalUnitCost || p.unitCost) * factor).toFixed(2);
+                                            return { 
+                                              ...p, 
+                                              finalUnitCost: newCost,
+                                              finalSubtotal: (parseFloat(p.qty) * parseFloat(newCost)).toString()
+                                            };
+                                          }
+                                          return p;
+                                        })));
+                                        toast.success(`Applied ${pct}% adjustment to all items from ${supplier} ✓`);
+                                      }
+                                    }}
+                                  >
+                                    <option value="">Select a supplier...</option>
+                                    {uniqueSuppliers.map(s => (
+                                      <option key={s} value={s}>{s}</option>
+                                    ))}
+                                  </select>
+                                  <div className="flex items-start gap-2 text-[8px] text-emerald-600/70 italic leading-none">
+                                    <Activity size={10} />
+                                    <span>This updates the Final Unit Cost across all matching products.</span>
+                                  </div>
+                                  <div className="h-px bg-emerald-100/50 my-2" />
+                                  <Button
+                                    onClick={() => {
+                                      const nextStatus: Record<string, boolean> = {};
+                                      allCells.forEach(p => {
+                                        nextStatus[`${p.rowIndex}-${p.productIndex}`] = true;
+                                      });
+                                      setVerifiedStatus(nextStatus);
+                                      toast.success("All options marked as verified ✓");
+                                    }}
+                                    className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-[9px] uppercase tracking-widest flex items-center justify-center gap-2"
+                                  >
+                                    <CheckCircle2 size={12} />
+                                    Mark All as Verified
+                                  </Button>
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-[8px] text-zinc-400 mt-4 italic">
+                        * Values changed here will be used as the starting point for new calculations. Click "Sync All Options" to update existing items.
                       </p>
-                    )}
-                    <button
-                      onClick={refreshRate}
-                      disabled={rateLoading}
-                      className="p-1.5 rounded-lg bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 transition-colors"
-                    >
-                      <RefreshCw size={10} className={cn("text-zinc-400", rateLoading && "animate-spin")} />
-                    </button>
-                  </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* PD Offer Panel */}
@@ -826,16 +1381,18 @@ export default function ProcurementDetailPage() {
                                 const optionFilled = p.sellingCost !== "-" && p.sellingCost !== "" && p.leadTime !== "-" && p.leadTime !== "";
                                 const calcKey = `${rIdx}-${pIdx}`;
                                 const currentCalc = calcStates[calcKey] || {
+                                  formulaType: "spf_china",
                                   l: p.l_db || "", w: p.w_db || "", h: p.h_db || "", qtyPerBox: p.pcs_carton_db || "",
-                                  shipmentCost: "520000", cbmContainer: "65",
-                                  invoicePct: "1.01", exchangeRate: liveExchangeRate, gp: "0.75"
+                                  ...globalSettings
                                 };
                                 const calcResult = calculateSRP(p.unitCost, currentCalc);
+                                const isLowMargin = !isLocked && p.sellingCost !== "-" && calcResult.landed > 0 && parseFloat(p.sellingCost) < calcResult.landed;
 
                                 return (
                                   <div key={pIdx} className={cn(
                                     "transition-all",
-                                    !isLocked && !optionFilled ? "bg-amber-50/5" : "bg-white"
+                                    !isLocked && !optionFilled ? "bg-amber-50/5" : "bg-white",
+                                    isLowMargin && "bg-rose-50/20"
                                   )}>
                                     {/* Supplier header */}
                                     <div className="flex flex-wrap items-start justify-between gap-2 px-4 py-3 border-b border-zinc-50">
@@ -846,14 +1403,36 @@ export default function ProcurementDetailPage() {
                                         )}>
                                           Option {pIdx + 1}
                                         </span>
+                                        <button
+                                          onClick={() => setVerifiedStatus(prev => ({ ...prev, [calcKey]: !prev[calcKey] }))}
+                                          className={cn(
+                                            "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border transition-all text-[8px] font-black uppercase tracking-widest",
+                                            verifiedOptions[calcKey] 
+                                              ? "bg-emerald-500 border-emerald-500 text-white shadow-sm" 
+                                              : "bg-white border-zinc-200 text-zinc-400 hover:border-zinc-300"
+                                          )}
+                                        >
+                                          {verifiedOptions[calcKey] ? <CheckCircle2 size={10} /> : <div className="size-2 rounded-full border border-zinc-300" />}
+                                          {verifiedOptions[calcKey] ? "Verified" : "Verify"}
+                                        </button>
                                         {p.supplierBrand !== "-" && (
                                           <span className="text-[11px] font-black text-zinc-800">{p.supplierBrand}</span>
+                                        )}
+                                        {p.itemCode !== "-" && (
+                                          <span className="text-[9px] font-mono bg-zinc-50 text-zinc-500 px-2 py-0.5 rounded-md border border-zinc-100 uppercase tracking-tighter">
+                                            {p.itemCode}
+                                          </span>
                                         )}
                                         {p.companyName !== "-" && (
                                           <span className="text-[10px] text-zinc-400 font-bold truncate">· {p.companyName}</span>
                                         )}
                                       </div>
                                       <div className="flex flex-wrap items-center gap-3 text-[10px] text-zinc-400 font-bold">
+                                        {p.priceValidity !== "-" && (
+                                          <span className="flex items-center gap-1 text-rose-500/70 bg-rose-50 px-2 py-0.5 rounded-lg text-[9px]">
+                                            <Calendar size={9} /> Valid until: {new Date(p.priceValidity).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                                          </span>
+                                        )}
                                         {p.contactName !== "-" && (
                                           <span className="flex items-center gap-1"><User size={9} /> {p.contactName}</span>
                                         )}
@@ -864,6 +1443,14 @@ export default function ProcurementDetailPage() {
                                         )}
                                       </div>
                                     </div>
+
+                                    {/* ── TECHNICAL ASSETS ── */}
+                                    {p.tds !== "-" && (
+                                      <div className="px-4 py-2.5 bg-white border-b border-zinc-50 flex flex-wrap items-center gap-3">
+                                        <p className="text-[8px] font-black text-zinc-300 uppercase tracking-widest mr-1">Technical Files:</p>
+                                        <TechAssetLink icon={FileText} label="TDS" url={p.tds} disabled />
+                                      </div>
+                                    )}
 
                                     {/* Image + specs */}
                                     <div className="p-3 md:p-4 border-b border-zinc-50 bg-zinc-50/20">
@@ -898,16 +1485,122 @@ export default function ProcurementDetailPage() {
                                     </div>
 
                                     {/* Commercials */}
-                                    <div className="p-3 md:p-4 space-y-3">
-                                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-3">
-                                        <CommItem icon={Receipt} label="Unit Cost (USD)" value={`$${parseFloat(p.unitCost || "0").toFixed(2)}`} hi />
-                                        <CommItem icon={Box} label="Qty" value={`${p.qty} units`} />
-                                        <CommItem icon={Truck} label="Packaging" value={p.packaging} />
-                                        <CommItem icon={BadgeDollarSign} label="PD Subtotal" value={formatPHP(p.subtotal)} hi />
+                                    <div className="p-4 md:p-6 space-y-6">
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+                                        
+                                        {/* 1. Qty & Packaging */}
+                                        <div className="space-y-3 bg-zinc-50/50 p-3 rounded-2xl border border-zinc-100">
+                                          <div className="flex items-center gap-2">
+                                            <div className="p-1.5 bg-zinc-200 rounded-lg text-zinc-500">
+                                              <Box size={12} />
+                                            </div>
+                                            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Inventory</p>
+                                          </div>
+                                          <div className="space-y-1">
+                                            <p className="text-sm font-black text-zinc-900">{p.qty} <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest ml-1">Units</span></p>
+                                            <p className="text-[10px] text-zinc-500 font-bold truncate flex items-center gap-1.5">
+                                              <Truck size={10} className="text-zinc-300" /> {p.packaging}
+                                            </p>
+                                          </div>
+                                        </div>
+
+                                        {/* 2. Unit Cost (PD vs Procurement) */}
+                                        <div className="space-y-3 lg:col-span-2">
+                                          <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                              <div className="p-1.5 bg-blue-100 rounded-lg text-blue-600">
+                                                <Receipt size={12} />
+                                              </div>
+                                              <p className="text-[10px] font-black uppercase tracking-widest text-blue-600">Unit Cost (USD)</p>
+                                            </div>
+                                            <div className="text-[9px] font-bold text-zinc-400 flex items-center gap-1.5 bg-zinc-50 px-2 py-1 rounded-lg">
+                                              <span className="uppercase tracking-widest opacity-60">PD Orig:</span>
+                                              <span className="font-black text-zinc-600">${parseFloat(p.unitCost || "0").toFixed(2)}</span>
+                                            </div>
+                                          </div>
+                                          
+                                          <div className="relative group">
+                                            <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none z-10">
+                                              <span className="text-sm font-black text-blue-500">$</span>
+                                            </div>
+                                            <Input
+                                              type="number" step="any"
+                                              placeholder="Update Unit Cost..."
+                                              disabled={isLocked}
+                                              value={p.finalUnitCost === "-" || p.finalUnitCost === p.unitCost ? "" : p.finalUnitCost}
+                                              onChange={e => updateCell(rIdx, pIdx, "finalUnitCost", e.target.value || "-")}
+                                              className={cn(
+                                                "h-12 pl-10 pr-12 rounded-2xl font-black text-sm transition-all",
+                                                isLocked 
+                                                  ? "bg-zinc-50 border-zinc-200 text-zinc-500" 
+                                                  : (p.finalUnitCost !== "-" && p.finalUnitCost !== p.unitCost)
+                                                    ? "bg-blue-50 border-blue-200 ring-2 ring-blue-500/10 focus-visible:ring-blue-500"
+                                                    : "bg-white border-zinc-200 hover:border-zinc-300 focus-visible:ring-zinc-900"
+                                              )}
+                                            />
+                                            {/* Reset to PD button */}
+                                            {!isLocked && p.finalUnitCost !== "-" && p.finalUnitCost !== p.unitCost && (
+                                              <button
+                                                onClick={() => updateCell(rIdx, pIdx, "finalUnitCost", p.unitCost)}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-white border border-blue-100 text-blue-500 hover:bg-blue-50 transition-colors shadow-sm"
+                                                title="Reset to PD original"
+                                              >
+                                                <RotateCcw size={12} />
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        {/* 3. Subtotal Display */}
+                                        <div className="space-y-3 lg:col-span-2">
+                                          <div className="flex items-center gap-2">
+                                            <div className="p-1.5 bg-emerald-100 rounded-lg text-emerald-600">
+                                              <BadgeDollarSign size={12} />
+                                            </div>
+                                            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Final Subtotal (PHP)</p>
+                                          </div>
+                                          
+                                          <div className="h-12 flex items-center justify-between px-4 bg-emerald-50/50 border border-emerald-100 rounded-2xl relative overflow-hidden group">
+                                            {/* Analysis indicator */}
+                                            {(() => {
+                                              const pdVal = parseFloat(p.unitCost) || 0;
+                                              const finalVal = (p.finalUnitCost === "-" || p.finalUnitCost === "") ? pdVal : parseFloat(p.finalUnitCost) || 0;
+                                              const diff = finalVal - pdVal;
+                                              const pct = pdVal > 0 ? (diff / pdVal) * 100 : 0;
+                                              
+                                              if (Math.abs(diff) < 0.01) return (
+                                                <div className="flex items-center gap-1.5">
+                                                  <p className="text-base font-black text-emerald-700">{formatPHP(p.finalSubtotal)}</p>
+                                                  <span className="text-[8px] font-black uppercase tracking-widest text-zinc-400 bg-white px-1.5 py-0.5 rounded border border-zinc-100">Default (PD)</span>
+                                                </div>
+                                              );
+
+                                              return (
+                                                <div className="flex flex-col">
+                                                  <p className="text-base font-black text-emerald-700">{formatPHP(p.finalSubtotal)}</p>
+                                                  <div className={cn(
+                                                    "flex items-center gap-1 text-[8px] font-black uppercase tracking-widest",
+                                                    diff > 0 ? "text-rose-500" : "text-emerald-600"
+                                                  )}>
+                                                    {diff > 0 ? <ChevronUp size={8} /> : <ChevronDown size={8} />}
+                                                    {Math.abs(pct).toFixed(1)}% {diff > 0 ? "increase" : "savings"}
+                                                  </div>
+                                                </div>
+                                              );
+                                            })()}
+                                            
+                                            <div className="text-right">
+                                              <p className="text-[7px] font-black uppercase tracking-[0.2em] text-zinc-300 mb-0.5">Original PD Subtotal</p>
+                                              <p className="text-[10px] font-black text-zinc-400 line-through decoration-zinc-300">{formatPHP(p.subtotal)}</p>
+                                            </div>
+                                          </div>
+                                        </div>
+
                                       </div>
-                                      <div className="grid grid-cols-2 gap-2">
-                                        <InfoChip icon={Factory} label="Factory" value={p.factory} />
-                                        <InfoChip icon={Anchor} label="Port" value={p.port} />
+
+                                      <div className="grid grid-cols-2 gap-4">
+                                        <InfoChip icon={Factory} label="Factory Address" value={p.factory} />
+                                        <InfoChip icon={Anchor} label="Port of Discharge" value={p.port} />
                                       </div>
 
                                       {/* ── COSTING FIELDS ── */}
@@ -922,6 +1615,11 @@ export default function ProcurementDetailPage() {
                                               <BadgeDollarSign size={9} />
                                               Selling Cost (PHP)
                                               {optionFilled && <CheckCircle2 size={9} className="text-emerald-500" />}
+                                              {isLowMargin && (
+                                                <span className="text-[8px] font-black text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded-md animate-pulse ml-1">
+                                                  ⚠ BELOW LANDED
+                                                </span>
+                                              )}
                                               {isLocked && <Lock size={8} className="text-zinc-300" />}
                                             </label>
                                             {!isLocked && (
@@ -985,63 +1683,351 @@ export default function ProcurementDetailPage() {
 
                                       {/* ── CALCULATOR PANEL ── */}
                                       {!isLocked && showCalc[calcKey] && (
-                                        <div className="mt-3 p-4 md:p-5 rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50/60 to-white shadow-inner">
-                                          <div className="flex items-center gap-2 mb-4">
-                                            <div className="p-1.5 bg-blue-100 rounded-lg text-blue-600">
-                                              <Calculator size={12} />
-                                            </div>
-                                            <p className="text-[10px] font-black uppercase tracking-widest text-blue-800">Landed Cost & SRP Calculator</p>
-                                          </div>
-
-                                          <div className="space-y-3">
-                                            <div className="bg-white p-3 rounded-xl border border-zinc-100">
-                                              <p className="text-[8px] font-black text-zinc-400 uppercase tracking-widest mb-2">Packaging Dimensions (From PD)</p>
-                                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                                <CalcInput label="L (cm)" value={currentCalc.l} onChange={(e: any) => updateCalc(calcKey, 'l', e.target.value)} />
-                                                <CalcInput label="W (cm)" value={currentCalc.w} onChange={(e: any) => updateCalc(calcKey, 'w', e.target.value)} />
-                                                <CalcInput label="H (cm)" value={currentCalc.h} onChange={(e: any) => updateCalc(calcKey, 'h', e.target.value)} />
-                                                <CalcInput label="Pcs/Carton" value={currentCalc.qtyPerBox} onChange={(e: any) => updateCalc(calcKey, 'qtyPerBox', e.target.value)} />
-                                              </div>
-                                            </div>
-
-                                            <div className="bg-white p-3 rounded-xl border border-zinc-100">
-                                              <p className="text-[8px] font-black text-zinc-400 uppercase tracking-widest mb-2">Logistics & Rates</p>
-                                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
-                                                <CalcInput label="Shipment Cost" value={currentCalc.shipmentCost} onChange={(e: any) => updateCalc(calcKey, 'shipmentCost', e.target.value)} />
-                                                <CalcInput label="CBM/Container" value={currentCalc.cbmContainer} onChange={(e: any) => updateCalc(calcKey, 'cbmContainer', e.target.value)} />
-                                                <CalcInput label="Invoice %" value={currentCalc.invoicePct} onChange={(e: any) => updateCalc(calcKey, 'invoicePct', e.target.value)} />
-                                                <CalcInput label="Exch. Rate" value={currentCalc.exchangeRate} onChange={(e: any) => updateCalc(calcKey, 'exchangeRate', e.target.value)} />
-                                                <CalcInput label="Target GP" value={currentCalc.gp} onChange={(e: any) => updateCalc(calcKey, 'gp', e.target.value)} />
-                                              </div>
-                                            </div>
-                                          </div>
-
-                                          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mt-3 p-4 bg-white rounded-xl border border-emerald-100">
-                                            <div className="flex gap-6">
-                                              <div>
-                                                <p className="text-[8px] font-black text-zinc-400 uppercase tracking-widest mb-1">Landed Cost</p>
-                                                <p className="text-sm font-black text-zinc-700">{formatPHP(calcResult.landed)}</p>
+                                        <div className="mt-3 p-4 md:p-6 rounded-[24px] border border-blue-100 bg-gradient-to-br from-blue-50/40 via-white to-white shadow-sm ring-1 ring-blue-50/50">
+                                          <div className="flex items-center justify-between mb-5">
+                                            <div className="flex items-center gap-2.5">
+                                              <div className="p-2 bg-blue-600 rounded-xl text-white shadow-md shadow-blue-200">
+                                                <Calculator size={14} />
                                               </div>
                                               <div>
-                                                <p className="text-[8px] font-black text-emerald-600 uppercase tracking-widest mb-1">Target SRP</p>
-                                                <p className="text-lg font-black text-emerald-600">{formatPHP(calcResult.srp)}</p>
+                                                <p className="text-[11px] font-black uppercase tracking-widest text-zinc-900">Landed Cost & SRP Calculator</p>
+                                                <p className="text-[8px] font-bold text-zinc-400 uppercase tracking-tighter">Precision pricing engine</p>
                                               </div>
                                             </div>
-                                            <Button
-                                              type="button"
+                                            <button
                                               onClick={() => {
-                                                if (calcResult.srp > 0) {
-                                                  updateCell(rIdx, pIdx, "sellingCost", calcResult.srp.toFixed(2).toString());
-                                                  toggleCalc(calcKey);
-                                                  toast.success("SRP applied to Selling Cost ✓");
-                                                } else {
-                                                  toast.error("Invalid calculation. Please check inputs.");
-                                                }
+                                                const defaultCalc = {
+                                                  formulaType: currentCalc.formulaType,
+                                                  l: p.l_db || "", w: p.w_db || "", h: p.h_db || "", qtyPerBox: p.pcs_carton_db || "",
+                                                  lpc_pcsPerContainer: "",
+                                                  ll_srpVatInc: "",
+                                                  llp_srpVatInc: "",
+                                                  ...globalSettings
+                                                };
+                                                setCalcStates(prev => ({ ...prev, [calcKey]: defaultCalc }));
+                                                toast.success("Calculator reset to global defaults");
                                               }}
-                                              className="h-10 px-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-[10px] uppercase tracking-widest w-full sm:w-auto"
+                                              className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 transition-colors mr-1"
+                                              title="Reset to Global Defaults"
                                             >
-                                              Apply SRP
-                                            </Button>
+                                              <RotateCcw size={14} />
+                                            </button>
+                                            <button
+                                              onClick={() => toggleCalc(calcKey)}
+                                              className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 transition-colors"
+                                            >
+                                              <XCircle size={14} />
+                                            </button>
+                                          </div>
+
+                                          {/* ── FORMULA TYPE SELECTOR ── */}
+                                          <div className="mb-5 overflow-x-auto no-scrollbar -mx-1 px-1">
+                                            <div className="flex sm:grid sm:grid-cols-5 gap-2 min-w-max sm:min-w-0">
+                                              {[
+                                                { key: "spf_china", label: "China", icon: Box },
+                                                { key: "lamp_post_china", label: "Lamp Post", icon: Truck },
+                                                { key: "spf_non_china", label: "Non-China", icon: Globe },
+                                                { key: "local_lighting", label: "Local Light", icon: Zap },
+                                                { key: "local_lamp_post", label: "Local LP", icon: MapPin },
+                                              ].map(ft => (
+                                                <button
+                                                  key={ft.key}
+                                                  type="button"
+                                                  onClick={() => updateCalc(calcKey, "formulaType", ft.key)}
+                                                  className={cn(
+                                                    "flex flex-col items-center justify-center p-3 rounded-2xl border transition-all gap-1.5 flex-shrink-0 w-[85px] sm:w-auto",
+                                                    currentCalc.formulaType === ft.key
+                                                      ? "bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-100 -translate-y-0.5"
+                                                      : "bg-white border-zinc-100 text-zinc-500 hover:border-zinc-300 hover:bg-zinc-50"
+                                                  )}
+                                                >
+                                                  <ft.icon size={14} className={currentCalc.formulaType === ft.key ? "text-blue-100" : "text-zinc-400"} />
+                                                  <p className="text-[9px] font-black uppercase tracking-tight leading-none">{ft.label}</p>
+                                                </button>
+                                              ))}
+                                            </div>
+                                          </div>
+
+                                          <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+                                            {/* Inputs Section */}
+                                            <div className="lg:col-span-3 space-y-4">
+                                              {/* ── SPF CHINA INPUTS ── */}
+                                              {currentCalc.formulaType === "spf_china" && (
+                                                <div className="space-y-4 animate-in fade-in slide-in-from-left-2 duration-300">
+                                                  <div className="bg-white/50 p-4 rounded-2xl border border-zinc-100/80">
+                                                    <div className="flex items-center gap-2 mb-3">
+                                                      <Layers size={10} className="text-zinc-400" />
+                                                      <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Dimensions</p>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                                      <CalcInput label="L (cm)" value={currentCalc.l} onChange={(e: any) => updateCalc(calcKey, 'l', e.target.value)} icon={ArrowRight} />
+                                                      <CalcInput label="W (cm)" value={currentCalc.w} onChange={(e: any) => updateCalc(calcKey, 'w', e.target.value)} icon={ArrowUpDown} />
+                                                      <CalcInput label="H (cm)" value={currentCalc.h} onChange={(e: any) => updateCalc(calcKey, 'h', e.target.value)} icon={ArrowUp} />
+                                                      <CalcInput label="Pcs/Box" value={currentCalc.qtyPerBox} onChange={(e: any) => updateCalc(calcKey, 'qtyPerBox', e.target.value)} icon={Box} />
+                                                    </div>
+                                                  </div>
+                                                  <div className="bg-white/50 p-4 rounded-2xl border border-zinc-100/80">
+                                                    <div className="flex items-center gap-2 mb-3">
+                                                      <TrendingUp size={10} className="text-zinc-400" />
+                                                      <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Logistics & Rates</p>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                                      <CalcInput label="Shipment (₱)" value={currentCalc.shipmentCost} onChange={(e: any) => updateCalc(calcKey, 'shipmentCost', e.target.value)} icon={Truck} isOverridden={currentCalc.shipmentCost !== globalSettings.shipmentCost} />
+                                                      <CalcInput label="CBM/Cont." value={currentCalc.cbmContainer} onChange={(e: any) => updateCalc(calcKey, 'cbmContainer', e.target.value)} icon={Layers} isOverridden={currentCalc.cbmContainer !== globalSettings.cbmContainer} />
+                                                      <CalcInput label="Invoice %" value={currentCalc.invoicePct} onChange={(e: any) => updateCalc(calcKey, 'invoicePct', e.target.value)} icon={FileText} isOverridden={currentCalc.invoicePct !== globalSettings.invoicePct} />
+                                                      <CalcInput label="Exch. Rate" value={currentCalc.exchangeRate} onChange={(e: any) => updateCalc(calcKey, 'exchangeRate', e.target.value)} icon={DollarSign} isOverridden={currentCalc.exchangeRate !== globalSettings.exchangeRate} />
+                                                      <CalcInput label="Target GP" value={currentCalc.gp} onChange={(e: any) => updateCalc(calcKey, 'gp', e.target.value)} icon={TrendingUp} isOverridden={currentCalc.gp !== globalSettings.gp} suffix="%" />
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              )}
+
+                                              {/* ── LAMP POST CHINA INPUTS ── */}
+                                              {currentCalc.formulaType === "lamp_post_china" && (
+                                                <div className="space-y-4 animate-in fade-in slide-in-from-left-2 duration-300">
+                                                  <div className="bg-white/50 p-4 rounded-2xl border border-zinc-100/80">
+                                                    <div className="flex items-center gap-2 mb-3">
+                                                      <Truck size={10} className="text-zinc-400" />
+                                                      <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Container Details</p>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                                      <CalcInput label="Cont. Cost (₱)" value={currentCalc.lpc_containerCost} onChange={(e: any) => updateCalc(calcKey, 'lpc_containerCost', e.target.value)} icon={BadgeDollarSign} isOverridden={currentCalc.lpc_containerCost !== globalSettings.lpc_containerCost} />
+                                                      <CalcInput label="Pcs / Cont." value={currentCalc.lpc_pcsPerContainer} onChange={(e: any) => updateCalc(calcKey, 'lpc_pcsPerContainer', e.target.value)} icon={Box} />
+                                                      <CalcInput label="Invoice %" value={currentCalc.lpc_invoicePct} onChange={(e: any) => updateCalc(calcKey, 'lpc_invoicePct', e.target.value)} icon={FileText} isOverridden={currentCalc.lpc_invoicePct !== globalSettings.lpc_invoicePct} />
+                                                      <CalcInput label="Exch. Rate" value={currentCalc.lpc_exchangeRate} onChange={(e: any) => updateCalc(calcKey, 'lpc_exchangeRate', e.target.value)} icon={DollarSign} isOverridden={currentCalc.lpc_exchangeRate !== globalSettings.exchangeRate} />
+                                                      <CalcInput label="Target GP" value={currentCalc.lpc_gp} onChange={(e: any) => updateCalc(calcKey, 'lpc_gp', e.target.value)} icon={TrendingUp} isOverridden={currentCalc.lpc_gp !== globalSettings.lpc_gp} suffix="%" />
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              )}
+
+                                              {/* ── SPF NON-CHINA INPUTS ── */}
+                                              {currentCalc.formulaType === "spf_non_china" && (
+                                                <div className="space-y-4 animate-in fade-in slide-in-from-left-2 duration-300">
+                                                  <div className="bg-white/50 p-4 rounded-2xl border border-zinc-100/80">
+                                                    <div className="flex items-center gap-2 mb-3">
+                                                      <Globe size={10} className="text-zinc-400" />
+                                                      <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Multiplier & Rates</p>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                                      <CalcInput label="Multiplier" value={currentCalc.nc_multiplier} onChange={(e: any) => updateCalc(calcKey, 'nc_multiplier', e.target.value)} icon={RefreshCw} isOverridden={currentCalc.nc_multiplier !== globalSettings.nc_multiplier} />
+                                                      <CalcInput label="Exch. Rate" value={currentCalc.nc_exchangeRate} onChange={(e: any) => updateCalc(calcKey, 'nc_exchangeRate', e.target.value)} icon={DollarSign} isOverridden={currentCalc.nc_exchangeRate !== globalSettings.exchangeRate} />
+                                                      <CalcInput label="Target GP" value={currentCalc.nc_gp} onChange={(e: any) => updateCalc(calcKey, 'nc_gp', e.target.value)} icon={TrendingUp} isOverridden={currentCalc.nc_gp !== globalSettings.nc_gp} suffix="%" />
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              )}
+
+                                              {/* ── LOCAL LIGHTING INPUTS ── */}
+                                              {currentCalc.formulaType === "local_lighting" && (
+                                                <div className="space-y-4 animate-in fade-in slide-in-from-left-2 duration-300">
+                                                  <div className="bg-white/50 p-4 rounded-2xl border border-zinc-100/80">
+                                                    <div className="flex items-center gap-2 mb-3">
+                                                      <Zap size={10} className="text-zinc-400" />
+                                                      <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Local Details</p>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                      <CalcInput label="Supplier SRP (VAT-Inc)" value={currentCalc.ll_srpVatInc} onChange={(e: any) => updateCalc(calcKey, 'll_srpVatInc', e.target.value)} icon={Receipt} />
+                                                      <CalcInput label="Multiplier" value={currentCalc.ll_multiplier} onChange={(e: any) => updateCalc(calcKey, 'll_multiplier', e.target.value)} icon={RefreshCw} isOverridden={currentCalc.ll_multiplier !== globalSettings.ll_multiplier} />
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              )}
+
+                                              {/* ── LOCAL LAMP POST INPUTS ── */}
+                                              {currentCalc.formulaType === "local_lamp_post" && (
+                                                <div className="space-y-4 animate-in fade-in slide-in-from-left-2 duration-300">
+                                                  <div className="bg-white/50 p-4 rounded-2xl border border-zinc-100/80">
+                                                    <div className="flex items-center gap-2 mb-3">
+                                                      <MapPin size={10} className="text-zinc-400" />
+                                                      <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Local LP Details</p>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                                      <CalcInput label="Supplier SRP (VAT-Inc)" value={currentCalc.llp_srpVatInc} onChange={(e: any) => updateCalc(calcKey, 'llp_srpVatInc', e.target.value)} icon={Receipt} />
+                                                      <CalcInput label="Delivery Fee (₱)" value={currentCalc.llp_deliveryFee} onChange={(e: any) => updateCalc(calcKey, 'llp_deliveryFee', e.target.value)} icon={Truck} isOverridden={currentCalc.llp_deliveryFee !== globalSettings.llp_deliveryFee} />
+                                                      <CalcInput label="Multiplier" value={currentCalc.llp_multiplier} onChange={(e: any) => updateCalc(calcKey, 'llp_multiplier', e.target.value)} icon={RefreshCw} isOverridden={currentCalc.llp_multiplier !== globalSettings.llp_multiplier} />
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              )}
+                                              {/* ── NEGOTIATION HELPER (NEW) ── */}
+                                              <div className="bg-blue-600 rounded-3xl p-5 text-white shadow-xl relative overflow-hidden mt-4">
+                                                <div className="absolute top-0 right-0 p-6 opacity-10 pointer-events-none rotate-12">
+                                                  <TrendingUp size={80} />
+                                                </div>
+                                                <div className="relative z-10 space-y-4">
+                                                  <div className="flex items-center gap-2.5">
+                                                    <div className="p-1.5 bg-white/20 rounded-lg backdrop-blur-md">
+                                                      <Activity size={14} className="text-white" />
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-[10px] font-black uppercase tracking-widest text-blue-100">Negotiation Helper</p>
+                                                      <p className="text-[7px] font-bold text-blue-200 uppercase tracking-tighter">Reverse Calculator for Target SRP</p>
+                                                    </div>
+                                                  </div>
+                                                  <div className="space-y-2">
+                                                    <p className="text-[8px] font-black text-blue-100 uppercase tracking-widest">If Target Selling Price is:</p>
+                                                    <div className="relative group">
+                                                      <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none z-10">
+                                                        <span className="text-sm font-black text-white/40">₱</span>
+                                                      </div>
+                                                      <Input
+                                                        type="number"
+                                                        placeholder="Enter target SRP..."
+                                                        className="h-12 pl-8 rounded-2xl bg-white/10 border-white/20 text-white placeholder:text-white/30 font-black text-sm focus-visible:ring-white/40 focus-visible:bg-white/20 transition-all shadow-inner"
+                                                        onChange={(e) => {
+                                                          const maxCost = calculateMaxUnitCost(e.target.value, currentCalc);
+                                                          const display = document.getElementById(`max-cost-${calcKey}`);
+                                                          if (display) display.innerText = `$${maxCost.toFixed(2)}`;
+                                                        }}
+                                                      />
+                                                    </div>
+                                                  </div>
+                                                  <div className="pt-4 border-t border-white/10 flex items-center justify-between">
+                                                    <div className="space-y-0.5">
+                                                      <p className="text-[8px] font-black uppercase tracking-[0.2em] text-blue-200">Maximum Allowed Unit Cost</p>
+                                                      <p className="text-[7px] font-bold text-blue-300 italic opacity-60">* To maintain {currentCalc.gp || currentCalc.lpc_gp || currentCalc.nc_gp}% margin</p>
+                                                    </div>
+                                                    <p id={`max-cost-${calcKey}`} className="text-2xl font-black text-white tracking-tighter drop-shadow-sm">$0.00</p>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            </div>
+
+                                            {/* Results / Breakdown Section */}
+                                            <div className="lg:col-span-2 space-y-4">
+                                              <div className="bg-zinc-900 rounded-3xl p-5 text-white shadow-xl relative overflow-hidden h-full flex flex-col">
+                                                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+                                                
+                                                <div className="flex items-center justify-between mb-6">
+                                                  <div className="flex items-center gap-2">
+                                                    <BarChart2 size={12} className="text-blue-400" />
+                                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-400">Analysis Breakdown</p>
+                                                  </div>
+                                                  <button
+                                                    onClick={() => {
+                                                      const text = `
+Analysis for ${p.supplierBrand}
+---
+Base Cost: ${formatPHP(calcResult.breakdown?.baseCostPHP || 0)}
+Logistics: ${formatPHP(calcResult.breakdown?.shippingPerItem || 0)}
+Invoice Fee: ${formatPHP(calcResult.breakdown?.invoiceFee || 0)}
+Landed Cost: ${formatPHP(calcResult.landed)}
+Recommended SRP: ${formatPHP(calcResult.srp)}
+                                                      `.trim();
+                                                      navigator.clipboard.writeText(text);
+                                                      toast.success("Analysis copied to clipboard");
+                                                    }}
+                                                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/40 hover:text-white transition-all"
+                                                    title="Copy breakdown to clipboard"
+                                                  >
+                                                    <Copy size={12} />
+                                                  </button>
+                                                </div>
+
+                                                <div className="space-y-3 flex-1">
+                                                  {calcResult.breakdown ? (
+                                                    <>
+                                                      {/* Sensitivity Analysis (New Advanced Feature) */}
+                                                      <div className="mb-4 p-3 bg-white/5 rounded-2xl border border-white/5 space-y-2">
+                                                        <div className="flex items-center justify-between">
+                                                          <div className="flex items-center gap-1.5">
+                                                            <Activity size={10} className="text-blue-400" />
+                                                            <p className="text-[8px] font-black uppercase tracking-widest text-zinc-400">Risk Sensitivity (Rate ±1)</p>
+                                                          </div>
+                                                        </div>
+                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                          <div className="flex flex-col gap-1 px-3 py-2 rounded-xl bg-rose-500/5 border border-rose-500/10">
+                                                            <p className="text-[7px] font-black text-rose-400/60 uppercase tracking-tighter">If Rate +1 (₱{ (parseFloat(currentCalc.exchangeRate || "0") + 1).toFixed(1) })</p>
+                                                            <p className="text-[11px] font-black text-rose-400">
+                                                              {formatPHP(calculateSRP(p.unitCost, { ...currentCalc, exchangeRate: (parseFloat(currentCalc.exchangeRate || "0") + 1).toString() }).srp)}
+                                                            </p>
+                                                          </div>
+                                                          <div className="flex flex-col gap-1 px-3 py-2 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
+                                                            <p className="text-[7px] font-black text-emerald-400/60 uppercase tracking-tighter">If Rate -1 (₱{ (parseFloat(currentCalc.exchangeRate || "0") - 1).toFixed(1) })</p>
+                                                            <p className="text-[11px] font-black text-emerald-400">
+                                                              {formatPHP(calculateSRP(p.unitCost, { ...currentCalc, exchangeRate: (parseFloat(currentCalc.exchangeRate || "0") - 1).toString() }).srp)}
+                                                            </p>
+                                                          </div>
+                                                        </div>
+                                                      </div>
+
+                                                      {(calcResult.breakdown.baseCostPHP ?? 0) > 0 && (
+                                                        <CostRow label="Base Product Cost" value={formatPHP(calcResult.breakdown.baseCostPHP)} icon={Package} />
+                                                      )}
+                                                      {(calcResult.breakdown.shippingPerItem ?? 0) > 0 && (
+                                                        <CostRow label="Allocated Shipping" value={formatPHP(calcResult.breakdown.shippingPerItem)} icon={Truck} />
+                                                      )}
+                                                      {(calcResult.breakdown.invoiceFee ?? 0) > 0 && (
+                                                        <CostRow label="Invoice Fees" value={formatPHP(calcResult.breakdown.invoiceFee)} icon={FileText} />
+                                                      )}
+                                                      {(calcResult.breakdown.multiplierEffect ?? 0) > 0 && (
+                                                        <CostRow label="Multiplier Adjustment" value={formatPHP(calcResult.breakdown.multiplierEffect)} icon={RefreshCw} />
+                                                      )}
+                                                      {(calcResult.breakdown.deliveryFee ?? 0) > 0 && (
+                                                        <CostRow label="Delivery Fee" value={formatPHP(calcResult.breakdown.deliveryFee)} icon={MapPin} />
+                                                      )}
+                                                      
+                                                      <div className="pt-4 mt-4 border-t border-white/10">
+                                                        {calcResult.landed > 0 && (
+                                                          <div className="flex items-center justify-between mb-4 bg-white/5 p-3 rounded-2xl">
+                                                            <div className="flex items-center gap-2">
+                                                              <ShieldCheck size={12} className="text-emerald-400" />
+                                                              <p className="text-[9px] font-black uppercase text-zinc-400">Total Landed</p>
+                                                            </div>
+                                                            <p className="text-sm font-black text-white">{formatPHP(calcResult.landed)}</p>
+                                                          </div>
+                                                        )}
+                                                        
+                                                        <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-2xl">
+                                                          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-400 mb-1">Recommended SRP</p>
+                                                          <p className="text-2xl font-black text-emerald-400">{formatPHP(calcResult.srp)}</p>
+                                                          {(calcResult.breakdown.margin ?? 0) > 0 && (
+                                                            <p className="text-[8px] font-bold text-emerald-500/60 mt-1 uppercase tracking-widest">
+                                                              Estimated Margin: {formatPHP(calcResult.breakdown.margin)}
+                                                            </p>
+                                                          )}
+                                                        </div>
+                                                      </div>
+                                                    </>
+                                                  ) : (
+                                                    <div className="h-full flex flex-col items-center justify-center text-center opacity-40 py-10">
+                                                      <AlertTriangle size={24} className="mb-2 text-zinc-500" />
+                                                      <p className="text-[10px] font-black uppercase tracking-widest leading-tight">Waiting for complete<br/>input parameters</p>
+                                                    </div>
+                                                  )}
+                                                </div>
+
+                                                  <Button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      if (calcResult.srp > 0) {
+                                                        updateCell(rIdx, pIdx, "sellingCost", calcResult.srp.toFixed(2).toString());
+                                                        toggleCalc(calcKey);
+                                                        toast.success(`₱${calcResult.srp.toLocaleString()} applied to Selling Cost ✓`);
+                                                      } else {
+                                                        toast.error("Please fill in all required fields first.");
+                                                      }
+                                                    }}
+                                                    disabled={!(calcResult.srp > 0)}
+                                                    className={cn(
+                                                      "w-full h-12 rounded-2xl font-black text-[10px] uppercase tracking-widest mt-6 transition-all",
+                                                      calcResult.srp > 0 
+                                                        ? "bg-white text-zinc-900 hover:bg-emerald-500 hover:text-white hover:scale-[1.02] shadow-lg" 
+                                                        : "bg-white/5 text-white/20 border border-white/10"
+                                                    )}
+                                                  >
+                                                    {calcResult.srp > 0 ? (
+                                                      <div className="flex items-center gap-2">
+                                                        <CheckCircle2 size={14} className="text-emerald-500 group-hover:text-white" />
+                                                        Apply ₱{calcResult.srp.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                                      </div>
+                                                    ) : (
+                                                      "Fill details to apply"
+                                                    )}
+                                                  </Button>
+                                              </div>
+                                            </div>
                                           </div>
                                         </div>
                                       )}
@@ -1091,8 +2077,12 @@ export default function ProcurementDetailPage() {
                     {/* Totals */}
                     <div className="mt-4 space-y-2 p-3 bg-white/5 rounded-2xl border border-white/10">
                       <div className="flex justify-between items-center">
-                        <p className="text-[8px] font-black text-zinc-400 uppercase tracking-widest">PD Total</p>
-                        <p className="text-[11px] font-black text-zinc-300">{formatPHP(grandTotalPD)}</p>
+                        <p className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">PD Original Total</p>
+                        <p className="text-[10px] font-bold text-zinc-400 line-through">{formatPHP(grandTotalPD)}</p>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <p className="text-[8px] font-black text-blue-400 uppercase tracking-widest">PD Final Total</p>
+                        <p className="text-[12px] font-black text-blue-300">{formatPHP(grandTotalFinalPD)}</p>
                       </div>
                       <div className="h-px bg-white/10" />
                       <div className="flex justify-between items-center">
@@ -1101,13 +2091,13 @@ export default function ProcurementDetailPage() {
                           {grandTotalSelling > 0 ? formatPHP(grandTotalSelling) : "—"}
                         </p>
                       </div>
-                      {grandTotalSelling > 0 && grandTotalPD > 0 && (
+                      {grandTotalSelling > 0 && grandTotalFinalPD > 0 && (
                         <>
                           <div className="h-px bg-white/10" />
                           <div className="flex justify-between items-center">
-                            <p className="text-[8px] font-black text-zinc-400 uppercase tracking-widest">Margin</p>
+                            <p className="text-[8px] font-black text-zinc-400 uppercase tracking-widest">Margin (Final PD)</p>
                             <p className="text-[11px] font-black text-violet-300">
-                              {(((grandTotalSelling - grandTotalPD) / grandTotalSelling) * 100).toFixed(1)}%
+                              {(((grandTotalSelling - grandTotalFinalPD) / grandTotalSelling) * 100).toFixed(1)}%
                             </p>
                           </div>
                         </>
@@ -1230,11 +2220,14 @@ export default function ProcurementDetailPage() {
             <div className="lg:hidden bg-white rounded-[24px] border border-zinc-200/60 shadow-sm p-4 space-y-3">
               <SectionHeader icon={BadgeDollarSign} title="Summary" />
               <div className="grid grid-cols-2 gap-3 mt-3">
-                <div className="bg-zinc-50 rounded-2xl p-3">
-                  <p className="text-[8px] font-black text-zinc-400 uppercase tracking-widest mb-1">PD Total</p>
-                  <p className="text-[13px] font-black text-zinc-700">{formatPHP(grandTotalPD)}</p>
+                <div className="bg-zinc-50 rounded-2xl p-3 border border-zinc-100">
+                  <p className="text-[8px] font-black text-zinc-400 uppercase tracking-widest mb-1">PD Original</p>
+                  <p className="text-[11px] font-bold text-zinc-400 line-through leading-none">{formatPHP(grandTotalPD)}</p>
+                  <div className="h-px bg-zinc-200 my-1.5" />
+                  <p className="text-[8px] font-black text-blue-500 uppercase tracking-widest mb-1">PD Final</p>
+                  <p className="text-[13px] font-black text-blue-700 leading-none">{formatPHP(grandTotalFinalPD)}</p>
                 </div>
-                <div className={cn("rounded-2xl p-3 border", isApproved ? "bg-emerald-50 border-emerald-100" : "bg-zinc-50 border-zinc-100")}>
+                <div className={cn("rounded-2xl p-3 border flex flex-col justify-center", isApproved ? "bg-emerald-50 border-emerald-100" : "bg-zinc-50 border-zinc-100")}>
                   <p className={cn("text-[8px] font-black uppercase tracking-widest mb-1", isApproved ? "text-emerald-600" : "text-zinc-400")}>
                     Selling Total
                   </p>
@@ -1242,11 +2235,11 @@ export default function ProcurementDetailPage() {
                     {grandTotalSelling > 0 ? formatPHP(grandTotalSelling) : "—"}
                   </p>
                 </div>
-                {grandTotalSelling > 0 && grandTotalPD > 0 && (
+                {grandTotalSelling > 0 && grandTotalFinalPD > 0 && (
                   <div className="col-span-2 bg-violet-50 rounded-2xl p-3 border border-violet-100">
-                    <p className="text-[8px] font-black text-violet-600 uppercase tracking-widest mb-1">Estimated Margin</p>
+                    <p className="text-[8px] font-black text-violet-600 uppercase tracking-widest mb-1">Margin (Final PD)</p>
                     <p className="text-[13px] font-black text-violet-700">
-                      {(((grandTotalSelling - grandTotalPD) / grandTotalSelling) * 100).toFixed(1)}%
+                      {(((grandTotalSelling - grandTotalFinalPD) / grandTotalSelling) * 100).toFixed(1)}%
                     </p>
                   </div>
                 )}
@@ -1364,6 +2357,43 @@ export default function ProcurementDetailPage() {
 /* ─────────────────────────────────────────────
    SUB-COMPONENTS
 ───────────────────────────────────────────── */
+function TechAssetLink({ icon: Icon, label, url, disabled }: { icon: any; label: string; url: string; disabled?: boolean }) {
+  if (disabled) {
+    return (
+      <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-zinc-100 bg-zinc-50 text-zinc-400 text-[9px] font-black uppercase tracking-tighter cursor-not-allowed opacity-60">
+        <Icon size={10} />
+        {label}
+        <Lock size={8} className="opacity-50" />
+      </div>
+    );
+  }
+  const cleanUrl = url.replace(/`| /g, "");
+  return (
+    <a
+      href={cleanUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-blue-100 bg-blue-50/30 text-blue-600 hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all text-[9px] font-black uppercase tracking-tighter"
+    >
+      <Icon size={10} />
+      {label}
+      <ExternalLink size={8} className="opacity-50" />
+    </a>
+  );
+}
+
+function CostRow({ label, value, icon: Icon }: { label: string; value: string; icon: any }) {
+  return (
+    <div className="flex items-center justify-between group">
+      <div className="flex items-center gap-2">
+        <Icon size={10} className="text-zinc-600 group-hover:text-blue-400 transition-colors" />
+        <p className="text-[9px] font-black uppercase text-zinc-500">{label}</p>
+      </div>
+      <p className="text-[10px] font-mono font-bold text-zinc-300">{value}</p>
+    </div>
+  );
+}
+
 function SectionHeader({ icon: Icon, title, light }: { icon: any; title: string; light?: boolean }) {
   return (
     <div className="flex items-center gap-2.5">
@@ -1413,18 +2443,39 @@ function InfoBlock({ label, value, fullWidth, icon: Icon }: { label: string; val
   );
 }
 
-function CalcInput({ label, value, onChange, placeholder = "" }: { label: string; value: any; onChange: (e: any) => void; placeholder?: string }) {
+function CalcInput({ label, value, onChange, placeholder = "", icon: Icon, isOverridden, suffix }: { label: string; value: any; onChange: (e: any) => void; placeholder?: string; icon?: any; isOverridden?: boolean; suffix?: string }) {
   return (
     <div className="space-y-1">
-      <label className="text-[8px] font-black text-zinc-400 uppercase tracking-widest">{label}</label>
-      <Input
-        type="number"
-        step="any"
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        className="h-9 text-[11px] font-bold rounded-lg border-zinc-200 bg-zinc-50/50"
-      />
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-1.5">
+          {Icon && <Icon size={9} className={cn(isOverridden ? "text-blue-500" : "text-zinc-400")} />}
+          <label className={cn("text-[8px] font-black uppercase tracking-widest", isOverridden ? "text-blue-600" : "text-zinc-400")}>{label}</label>
+        </div>
+        {isOverridden && (
+          <span className="text-[7px] font-black text-blue-500 bg-blue-50 px-1 rounded uppercase">Custom</span>
+        )}
+      </div>
+      <div className="relative group">
+        <Input
+          type="number"
+          step="any"
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+          className={cn(
+            "h-9 text-[11px] font-bold rounded-xl border-zinc-200 transition-all pl-3",
+            suffix ? "pr-7" : "pr-3",
+            isOverridden ? "bg-blue-50/50 border-blue-200 ring-1 ring-blue-500/10" : "bg-zinc-50/50",
+            "focus-visible:ring-blue-500 focus-visible:bg-white"
+          )}
+        />
+        {suffix && (
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-zinc-400 pointer-events-none">{suffix}</span>
+        )}
+        {value && value !== "0" && !suffix && (
+          <div className={cn("absolute right-2 top-1/2 -translate-y-1/2 size-1.5 rounded-full", isOverridden ? "bg-blue-500" : "bg-blue-400/20")} />
+        )}
+      </div>
     </div>
   );
 }

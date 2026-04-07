@@ -209,6 +209,7 @@ export default function ProcurementListPage() {
   const [userId, setUserId]           = React.useState<string | null>(null)
   const [userDepartment, setUserDept] = React.useState<string | null>(null)
   const [requests, setRequests]       = React.useState<SPFCreation[]>([])
+  const [staffNames, setStaffNames]   = React.useState<Record<string, string>>({})
   const [isLoading, setIsLoading]     = React.useState(true)
   const [filterStatus, setFilter]     = React.useState<string | null>(null)
   const [searchTerm, setSearch]       = React.useState("")
@@ -251,6 +252,22 @@ export default function ProcurementListPage() {
     setUserId(uid)
     setUserDept(dept)
     fetchRequests(dept)
+
+    const fetchStaff = async () => {
+      try {
+        const res = await fetch('/api/user')
+        const allUsers = await res.json()
+        const mapping: Record<string, string> = {}
+        allUsers.forEach((u: any) => {
+          if (u.ReferenceID) {
+            mapping[u.ReferenceID] = `${u.Firstname || ""} ${u.Lastname || ""}`.trim()
+          }
+        })
+        setStaffNames(mapping)
+      } catch (e) { console.error(e) }
+    }
+    fetchStaff()
+
     const ch = supabase
       .channel("spf_creation_changes")
       .on("postgres_changes", { event: "*", schema: "public", table: "spf_creation" }, () => fetchRequests(dept))
@@ -500,8 +517,8 @@ export default function ProcurementListPage() {
                             </p>
                           </div>
 
-                          <p className="text-[11px] font-bold text-zinc-600 truncate pr-2">{r.referenceid || "—"}</p>
-                          <p className="text-[11px] font-bold text-zinc-700 uppercase truncate">{r.tsm || "—"}</p>
+                          <p className="text-[11px] font-bold text-zinc-600 truncate pr-2">{staffNames[r.referenceid || ""] || r.referenceid || "—"}</p>
+                          <p className="text-[11px] font-bold text-zinc-700 uppercase truncate">{staffNames[r.tsm || ""] || r.tsm || "—"}</p>
 
                           <div className="flex items-center gap-2">
                             <div className={cn("size-2 rounded-full flex-shrink-0 animate-pulse", meta.dot,
@@ -537,7 +554,7 @@ export default function ProcurementListPage() {
                               </div>
                               <div className="min-w-0">
                                 <p className="text-[13px] font-mono font-black text-zinc-900 leading-tight truncate">{r.spf_number}</p>
-                                <p className="text-[10px] text-zinc-400 font-bold truncate">{r.referenceid || "No Reference ID"}</p>
+                                <p className="text-[10px] text-zinc-400 font-bold truncate">{staffNames[r.referenceid || ""] || r.referenceid || "No Reference ID"}</p>
                               </div>
                             </div>
                             <div className={cn("flex items-center gap-1.5 px-2.5 py-1 rounded-xl border flex-shrink-0", meta.bg, meta.border)}>
@@ -551,7 +568,7 @@ export default function ProcurementListPage() {
                           <div className="flex items-center justify-between pl-[52px]">
                             <div className="flex flex-wrap items-center gap-2">
                               {r.tsm && (
-                                <span className="text-[9px] bg-zinc-100 rounded-lg px-2 py-0.5 uppercase font-bold text-zinc-600">{r.tsm}</span>
+                                <span className="text-[9px] bg-zinc-100 rounded-lg px-2 py-0.5 uppercase font-bold text-zinc-600">{staffNames[r.tsm || ""] || r.tsm || "—"}</span>
                               )}
                               <span className="flex items-center gap-1 text-[9px] text-zinc-400 font-bold">
                                 <Calendar size={9} />
