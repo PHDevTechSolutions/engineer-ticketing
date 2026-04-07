@@ -139,8 +139,9 @@ function extractDimensions(packaging: string) {
   return { l: match[1], w: match[2], h: match[3] };
 }
 
-function parseAllProducts(offers: any): ProductCell[][] {
+function parseAllProducts(offers: any, exchangeRate: string): ProductCell[][] {
   if (!offers?.product_offer_image) return [];
+  const rate = parseFloat(exchangeRate) || 60;
   const split = (s: string | null | undefined) => (s ?? "").split("|ROW|");
   const rowImages = split(offers.product_offer_image);
   const rowQtys = split(offers.product_offer_qty);
@@ -173,6 +174,16 @@ function parseAllProducts(offers: any): ProductCell[][] {
       const unitCostStr = rowUnitCosts[rIdx]?.split(",")[pIdx]?.trim() ?? "0";
       const finalUnitCostStr = rowFinalUnitCosts[rIdx]?.split(",")[pIdx]?.trim() ?? unitCostStr;
       
+      const qty = parseFloat(qtyStr) || 0;
+      const unitCost = (finalUnitCostStr === "-" || finalUnitCostStr === "") ? (parseFloat(unitCostStr) || 0) : (parseFloat(finalUnitCostStr) || 0);
+      const pdUnitCost = parseFloat(unitCostStr) || 0;
+      
+      // Calculate subtotal in PHP: qty * unitCost (USD) * exchangeRate
+      const calculatedSubtotal = (qty * unitCost * rate).toString();
+      const calculatedPdSubtotal = (qty * pdUnitCost * rate).toString();
+      
+      const dbPdSubtotal = rowSubtotals[rIdx]?.split(",")[pIdx]?.trim() ?? "0";
+
       return {
         image: img.trim(),
         qty: qtyStr,
@@ -181,7 +192,9 @@ function parseAllProducts(offers: any): ProductCell[][] {
         packaging: packagingStr,
         factory: rowFactories[rIdx]?.split(",")[pIdx]?.trim() ?? "-",
         port: rowPorts[rIdx]?.split(",")[pIdx]?.trim() ?? "-",
-        subtotal: rowSubtotals[rIdx]?.split(",")[pIdx]?.trim() ?? "0",
+        subtotal: (dbPdSubtotal === "-" || parseFloat(dbPdSubtotal) === qty * pdUnitCost) 
+          ? calculatedPdSubtotal 
+          : dbPdSubtotal,
         supplierBrand: rowBrands[rIdx]?.split(",")[pIdx]?.trim() ?? "-",
         companyName: rowCompanies[rIdx]?.split(",")[pIdx]?.trim() ?? "-",
         contactName: rowContactNames[rIdx]?.split(",")[pIdx]?.trim() ?? "-",
@@ -198,8 +211,8 @@ function parseAllProducts(offers: any): ProductCell[][] {
         dimDrawing: rowDimDrawings[rIdx]?.split(",")[pIdx]?.trim() ?? "-",
         illuDrawing: rowIlluDrawings[rIdx]?.split(",")[pIdx]?.trim() ?? "-",
         finalUnitCost: (finalUnitCostStr === "-" || finalUnitCostStr === "") ? unitCostStr : finalUnitCostStr,
-        finalSubtotal: (rowFinalSubtotals[rIdx]?.split(",")[pIdx]?.trim() === "-" || !rowFinalSubtotals[rIdx]?.split(",")[pIdx])
-          ? (parseFloat(qtyStr) * (finalUnitCostStr === "-" ? parseFloat(unitCostStr) : parseFloat(finalUnitCostStr))).toString()
+        finalSubtotal: (rowFinalSubtotals[rIdx]?.split(",")[pIdx]?.trim() === "-" || !rowFinalSubtotals[rIdx]?.split(",")[pIdx] || parseFloat(rowFinalSubtotals[rIdx]?.split(",")[pIdx]) === qty * unitCost)
+          ? calculatedSubtotal
           : rowFinalSubtotals[rIdx]?.split(",")[pIdx]?.trim(),
         rowIndex: rIdx,
         productIndex: pIdx,
@@ -328,7 +341,7 @@ export default function ProcurementDetailPage() {
         if (error) throw error;
         setSpfData(offer);
 
-        const parsed = parseAllProducts(offer);
+        const parsed = parseAllProducts(offer, currentRate);
         setRows(parsed);
 
         const initCalcs: Record<string, any> = {};
@@ -476,9 +489,10 @@ export default function ProcurementDetailPage() {
       if (field === "finalUnitCost") {
         const qty = parseFloat(next[rIdx][pIdx].qty) || 0;
         const pdUnitCost = parseFloat(next[rIdx][pIdx].unitCost) || 0;
+        const rate = parseFloat(liveExchangeRate) || 60;
         // If input is empty or "-", use PD cost
         const effectiveUnitCost = (value === "-" || value === "") ? pdUnitCost : parseFloat(value) || 0;
-        next[rIdx][pIdx].finalSubtotal = (qty * effectiveUnitCost).toString();
+        next[rIdx][pIdx].finalSubtotal = (qty * effectiveUnitCost * rate).toString();
       }
       
       return next;
@@ -516,8 +530,9 @@ export default function ProcurementDetailPage() {
       const cbmContainer = parseFloat(calc.cbmContainer) || 0;
       const invoicePct = parseFloat(calc.invoicePct) || 0;
       const exchangeRate = parseFloat(calc.exchangeRate) || 0;
-      const gp = (parseFloat(calc.gp) || 0) / 100;
-      if (!l || !w || !h || !qtyPerBox || !cbmContainer || gp >= 1) return { landed: 0, srp: 0, breakdown: null };
+      const gpRaw = (parseFloat(calc.gp) || 0) / 100;
+      const gp = Math.min(gpRaw, 0.95); // hard cap at 95% to prevent division-near-zero SRP explosion
+      if (!l || !w || !h || !qtyPerBox || !cbmContainer || gpRaw >= 1) return { landed: 0, srp: 0, breakdown: null };
       const cbmPerBox = (l * w * h) / 1000000;
       const boxesPerContainer = cbmContainer / cbmPerBox;
       const totalItems = boxesPerContainer * qtyPerBox;
@@ -525,6 +540,7 @@ export default function ProcurementDetailPage() {
       const baseCostPHP = unitPrice * exchangeRate;
       const landedCost = (baseCostPHP + shippingPerItem) * invoicePct;
       const srp = landedCost / (1 - gp);
+      const gpActual = srp > 0 ? ((srp - landedCost) / srp) * 100 : 0;
       return {
         landed: landedCost,
         srp,
@@ -533,6 +549,7 @@ export default function ProcurementDetailPage() {
           shippingPerItem,
           invoiceFee: landedCost - (baseCostPHP + shippingPerItem),
           margin: srp - landedCost,
+          gpActual,
         }
       };
     }
@@ -542,12 +559,14 @@ export default function ProcurementDetailPage() {
       const containerCost = parseFloat(calc.lpc_containerCost) || 0;
       const pcsPerContainer = parseFloat(calc.lpc_pcsPerContainer) || 0;
       const invoicePct = parseFloat(calc.lpc_invoicePct) || 0;
-      const gp = (parseFloat(calc.lpc_gp) || 0) / 100;
-      if (!pcsPerContainer || gp >= 1) return { landed: 0, srp: 0, breakdown: null };
+      const gpRaw = (parseFloat(calc.lpc_gp) || 0) / 100;
+      const gp = Math.min(gpRaw, 0.95);
+      if (!pcsPerContainer || gpRaw >= 1) return { landed: 0, srp: 0, breakdown: null };
       const baseCostPHP = unitPrice * exchangeRate;
       const shippingPerItem = containerCost / pcsPerContainer;
       const landedCost = (baseCostPHP + shippingPerItem) * invoicePct;
       const srp = landedCost / (1 - gp);
+      const gpActual = srp > 0 ? ((srp - landedCost) / srp) * 100 : 0;
       return {
         landed: landedCost,
         srp,
@@ -556,6 +575,7 @@ export default function ProcurementDetailPage() {
           shippingPerItem,
           invoiceFee: landedCost - (baseCostPHP + shippingPerItem),
           margin: srp - landedCost,
+          gpActual,
         }
       };
     }
@@ -563,11 +583,13 @@ export default function ProcurementDetailPage() {
     if (formulaType === "spf_non_china") {
       const multiplier = parseFloat(calc.nc_multiplier) || 0;
       const exchangeRate = parseFloat(calc.nc_exchangeRate) || 0;
-      const gp = (parseFloat(calc.nc_gp) || 0) / 100;
-      if (gp >= 1) return { landed: 0, srp: 0, breakdown: null };
+      const gpRaw = (parseFloat(calc.nc_gp) || 0) / 100;
+      const gp = Math.min(gpRaw, 0.95);
+      if (gpRaw >= 1) return { landed: 0, srp: 0, breakdown: null };
       const baseCostPHP = unitPrice * exchangeRate;
       const landedCost = baseCostPHP * multiplier;
       const srp = landedCost / (1 - gp);
+      const gpActual = srp > 0 ? ((srp - landedCost) / srp) * 100 : 0;
       return {
         landed: landedCost,
         srp,
@@ -575,6 +597,7 @@ export default function ProcurementDetailPage() {
           baseCostPHP,
           multiplierEffect: landedCost - baseCostPHP,
           margin: srp - landedCost,
+          gpActual,
         }
       };
     }
@@ -617,7 +640,8 @@ export default function ProcurementDetailPage() {
     const target = parseFloat(targetSRP) || 0;
     const formulaType = calc.formulaType || "spf_china";
     const exchangeRate = parseFloat(calc.exchangeRate || calc.lpc_exchangeRate || calc.nc_exchangeRate || liveExchangeRate) || 1;
-    const gp = (parseFloat(calc.gp || calc.lpc_gp || calc.nc_gp) || 0) / 100;
+    const gpRaw = (parseFloat(calc.gp || calc.lpc_gp || calc.nc_gp) || 0) / 100;
+    const gp = Math.min(gpRaw, 0.95);
     const invoicePct = parseFloat(calc.invoicePct || calc.lpc_invoicePct) || 1;
 
     if (formulaType === "spf_china") {
@@ -1230,13 +1254,14 @@ export default function ProcurementDetailPage() {
                                       const pct = prompt(`Enter percentage adjustment for ${supplier} (e.g., -5 for 5% discount, 10 for 10% markup):`);
                                       if (pct && !isNaN(parseFloat(pct))) {
                                         const factor = 1 + (parseFloat(pct) / 100);
+                                        const rate = parseFloat(liveExchangeRate) || 60;
                                         setRows(prev => prev.map(r => r.map(p => {
                                           if (p.companyName === supplier) {
                                             const newCost = (parseFloat(p.finalUnitCost || p.unitCost) * factor).toFixed(2);
                                             return { 
                                               ...p, 
                                               finalUnitCost: newCost,
-                                              finalSubtotal: (parseFloat(p.qty) * parseFloat(newCost)).toString()
+                                              finalSubtotal: (parseFloat(p.qty) * parseFloat(newCost) * rate).toString()
                                             };
                                           }
                                           return p;
@@ -1984,9 +2009,23 @@ Recommended SRP: ${formatPHP(calcResult.srp)}
                                                           <p className="text-2xl font-black text-emerald-400">{formatPHP(calcResult.srp)}</p>
                                                           {(calcResult.breakdown.margin ?? 0) > 0 && (
                                                             <p className="text-[8px] font-bold text-emerald-500/60 mt-1 uppercase tracking-widest">
-                                                              Estimated Margin: {formatPHP(calcResult.breakdown.margin)}
+                                                              Estimated Margin: {formatPHP(calcResult.breakdown.margin)}{" "}
+                                                              <span className="text-emerald-400/80">
+                                                                ({(calcResult.breakdown.gpActual ?? 0).toFixed(1)}% GP)
+                                                              </span>
                                                             </p>
                                                           )}
+                                                          {(() => {
+                                                            const gpEntered = parseFloat(
+                                                              currentCalc.gp || currentCalc.lpc_gp || currentCalc.nc_gp || "0"
+                                                            );
+                                                            if (gpEntered > 95) return (
+                                                              <p className="text-[8px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-xl px-2 py-1 mt-2 uppercase tracking-widest">
+                                                                ⚠ GP capped at 95% — entered {gpEntered}% is too high
+                                                              </p>
+                                                            );
+                                                            return null;
+                                                          })()}
                                                         </div>
                                                       </div>
                                                     </>

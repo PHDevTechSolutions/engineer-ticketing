@@ -12,12 +12,21 @@ import {
   ChevronLeft, ChevronRight, ArrowUpDown,
   ArrowUp, ArrowDown, TrendingUp, DollarSign,
   Activity, FileDown, Clock3, Globe, Copy, Check,
+  HelpCircle, Lightbulb, MousePointer2, Sparkles,
+  Info, Zap, BarChart2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { supabase } from "@/utils/supabase"
 import { PageHeader } from "@/components/page-header"
 import { toast } from "sonner"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 
 /* ─────────────────────────────────────────────
    TYPES
@@ -80,6 +89,20 @@ const FILTERS = [
 /* ─────────────────────────────────────────────
    HELPERS
 ───────────────────────────────────────────── */
+function GuideItem({ icon: Icon, title, description, colorClass }: { icon: any, title: string, description: string, colorClass: string }) {
+  return (
+    <div className="flex gap-4 p-4 rounded-2xl border border-zinc-100 bg-zinc-50/50 hover:bg-white hover:shadow-sm transition-all group">
+      <div className={cn("p-2.5 rounded-xl flex-shrink-0 self-start", colorClass)}>
+        <Icon size={18} />
+      </div>
+      <div>
+        <h4 className="text-[13px] font-black text-zinc-900 uppercase tracking-tight mb-1">{title}</h4>
+        <p className="text-[11px] font-bold text-zinc-500 leading-relaxed">{description}</p>
+      </div>
+    </div>
+  )
+}
+
 function getStatusMeta(status: string) {
   const s = (status || "").toUpperCase().trim()
   if (s.includes("APPROVED BY PROCUREMENT") || s.includes("APPROVED")) return STATUS_META["APPROVED BY PROCUREMENT"]
@@ -222,34 +245,33 @@ function SkeletonRow() {
 /* ─────────────────────────────────────────────
    STAT PILL
 ───────────────────────────────────────────── */
-function StatPill({ label, count, icon: Icon, variant, isActive, onClick, loading }: {
-  label: string; count: string; icon: any; variant: string
+function StatPill({ label, count, variant, isActive, onClick, loading }: {
+  label: string; count: string; variant: string
   isActive: boolean; onClick: () => void; loading?: boolean
 }) {
   const colors: Record<string, string> = {
-    default: "text-zinc-500 bg-zinc-100",
-    warning: "text-amber-600 bg-amber-50",
-    emerald: "text-emerald-600 bg-emerald-50",
-    rose:    "text-rose-600 bg-rose-50",
+    default: "text-zinc-500",
+    warning: "text-amber-600",
+    emerald: "text-emerald-600",
+    rose:    "text-rose-600",
   }
   return (
     <button
       onClick={onClick}
       className={cn(
-        "flex items-center gap-2 px-3 py-1.5 rounded-xl border bg-white shadow-sm transition-all flex-shrink-0 active:scale-95",
-        isActive ? "border-zinc-900 ring-2 ring-zinc-900/5 shadow-md" : "border-zinc-200/60 hover:border-zinc-300 hover:shadow-md"
+        "flex items-center gap-2 px-4 py-2 rounded-xl border transition-all flex-shrink-0 active:scale-95",
+        isActive 
+          ? "bg-zinc-900 border-zinc-900 text-white shadow-md shadow-zinc-200" 
+          : "bg-white border-zinc-200/60 text-zinc-500 hover:border-zinc-300 hover:bg-zinc-50"
       )}
     >
-      <div className={cn("p-1 rounded-lg", colors[variant] || colors.default)}>
-        <Icon className="size-3" />
-      </div>
-      <div className="text-left min-w-[16px]">
+      <div className="text-left">
         {loading ? (
           <div className="h-3 w-3 bg-zinc-100 rounded animate-pulse" />
         ) : (
-          <p className="text-[12px] font-black text-zinc-900 leading-none">{count}</p>
+          <p className={cn("text-[13px] font-black leading-none", isActive ? "text-white" : "text-zinc-900")}>{count}</p>
         )}
-        <p className="text-[7px] font-black uppercase text-zinc-400 tracking-widest mt-0.5 whitespace-nowrap">{label}</p>
+        <p className={cn("text-[7px] font-black uppercase tracking-widest mt-1 whitespace-nowrap", isActive ? "text-zinc-400" : "text-zinc-400")}>{label}</p>
       </div>
     </button>
   )
@@ -297,6 +319,7 @@ export default function ProcurementListPage() {
   const [page, setPage]               = React.useState(1)
   const [sortField, setSortField]     = React.useState<SortField>("date_created")
   const [sortDir, setSortDir]         = React.useState<SortDir>("desc")
+  const [showGuide, setShowGuide]     = React.useState(false)
 
   // Added States
   const [exchangeRate, setExchangeRate] = React.useState<string>("60.00")
@@ -565,14 +588,15 @@ export default function ProcurementListPage() {
 
   return (
     <ProtectedPageWrapper>
-      <SidebarProvider defaultOpen={false}>
+      <SidebarProvider defaultOpen={false} className="overflow-visible">
         <AppSidebar userId={userId} />
-        <SidebarInset className="bg-[#F8FAFA] pb-24 md:pb-10 min-h-screen">
+        <SidebarInset className="bg-[#F8FAFA] pb-24 md:pb-10 min-h-screen pt-14 md:pt-16">
           <PageHeader
             title="SPF PROCUREMENT"
             version="V1.0"
             showBackButton
             trigger={<SidebarTrigger className="mr-2" />}
+            className="md:left-[calc(var(--sidebar-width-icon)+1rem)] group-data-[state=expanded]/sidebar-wrapper:md:left-[calc(var(--sidebar-width)+1rem)] transition-[left] duration-200"
           />
 
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-4">
@@ -642,7 +666,7 @@ export default function ProcurementListPage() {
             </div>
 
             {/* ── ACTIONS BAR ── */}
-            <div className="flex flex-col xl:flex-row xl:items-center gap-3 bg-white/50 p-2 rounded-[24px] border border-zinc-200/40 shadow-sm">
+            <div className="sticky top-[56px] md:top-[64px] z-[45] flex flex-col xl:flex-row xl:items-center gap-3 bg-white/80 backdrop-blur-md p-2 rounded-[24px] border border-zinc-200/40 shadow-sm transition-all">
               {/* Stat Filter Pills */}
               <div className="flex gap-1.5 overflow-x-auto pb-1 xl:pb-0 scrollbar-none flex-1">
                 {FILTERS.map(f => (
@@ -650,7 +674,6 @@ export default function ProcurementListPage() {
                     key={String(f.key)}
                     label={f.label}
                     count={String(countFor(f.key))}
-                    icon={f.icon}
                     variant={f.variant}
                     isActive={filterStatus === f.key}
                     onClick={() => setFilter(f.key)}
@@ -681,6 +704,13 @@ export default function ProcurementListPage() {
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
+                    onClick={() => setShowGuide(true)}
+                    className="h-10 px-3 rounded-xl bg-blue-50 border-blue-100 hover:bg-blue-100 text-blue-600 font-black text-[10px] uppercase tracking-wider transition-all"
+                  >
+                    User Guide
+                  </Button>
+                  <Button
+                    variant="outline"
                     onClick={handleReset}
                     className="h-10 w-10 rounded-xl bg-white border-zinc-200 hover:bg-zinc-50 flex items-center justify-center p-0 flex-shrink-0"
                     title="Reset all filters"
@@ -699,6 +729,111 @@ export default function ProcurementListPage() {
                 </div>
               </div>
             </div>
+
+            {/* ── USER GUIDE DIALOG ── */}
+            <Dialog open={showGuide} onOpenChange={setShowGuide}>
+              <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto rounded-[32px] border-none shadow-2xl p-0 bg-white scrollbar-thin scrollbar-thumb-zinc-200 scrollbar-track-transparent hover:scrollbar-thumb-zinc-300 transition-colors">
+                <div className="sticky top-0 bg-white/80 backdrop-blur-xl z-10 px-8 py-6 border-b border-zinc-100 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-[20px] font-black text-zinc-900 tracking-tight">
+                      Procurement Portal Guide
+                    </h2>
+                    <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest mt-1">Costing & Workflow Management</p>
+                  </div>
+                </div>
+
+                <div className="p-8 space-y-8">
+                  {/* Dashboard Section */}
+                  <section>
+                    <div className="mb-4">
+                      <h3 className="text-[14px] font-black text-zinc-900 uppercase tracking-wide">Real-time Insights</h3>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <GuideItem 
+                        icon={Globe} 
+                        title="Live Exchange Rate" 
+                        description="Automatically fetches the latest USD/PHP rate every minute. Use this as your primary reference for costing SPF China requests."
+                        colorClass="bg-blue-50 text-blue-600"
+                      />
+                      <GuideItem 
+                        icon={DollarSign} 
+                        title="Pending Pipeline" 
+                        description="Tracks the total PHP value of all unpriced items. This helps you understand the current financial volume awaiting your review."
+                        colorClass="bg-emerald-50 text-emerald-600"
+                      />
+                    </div>
+                  </section>
+
+                  {/* Efficiency Section */}
+                  <section>
+                    <div className="mb-4">
+                      <h3 className="text-[14px] font-black text-zinc-900 uppercase tracking-wide">Efficiency Tools</h3>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <GuideItem 
+                        icon={AlertTriangle} 
+                        title="Smart Filters" 
+                        description="Use the 'Needs Costing' filter to instantly isolate requests that aren't 100% priced. No more hunting through the list."
+                        colorClass="bg-amber-50 text-amber-600"
+                      />
+                      <GuideItem 
+                        icon={Clock3} 
+                        title="Aging Alerts" 
+                        description="Requests older than 3 days get a red 'Aging' badge. Prioritize these to keep project lead times within targets."
+                        colorClass="bg-rose-50 text-rose-600"
+                      />
+                    </div>
+                  </section>
+
+                  {/* Navigation Section */}
+                  <section>
+                    <div className="mb-4">
+                      <h3 className="text-[14px] font-black text-zinc-900 uppercase tracking-wide">Navigation & Actions</h3>
+                    </div>
+                    <div className="space-y-3">
+                      <GuideItem 
+                        icon={Copy} 
+                        title="Quick Copy SPF#" 
+                        description="Click the copy icon next to any SPF number to instantly copy it. Useful for searching in emails or internal chats."
+                        colorClass="bg-zinc-100 text-zinc-600"
+                      />
+                      <GuideItem 
+                        icon={Activity} 
+                        title="Costing Progress" 
+                        description="Watch the progress bar fill up as you add prices. A green bar means all items in that project are successfully costed."
+                        colorClass="bg-blue-50 text-blue-600"
+                      />
+                      <GuideItem 
+                        icon={FileDown} 
+                        title="Data Export" 
+                        description="Download your currently filtered view as a CSV file for offline reporting or detailed margin analysis in Excel."
+                        colorClass="bg-violet-50 text-violet-600"
+                      />
+                    </div>
+                  </section>
+
+                  <div className="bg-zinc-900 rounded-2xl p-6 text-white flex items-center justify-between gap-6 overflow-hidden relative">
+                    <div className="relative z-10">
+                      <h4 className="text-[15px] font-black mb-1">Pro Tip!</h4>
+                      <p className="text-[11px] font-medium text-zinc-400 leading-relaxed max-w-[300px]">
+                        The generic package icon is replaced with the first product image from the request. Use it to recognize projects visually!
+                      </p>
+                    </div>
+                    <Lightbulb className="text-amber-400 flex-shrink-0 relative z-10" size={40} />
+                    <div className="absolute -right-10 -bottom-10 size-40 bg-white/5 rounded-full blur-3xl" />
+                  </div>
+                </div>
+
+                <div className="p-8 pt-0 flex justify-end">
+                  <Button 
+                    onClick={() => setShowGuide(false)}
+                    className="h-12 px-8 rounded-2xl bg-zinc-900 text-white font-black text-[12px] uppercase tracking-widest hover:bg-zinc-800 transition-all"
+                  >
+                    Got it, thanks!
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
 
             {/* ── TABLE ── */}
             <div className="bg-white rounded-[28px] shadow-sm border border-zinc-200/60 overflow-hidden">
@@ -801,8 +936,7 @@ export default function ProcurementListPage() {
                           <div onClick={() => router.push(`/request/product/${r.id}`)}>
                             <p className="text-[11px] font-black text-zinc-900 leading-none">{formatPHP(r.totalSellingValue || 0)}</p>
                             {r.expectedMargin !== undefined && (
-                              <div className="flex items-center gap-1 mt-1 leading-none">
-                                <Activity size={8} className={cn(r.expectedMargin > 30 ? "text-emerald-500" : "text-amber-500")} />
+                              <div className="mt-1 leading-none">
                                 <span className={cn("text-[9px] font-black", r.expectedMargin > 30 ? "text-emerald-600" : "text-amber-600")}>
                                   {r.expectedMargin.toFixed(1)}% Margin
                                 </span>

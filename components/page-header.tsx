@@ -30,10 +30,9 @@ export function PageHeader({
   return (
     <header
       className={cn(
-        "sticky top-0 z-[50] flex h-14 md:h-16 shrink-0 items-center",
+        "fixed top-0 z-50 flex h-14 md:h-16 shrink-0 items-center",
         "border-b border-zinc-200/80 bg-white/90 backdrop-blur-xl",
-        "px-3 md:px-5 justify-between",
-        "shadow-[0_1px_0_0_rgba(0,0,0,0.04)]",
+        "px-3 md:px-5 justify-between w-full shadow-sm",
         "transition-all duration-200",
         className
       )}
@@ -101,9 +100,6 @@ export function PageHeader({
                 {title}
               </span>
             )}
-
-            {/* Live dot */}
-            <div className="size-1.5 rounded-full bg-blue-500 animate-pulse shrink-0 hidden sm:block ml-0.5" />
           </div>
 
           {/* Sub-label */}
