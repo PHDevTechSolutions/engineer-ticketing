@@ -21,7 +21,18 @@ import {
     Fingerprint, Smartphone, Eye, Pencil, LayoutDashboard,
     Save, RefreshCw, Shield, ChevronDown, ChevronUp,
     Building2, Layers, Activity, Bell, Search, X, Sparkles,
+    HelpCircle, Lightbulb, Zap, CheckSquare, Square, Info,
+    Key, ShieldAlert, FileDown, ArrowRight, MousePointer2,
+    RotateCcw
 } from "lucide-react"
+
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from "@/components/ui/dialog"
 
 /* ─────────────────────────────────────────────────────────
    PERMISSION SCHEMA
@@ -211,8 +222,56 @@ const makeDocId = (dept: string, role: string) =>
     `${dept.toUpperCase().trim()}_${role.toUpperCase().trim()}`
 
 /* ─────────────────────────────────────────────────────────
-   SECTION CARD COMPONENT
+   HELPERS & COMPONENTS
 ───────────────────────────────────────────────────────── */
+
+function GuideItem({ icon: Icon, title, description, colorClass }: { icon: any, title: string, description: string, colorClass: string }) {
+    return (
+        <div className="flex gap-4 p-4 rounded-2xl border border-zinc-100 bg-zinc-50/50 hover:bg-white hover:shadow-sm transition-all group">
+            <div className={cn("p-2.5 rounded-xl flex-shrink-0 self-start", colorClass)}>
+                <Icon size={18} />
+            </div>
+            <div>
+                <h4 className="text-[13px] font-black text-zinc-900 uppercase tracking-tight mb-1">{title}</h4>
+                <p className="text-[11px] font-bold text-zinc-500 leading-relaxed">{description}</p>
+            </div>
+        </div>
+    )
+}
+
+function DashboardCard({ label, value, subValue, icon: Icon, colorClass, loading, isActive, onClick }: {
+    label: string; value: string | number; subValue?: string; icon: any; colorClass: string; loading?: boolean; isActive?: boolean; onClick?: () => void
+}) {
+    return (
+        <button
+            onClick={onClick}
+            className={cn(
+                "flex-1 bg-white rounded-2xl p-3 border shadow-sm flex items-center gap-3 group transition-all min-w-0 active:scale-95 text-left",
+                isActive ? "border-zinc-900 ring-4 ring-zinc-900/5 shadow-md" : "border-zinc-200/60 hover:shadow-md hover:border-zinc-300"
+            )}
+        >
+            <div className={cn("p-2 rounded-xl flex-shrink-0 transition-colors", isActive ? "bg-zinc-900 text-white" : colorClass)}>
+                <Icon className="size-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                    {loading ? (
+                        <div className="h-4 w-12 bg-zinc-100 rounded animate-pulse" />
+                    ) : (
+                        <p className="text-[14px] font-black text-zinc-900 leading-none truncate tracking-tight">{value}</p>
+                    )}
+                    {!loading && subValue && (
+                        <span className="hidden xl:inline-block text-[7px] font-black text-zinc-400 uppercase tracking-widest bg-zinc-50 px-1 py-0.5 rounded border border-zinc-100 whitespace-nowrap flex-shrink-0">
+                            {subValue}
+                        </span>
+                    )}
+                </div>
+                <p className="text-[7px] font-black uppercase text-zinc-400 tracking-[0.1em] truncate">{label}</p>
+            </div>
+        </button>
+    )
+}
+
 function PermissionSection({
     section,
     perms,
@@ -253,113 +312,91 @@ function PermissionSection({
     }
 
     return (
-        <div className="bg-white rounded-[20px] border border-zinc-200/50 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-[24px] border border-zinc-200/50 shadow-sm overflow-hidden transition-all hover:shadow-md">
             {/* Section header */}
             <div
-                className="flex flex-wrap sm:flex-nowrap items-start sm:items-center gap-3 p-4 sm:p-5 cursor-pointer hover:bg-zinc-50/50 transition-colors"
+                className="flex flex-wrap sm:flex-nowrap items-start sm:items-center gap-4 p-5 cursor-pointer hover:bg-zinc-50/50 transition-colors"
                 onClick={() => setCollapsed(!collapsed)}
             >
-                <div className={cn("p-2.5 rounded-xl border flex-shrink-0", section.color)}>
+                <div className={cn("p-2.5 rounded-2xl border flex-shrink-0 transition-transform group-hover:scale-110", section.color)}>
                     <Icon className="size-4" />
                 </div>
                 <div className="flex-1 min-w-0">
-                    <h3 className="font-black text-[12px] uppercase tracking-tight text-zinc-900">
+                    <h3 className="font-black text-[13px] uppercase tracking-tight text-zinc-900">
                         {section.label}
                     </h3>
-                    <p className="text-[10px] text-zinc-400 font-medium mt-0.5 hidden md:block truncate flex items-center gap-2">
-                        <span>{section.description}</span>
-                        <span className="text-zinc-300">·</span>
-                        <span className="text-zinc-600 font-black">{enabledVisible}/{visibleItems.length} enabled</span>
-                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                        <p className="text-[10px] text-zinc-400 font-bold hidden md:block truncate">
+                            {section.description}
+                        </p>
+                        <span className="hidden md:inline text-zinc-200">|</span>
+                        <span className="text-[10px] text-zinc-600 font-black whitespace-nowrap">{enabledVisible}/{visibleItems.length} ACTIVE</span>
+                    </div>
                 </div>
-                <div className="ml-auto flex items-center gap-2 sm:gap-3 flex-shrink-0">
-                    {/* All-on/off badge */}
+                <div className="ml-auto flex items-center gap-3 flex-shrink-0">
                     <button
                         type="button"
                         onClick={e => { e.stopPropagation(); toggleAll() }}
                         className={cn(
-                            "text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full border transition-all whitespace-nowrap min-w-[56px]",
+                            "text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl border transition-all whitespace-nowrap min-w-[70px] shadow-sm",
                             allOn
-                                ? "bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-200"
+                                ? "bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
                                 : allOff
                                 ? "bg-zinc-100 text-zinc-500 border-zinc-200 hover:bg-zinc-200"
-                                : "bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200"
+                                : "bg-amber-500 text-white border-amber-500 hover:bg-amber-600"
                         )}
                     >
-                        {allOn ? "All On" : allOff ? "All Off" : "Partial"}
+                        {allOn ? "Enabled" : allOff ? "Disabled" : "Partial"}
                     </button>
-                    {collapsed
-                        ? <ChevronDown className="size-4 text-zinc-300 flex-shrink-0" />
-                        : <ChevronUp   className="size-4 text-zinc-300 flex-shrink-0" />}
+                    <div className="p-1.5 rounded-lg bg-zinc-50 text-zinc-400">
+                        {collapsed ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
+                    </div>
                 </div>
             </div>
 
             {/* Toggle items */}
             {!collapsed && (
-                <div className="border-t border-zinc-50 divide-y divide-zinc-50">
-                    {visibleItems.map(item => {
-                        const ItemIcon = item.icon
-                        return (
-                            <div
-                                key={item.key}
-                                className={cn(
-                                    "flex items-center justify-between px-5 py-3.5 transition-colors",
-                                    perms[item.key] ? "bg-white" : "bg-zinc-50/40"
-                                )}
-                            >
-                                <div className="flex items-center gap-3">
-                                    <ItemIcon className={cn(
-                                        "size-4 flex-shrink-0 transition-colors",
-                                        perms[item.key] ? "text-zinc-600" : "text-zinc-300"
-                                    )} />
-                                    <span className={cn(
-                                        "text-[11px] font-bold transition-colors",
-                                        perms[item.key] ? "text-zinc-800" : "text-zinc-400"
-                                    )}>
-                                        {item.label}
-                                    </span>
+                <div className="border-t border-zinc-100 bg-zinc-50/30 p-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {visibleItems.map(item => {
+                            const ItemIcon = item.icon
+                            const isEnabled = !!perms[item.key]
+                            return (
+                                <div
+                                    key={item.key}
+                                    className={cn(
+                                        "flex items-center justify-between px-4 py-3 rounded-2xl border transition-all",
+                                        isEnabled 
+                                            ? "bg-white border-zinc-200 shadow-sm" 
+                                            : "bg-transparent border-transparent opacity-60 grayscale-[0.5]"
+                                    )}
+                                >
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <div className={cn(
+                                            "p-2 rounded-xl transition-colors",
+                                            isEnabled ? "bg-zinc-900 text-white" : "bg-zinc-200 text-zinc-400"
+                                        )}>
+                                            <ItemIcon className="size-3.5" />
+                                        </div>
+                                        <span className={cn(
+                                            "text-[11px] font-black uppercase tracking-tight truncate",
+                                            isEnabled ? "text-zinc-900" : "text-zinc-400"
+                                        )}>
+                                            {item.label}
+                                        </span>
+                                    </div>
+                                    <Switch
+                                        checked={isEnabled}
+                                        onCheckedChange={val => onChange(item.key, val)}
+                                        disabled={isSaving}
+                                        className="data-[state=checked]:bg-zinc-900"
+                                    />
                                 </div>
-                                <Switch
-                                    checked={!!perms[item.key]}
-                                    onCheckedChange={val => onChange(item.key, val)}
-                                    disabled={isSaving}
-                                    className="data-[state=checked]:bg-zinc-900"
-                                />
-                            </div>
-                        )
-                    })}
+                            )
+                        })}
+                    </div>
                 </div>
             )}
-        </div>
-    )
-}
-
-function StatPill({
-    label,
-    value,
-    icon: Icon,
-    active,
-}: {
-    label: string
-    value: string
-    icon: any
-    active?: boolean
-}) {
-    return (
-        <div className={cn(
-            "flex items-center gap-2.5 px-4 py-3 rounded-2xl border bg-white shadow-sm transition-all flex-shrink-0",
-            active ? "border-zinc-900 ring-4 ring-zinc-900/5 shadow-md" : "border-zinc-200/60"
-        )}>
-            <div className={cn(
-                "p-1.5 rounded-xl",
-                active ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-500"
-            )}>
-                <Icon className="size-3.5" />
-            </div>
-            <div className="text-left min-w-[28px]">
-                <p className="text-[16px] font-black text-zinc-900 leading-none">{value}</p>
-                <p className="text-[8px] font-black uppercase text-zinc-400 tracking-widest mt-0.5 whitespace-nowrap">{label}</p>
-            </div>
         </div>
     )
 }
@@ -380,6 +417,7 @@ export default function PermissionsPage() {
     const searchInputRef = React.useRef<HTMLInputElement>(null)
     const [collapseSignal, setCollapseSignal] = React.useState(0)
     const [allCollapsed, setAllCollapsed] = React.useState(false)
+    const [showGuide, setShowGuide] = React.useState(false)
 
     // Track all configured combos for the overview grid
     const [allConfigs, setAllConfigs] = React.useState<Record<string, PermissionDoc>>({})
@@ -517,108 +555,218 @@ export default function PermissionsPage() {
         <ProtectedPageWrapper>
             <SidebarProvider defaultOpen={false}>
                 <AppSidebar userId={userId} />
-                <SidebarInset className="bg-[#F8F9F9] font-sans overflow-x-hidden">
+                <SidebarInset className="bg-[#F8FAFA] pb-24 md:pb-10 min-h-screen m-0 rounded-none border-none shadow-none overflow-visible pt-14 md:pt-16 font-sans">
                     <PageHeader
-                        title="ACCESS RIGHTS"
-                        version="V2.0"
+                        title="Admin / Access Rights"
+                        version="V2.0-STABLE"
                         showBackButton={true}
                         trigger={<SidebarTrigger className="mr-2" />}
                         actions={
-                            <div className="hidden md:flex items-center gap-2">
-                                {isDirty && (
-                                    <Button
-                                        onClick={handleReset}
-                                        variant="ghost"
-                                        size="sm"
-                                        className="text-zinc-500 text-[10px] font-black uppercase rounded-xl"
-                                    >
-                                        <RefreshCw className="size-3 mr-1.5" /> Reset
-                                    </Button>
-                                )}
+                            <div className="flex items-center gap-3">
                                 <Button
-                                    onClick={handleSave}
-                                    disabled={!isDirty || isSaving}
+                                    variant="ghost"
                                     size="sm"
-                                    className={cn(
-                                        "h-10 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all",
-                                        isDirty
-                                            ? "bg-zinc-900 text-white hover:bg-zinc-800 shadow-lg"
-                                            : "bg-zinc-100 text-zinc-400 cursor-not-allowed"
-                                    )}
+                                    onClick={() => setShowGuide(true)}
+                                    className="rounded-xl h-9 px-4 transition-all text-[11px] font-bold uppercase text-zinc-500 hover:bg-white border border-transparent hover:border-zinc-200"
                                 >
-                                    {isSaving
-                                        ? <><RefreshCw className="size-3 mr-1.5 animate-spin" />Saving...</>
-                                        : <><Save className="size-3 mr-1.5" />Save Changes</>}
+                                    <HelpCircle size={15} className="mr-2" />
+                                    <span className="hidden md:inline">User Guide</span>
                                 </Button>
+
+                                <div className="hidden md:flex items-center gap-2">
+                                    {isDirty && (
+                                        <Button
+                                            onClick={handleReset}
+                                            variant="ghost"
+                                            size="sm"
+                                            className="text-zinc-500 text-[10px] font-black uppercase rounded-xl"
+                                        >
+                                            <RefreshCw className="size-3 mr-1.5" /> Reset
+                                        </Button>
+                                    )}
+                                    <Button
+                                        onClick={handleSave}
+                                        disabled={!isDirty || isSaving}
+                                        size="sm"
+                                        className={cn(
+                                            "h-10 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all",
+                                            isDirty
+                                                ? "bg-zinc-900 text-white hover:bg-zinc-800 shadow-lg"
+                                                : "bg-zinc-100 text-zinc-400 cursor-not-allowed"
+                                        )}
+                                    >
+                                        {isSaving
+                                            ? <><RefreshCw className="size-3 mr-1.5 animate-spin" />Saving...</>
+                                            : <><Save className="size-3 mr-1.5" />Save Changes</>}
+                                    </Button>
+                                </div>
                             </div>
                         }
                     />
 
-                    <main className="p-4 md:p-6 lg:p-8 max-w-5xl mx-auto w-full overflow-x-hidden space-y-6 pb-36 md:pb-24">
-                        <section className="flex gap-2.5 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-none">
-                            <StatPill
-                                label="Enabled"
+                    <main className="p-4 md:p-6 lg:p-8 max-w-5xl mx-auto w-full overflow-x-hidden space-y-4 md:space-y-6 pb-36 md:pb-24">
+                        <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+                            <DashboardCard
+                                label="Total Enabled"
                                 value={`${enabledTotal}/${totalPermissions}`}
                                 icon={Sparkles}
-                                active={enabledTotal > 0}
+                                colorClass="text-zinc-600 bg-zinc-50"
+                                isActive={true}
                             />
-                            <StatPill
-                                label="Services"
-                                value={`${enabledServices}/${SECTIONS.find(s => s.key === "services")?.items.length || 0}`}
+                            <DashboardCard
+                                label="Service Access"
+                                value={enabledServices}
+                                subValue={`${SECTIONS.find(s => s.key === "services")?.items.length || 0} MAX`}
                                 icon={Layers}
-                                active={enabledServices > 0}
+                                colorClass="text-blue-600 bg-blue-50"
                             />
-                            <StatPill
-                                label="Security"
-                                value={`${enabledSecurity}/${SECTIONS.find(s => s.key === "security")?.items.length || 0}`}
+                            <DashboardCard
+                                label="Security Access"
+                                value={enabledSecurity}
+                                subValue={`${SECTIONS.find(s => s.key === "security")?.items.length || 0} MAX`}
                                 icon={Shield}
-                                active={enabledSecurity > 0}
+                                colorClass="text-red-600 bg-red-50"
                             />
-                            <StatPill
+                            <DashboardCard
                                 label="Configured"
-                                value={`${totalConfigured}/${totalCombos}`}
+                                value={totalConfigured}
+                                subValue={`${totalCombos} TOTAL`}
                                 icon={Building2}
-                                active={totalConfigured > 0}
+                                colorClass="text-emerald-600 bg-emerald-50"
                             />
                         </section>
 
-                        <section className="bg-white rounded-[22px] border border-zinc-200/60 p-3 md:p-4 shadow-sm">
-                            <div className="flex flex-col md:flex-row gap-2">
-                                <div className="relative group flex-1">
-                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-zinc-300 group-focus-within:text-zinc-700 transition-colors" />
-                                    <input
-                                        ref={searchInputRef}
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                        placeholder='Search permission label... (e.g. "analytics", "password") ("/" focus)'
-                                        className="w-full pl-11 pr-10 h-12 rounded-2xl bg-white shadow-sm ring-1 ring-zinc-200 outline-none focus:ring-2 focus:ring-zinc-900 text-sm font-bold"
-                                    />
+                        <div className="sticky top-[56px] md:top-[64px] z-[45] flex flex-col xl:flex-row xl:items-center gap-3 bg-white/80 backdrop-blur-md p-2 rounded-[24px] border border-zinc-200/40 shadow-sm transition-all">
+                            <div className="flex-1 relative group">
+                                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-300 group-focus-within:text-zinc-800 transition-colors" />
+                                <input
+                                    ref={searchInputRef}
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    placeholder='Search permission label... ("/" focus)'
+                                    className="w-full pl-10 pr-9 h-10 rounded-xl bg-white shadow-sm ring-1 ring-zinc-200 outline-none focus:ring-2 focus:ring-zinc-900 transition-all text-xs font-bold"
+                                />
+                                <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
                                     {searchTerm && (
                                         <button
                                             onClick={() => setSearchTerm("")}
-                                            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-300 hover:text-zinc-600 transition-colors"
-                                            aria-label="Clear permission search"
+                                            className="text-zinc-300 hover:text-zinc-600 transition-colors"
                                         >
-                                            <X className="size-4" />
+                                            <X className="size-3.5" />
                                         </button>
                                     )}
+                                    <div className="hidden sm:flex items-center gap-1 px-1.5 py-0.5 rounded border border-zinc-100 bg-zinc-50 text-[8px] font-black text-zinc-400">
+                                        <span>/</span>
+                                    </div>
                                 </div>
+                            </div>
+
+                            <div className="flex gap-2">
                                 <Button
                                     variant="outline"
                                     onClick={() => handleCollapseAll(true)}
-                                    className="h-12 rounded-2xl border-zinc-200 bg-white text-[10px] font-black uppercase tracking-widest"
+                                    className="h-10 px-3 rounded-xl bg-white border-zinc-200 hover:bg-zinc-50 text-zinc-600 font-black text-[10px] uppercase tracking-wider transition-all"
                                 >
                                     Collapse All
                                 </Button>
                                 <Button
                                     variant="outline"
                                     onClick={() => handleCollapseAll(false)}
-                                    className="h-12 rounded-2xl border-zinc-200 bg-white text-[10px] font-black uppercase tracking-widest"
+                                    className="h-10 px-3 rounded-xl bg-white border-zinc-200 hover:bg-zinc-50 text-zinc-600 font-black text-[10px] uppercase tracking-wider transition-all"
                                 >
                                     Expand All
                                 </Button>
+                                <div className="w-px h-8 bg-zinc-200 mx-1 hidden xl:block" />
+                                <Button
+                                    variant="outline"
+                                    onClick={() => {
+                                        setSelectedDept(DEPARTMENTS[0])
+                                        setSelectedRole(ROLES[0])
+                                        setSearchTerm("")
+                                    }}
+                                    className="h-10 w-10 rounded-xl bg-white border-zinc-200 hover:bg-zinc-50 flex items-center justify-center p-0 flex-shrink-0"
+                                    title="Reset view"
+                                >
+                                    <RotateCcw className="size-3.5 text-zinc-400" />
+                                </Button>
                             </div>
-                        </section>
+                        </div>
+
+                        {/* ── USER GUIDE DIALOG ── */}
+                        <Dialog open={showGuide} onOpenChange={setShowGuide}>
+                            <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto rounded-[32px] border-none shadow-2xl p-0 bg-white scrollbar-thin scrollbar-thumb-zinc-200 scrollbar-track-transparent hover:scrollbar-thumb-zinc-300 transition-colors">
+                                <div className="sticky top-0 bg-white/80 backdrop-blur-xl z-10 px-8 py-6 border-b border-zinc-100 flex items-center justify-between">
+                                    <div>
+                                        <h2 className="text-[20px] font-black text-zinc-900 tracking-tight">
+                                            Access Rights Guide
+                                        </h2>
+                                        <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest mt-1">Role-Based Access Control (RBAC)</p>
+                                    </div>
+                                </div>
+
+                                <div className="p-8 space-y-8">
+                                    <section>
+                                        <div className="mb-4">
+                                            <h3 className="text-[14px] font-black text-zinc-900 uppercase tracking-wide">Managing Permissions</h3>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <GuideItem 
+                                                icon={MousePointer2} 
+                                                title="Interactive Matrix" 
+                                                description="Click any cell in the Configuration Overview to instantly switch between department and role combinations."
+                                                colorClass="bg-zinc-900 text-white"
+                                            />
+                                            <GuideItem 
+                                                icon={ShieldCheck} 
+                                                title="Atomic Control" 
+                                                description="Toggle individual permissions within sections. Use the section-level toggle to enable or disable all items at once."
+                                                colorClass="bg-blue-50 text-blue-600"
+                                            />
+                                        </div>
+                                    </section>
+
+                                    <section>
+                                        <div className="mb-4">
+                                            <h3 className="text-[14px] font-black text-zinc-900 uppercase tracking-wide">Visual Indicators</h3>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <GuideItem 
+                                                icon={Activity} 
+                                                title="Live Status" 
+                                                description="Cells marked in emerald represent combinations that have custom permissions saved in the registry."
+                                                colorClass="bg-emerald-50 text-emerald-600"
+                                            />
+                                            <GuideItem 
+                                                icon={Info} 
+                                                title="Unsaved Changes" 
+                                                description="The Save bar will automatically appear when you make changes. Be sure to save before switching roles!"
+                                                colorClass="bg-amber-50 text-amber-600"
+                                            />
+                                        </div>
+                                    </section>
+
+                                    <div className="bg-zinc-900 rounded-2xl p-6 text-white flex items-center justify-between gap-6 overflow-hidden relative">
+                                        <div className="relative z-10">
+                                            <h4 className="text-[15px] font-black mb-1">Pro Tip!</h4>
+                                            <p className="text-[11px] font-medium text-zinc-400 leading-relaxed max-w-[300px]">
+                                                Use the <Search className="inline size-3 text-zinc-400" /> search bar to quickly find specific permissions across all sections. The list will auto-expand to show matches.
+                                            </p>
+                                        </div>
+                                        <Lightbulb className="text-amber-400 flex-shrink-0 relative z-10" size={40} />
+                                        <div className="absolute -right-10 -bottom-10 size-40 bg-white/5 rounded-full blur-3xl" />
+                                    </div>
+                                </div>
+
+                                <div className="p-8 pt-0 flex justify-end">
+                                    <Button 
+                                        onClick={() => setShowGuide(false)}
+                                        className="h-12 px-8 rounded-2xl bg-zinc-900 text-white font-black text-[12px] uppercase tracking-widest hover:bg-zinc-800 transition-all"
+                                    >
+                                        Got it!
+                                    </Button>
+                                </div>
+                            </DialogContent>
+                        </Dialog>
 
                         {/* ══════════════════════════════
                             OVERVIEW GRID — all combos
@@ -658,7 +806,7 @@ export default function PermissionsPage() {
                                                         {dept.length > 14 ? dept.slice(0, 12) + "…" : dept}
                                                     </span>
                                                 </td>
-                                                {ROLES.map(role => {
+                                {ROLES.map(role => {
                                                     const id  = makeDocId(dept, role)
                                                     const cfg = allConfigs[id]
                                                     const serviceCount = cfg
@@ -671,16 +819,25 @@ export default function PermissionsPage() {
                                                             <button
                                                                 onClick={() => { setSelectedDept(dept); setSelectedRole(role) }}
                                                                 className={cn(
-                                                                    "mx-auto size-9 rounded-xl flex items-center justify-center text-[9px] font-black transition-all border",
+                                                                    "mx-auto size-10 rounded-2xl flex items-center justify-center text-[11px] font-black transition-all border relative overflow-hidden active:scale-90",
                                                                     isSelected
-                                                                        ? "bg-[#121212] text-white border-zinc-900 scale-110 shadow-lg"
+                                                                        ? "bg-zinc-900 border-zinc-900 text-white shadow-lg shadow-zinc-200 z-10 scale-110"
                                                                         : cfg
-                                                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:scale-105"
+                                                                        ? "bg-emerald-50 text-emerald-700 border-emerald-100 hover:border-emerald-200"
                                                                         : "bg-zinc-50 text-zinc-300 border-zinc-100 hover:bg-zinc-100 hover:text-zinc-500"
                                                                 )}
                                                                 title={cfg ? `${serviceCount} services enabled` : "Not configured"}
                                                             >
-                                                                {cfg ? serviceCount : "—"}
+                                                                {cfg ? (
+                                                                    <span>{serviceCount}</span>
+                                                                ) : (
+                                                                    <div className="size-1 rounded-full bg-current opacity-30" />
+                                                                )}
+                                                                {isSelected && (
+                                                                    <div className="absolute top-0 right-0 p-1">
+                                                                        <MousePointer2 className="size-2 text-white/50" />
+                                                                    </div>
+                                                                )}
                                                             </button>
                                                         </td>
                                                     )

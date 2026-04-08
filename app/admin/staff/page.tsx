@@ -192,6 +192,49 @@ export default function StaffDirectoryPage() {
     const hasPendingRoleChange = !!selectedStaff && activeRole !== (selectedStaff.Role?.toUpperCase() || "MEMBER")
     const searchInputRef = React.useRef<HTMLInputElement>(null)
 
+    // DERIVED STATE
+    const departments = React.useMemo(() => {
+        const depts = staff.map(s => s.Department?.toUpperCase()).filter(Boolean)
+        return Array.from(new Set(depts))
+    }, [staff])
+
+    const filteredStaff = React.useMemo(() => {
+        return staff.filter(person => {
+            const search = searchTerm.toLowerCase()
+            const fullName = `${person.Firstname} ${person.Lastname}`.toLowerCase()
+            const matchesSearch = fullName.includes(search) || person.Email?.toLowerCase().includes(search)
+            const matchesDept = activeDept === "ALL" ? true :
+                activeDept === "AUTHORIZED" ? person.isActive === true :
+                activeDept === "SUSPENDED" ? person.isActive === false :
+                    person.Department?.toUpperCase() === activeDept
+            return matchesSearch && matchesDept
+        })
+    }, [staff, searchTerm, activeDept])
+
+    const sortedStaff = React.useMemo(() => {
+        const getName = (person: any) => `${person.Firstname || ""} ${person.Lastname || ""}`.trim().toLowerCase()
+        const getDepartment = (person: any) => (person.Department || "").toString().toLowerCase()
+        const getRole = (person: any) => (person.Role || "MEMBER").toUpperCase()
+        const getStatus = (person: any) => (person.isActive === true ? 1 : 0)
+        const getActivity = (person: any) => person.lastSecurityUpdate || ""
+
+        return [...filteredStaff].sort((a, b) => {
+            let comparison = 0
+            if (sortField === "name") comparison = getName(a).localeCompare(getName(b))
+            if (sortField === "department") comparison = getDepartment(a).localeCompare(getDepartment(b))
+            if (sortField === "role") comparison = (roleRank[getRole(a)] || 0) - (roleRank[getRole(b)] || 0)
+            if (sortField === "status") comparison = getStatus(a) - getStatus(b)
+            if (sortField === "activity") comparison = getActivity(a).localeCompare(getActivity(b))
+            return sortDir === "asc" ? comparison : -comparison
+        })
+    }, [filteredStaff, sortField, sortDir])
+
+    const totalPages = Math.ceil(sortedStaff.length / ITEMS_PER_PAGE)
+    const paginatedStaff = sortedStaff.slice(
+        (currentPage - 1) * ITEMS_PER_PAGE,
+        currentPage * ITEMS_PER_PAGE
+    )
+
     const updateStaffList = React.useCallback(async () => {
         setIsFetching(true)
         try {
@@ -327,48 +370,6 @@ export default function StaffDirectoryPage() {
         setUserId(localStorage.getItem("userId"))
         updateStaffList()
     }, [updateStaffList])
-
-    const departments = React.useMemo(() => {
-        const depts = staff.map(s => s.Department?.toUpperCase()).filter(Boolean)
-        return Array.from(new Set(depts))
-    }, [staff])
-
-    const filteredStaff = React.useMemo(() => {
-        return staff.filter(person => {
-            const search = searchTerm.toLowerCase()
-            const fullName = `${person.Firstname} ${person.Lastname}`.toLowerCase()
-            const matchesSearch = fullName.includes(search) || person.Email?.toLowerCase().includes(search)
-            const matchesDept = activeDept === "ALL" ? true :
-                activeDept === "AUTHORIZED" ? person.isActive === true :
-                activeDept === "SUSPENDED" ? person.isActive === false :
-                    person.Department?.toUpperCase() === activeDept
-            return matchesSearch && matchesDept
-        })
-    }, [staff, searchTerm, activeDept])
-
-    const sortedStaff = React.useMemo(() => {
-        const getName = (person: any) => `${person.Firstname || ""} ${person.Lastname || ""}`.trim().toLowerCase()
-        const getDepartment = (person: any) => (person.Department || "").toString().toLowerCase()
-        const getRole = (person: any) => (person.Role || "MEMBER").toUpperCase()
-        const getStatus = (person: any) => (person.isActive === true ? 1 : 0)
-        const getActivity = (person: any) => person.lastSecurityUpdate || ""
-
-        return [...filteredStaff].sort((a, b) => {
-            let comparison = 0
-            if (sortField === "name") comparison = getName(a).localeCompare(getName(b))
-            if (sortField === "department") comparison = getDepartment(a).localeCompare(getDepartment(b))
-            if (sortField === "role") comparison = (roleRank[getRole(a)] || 0) - (roleRank[getRole(b)] || 0)
-            if (sortField === "status") comparison = getStatus(a) - getStatus(b)
-            if (sortField === "activity") comparison = getActivity(a).localeCompare(getActivity(b))
-            return sortDir === "asc" ? comparison : -comparison
-        })
-    }, [filteredStaff, sortField, sortDir])
-
-    const totalPages = Math.ceil(sortedStaff.length / ITEMS_PER_PAGE)
-    const paginatedStaff = sortedStaff.slice(
-        (currentPage - 1) * ITEMS_PER_PAGE,
-        currentPage * ITEMS_PER_PAGE
-    )
 
     const toggleSelection = (id: string) => {
         const next = new Set(selectedIds)

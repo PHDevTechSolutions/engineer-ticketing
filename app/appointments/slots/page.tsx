@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useState, useEffect, useMemo, useRef } from "react"
 import { db } from "@/lib/firebase"
-import { collection, addDoc, query, onSnapshot, deleteDoc, doc, serverTimestamp, orderBy } from "firebase/firestore"
+import { collection, addDoc, query, onSnapshot, deleteDoc, doc, getDoc, serverTimestamp, orderBy } from "firebase/firestore"
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/app-sidebar"
 import { PageHeader } from "@/components/page-header"
@@ -12,7 +12,9 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
     X, AlertTriangle, Activity,
-    CalendarDays, HelpCircle, Plus, ChevronRight, ChevronLeft, Clock, Info, Bell, Search, Sparkles, CalendarCheck2, Loader2
+    CalendarDays, HelpCircle, Plus, ChevronRight, ChevronLeft, Clock, Info, Bell, Search, CalendarCheck2, Loader2,
+    RotateCcw, CheckSquare, Square, Zap, History, LayoutGrid, ListChecks,
+    Sparkles
 } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -37,6 +39,69 @@ const COLORS = {
     border: "border-gray-100"
 }
 
+/* ─────────────────────────────────────────────
+   HELPERS & COMPONENTS
+───────────────────────────────────────────── */
+
+function DashboardCard({ label, value, subValue, icon: Icon, colorClass, loading, isActive, onClick }: {
+    label: string; value: string | number; subValue?: string; icon: any; colorClass: string; loading?: boolean; isActive?: boolean; onClick?: () => void
+}) {
+    return (
+        <button
+            onClick={onClick}
+            className={cn(
+                "flex-1 bg-white rounded-2xl p-3 border shadow-sm flex items-center gap-3 group transition-all min-w-0 active:scale-95 text-left",
+                isActive ? "border-zinc-900 ring-4 ring-zinc-900/5 shadow-md" : "border-zinc-200/60 hover:shadow-md hover:border-zinc-300"
+            )}
+        >
+            <div className={cn("p-2 rounded-xl flex-shrink-0 transition-colors", isActive ? "bg-zinc-900 text-white" : colorClass)}>
+                <Icon className="size-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                    {loading ? (
+                        <div className="h-4 w-12 bg-zinc-100 rounded animate-pulse" />
+                    ) : (
+                        <p className="text-[14px] font-black text-zinc-900 leading-none truncate tracking-tight">{value}</p>
+                    )}
+                    {!loading && subValue && (
+                        <span className="hidden xl:inline-block text-[7px] font-black text-zinc-400 uppercase tracking-widest bg-zinc-50 px-1 py-0.5 rounded border border-zinc-100 whitespace-nowrap flex-shrink-0">
+                            {subValue}
+                        </span>
+                    )}
+                </div>
+                <p className="text-[7px] font-black uppercase text-zinc-400 tracking-[0.1em] truncate">{label}</p>
+            </div>
+        </button>
+    )
+}
+
+function StatPill({ label, count, isActive, onClick, loading, icon: Icon }: {
+    label: string; count: string | number; isActive: boolean; onClick: () => void; loading?: boolean; icon?: any
+}) {
+    return (
+        <button
+            onClick={onClick}
+            className={cn(
+                "flex items-center gap-3 px-4 py-2 rounded-xl border transition-all flex-shrink-0 active:scale-95",
+                isActive
+                    ? "bg-zinc-900 border-zinc-900 text-white shadow-md shadow-zinc-200"
+                    : "bg-white border-zinc-200/60 text-zinc-500 hover:border-zinc-300 hover:bg-zinc-50"
+            )}
+        >
+            {Icon && <Icon size={14} className={cn(isActive ? "text-white/70" : "text-zinc-400")} />}
+            <div className="text-left">
+                {loading ? (
+                    <div className="h-3 w-3 bg-zinc-100 rounded animate-pulse" />
+                ) : (
+                    <p className={cn("text-[13px] font-black leading-none", isActive ? "text-white" : "text-zinc-900")}>{count}</p>
+                )}
+                <p className={cn("text-[7px] font-black uppercase tracking-widest mt-1 whitespace-nowrap", isActive ? "text-zinc-400" : "text-zinc-400")}>{label}</p>
+            </div>
+        </button>
+    )
+}
+
 interface BlockedSlot {
     id: string;
     dateString: string;
@@ -51,6 +116,7 @@ export default function AvailabilitySlotsPage() {
     const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date())
     const [blockedDates, setBlockedDates] = useState<BlockedSlot[]>([])
     const [userId, setUserId] = useState<string | null>(null)
+    const [userName, setUserName] = useState<string | null>(null)
     const [isPendingCommit, setIsPendingCommit] = useState(false)
     const [tourStep, setTourStep] = useState<number | null>(null)
     const [totalNotifications, setTotalNotifications] = useState(0) // Logic placeholder
@@ -69,10 +135,24 @@ export default function AvailabilitySlotsPage() {
     const [liveFilter, setLiveFilter] = useState<"ALL" | "All Day" | "Morning" | "Afternoon" | "Custom Range">("ALL")
     const [isBootstrapping, setIsBootstrapping] = useState(true)
     const [isSaving, setIsSaving] = useState(false)
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
     const liveSearchRef = useRef<HTMLInputElement>(null)
 
     useEffect(() => {
-        setUserId(typeof window !== 'undefined' ? localStorage.getItem("userId") : null)
+        const id = typeof window !== 'undefined' ? localStorage.getItem("userId") : null
+        setUserId(id)
+        
+        if (id) {
+            getDoc(doc(db, "users", id)).then((snap: any) => {
+                if (snap.exists()) {
+                    const data = snap.data()
+                    // Assuming the name is stored as Firstname and Lastname
+                    const name = `${data.Firstname || ""} ${data.Lastname || ""}`.trim() || data.name || "Anonymous"
+                    setUserName(name)
+                }
+            })
+        }
+
         const q = query(collection(db, "blocked_slots"), orderBy("createdAt", "desc"))
         const unsub = onSnapshot(q, (snap) => {
             const dates = snap.docs.map(d => ({ id: d.id, ...d.data() } as BlockedSlot))
@@ -193,6 +273,7 @@ export default function AvailabilitySlotsPage() {
                 dateString: selectedDate.toDateString(),
                 timestamp: selectedDate,
                 authorizedBy: userId,
+                userName: userName, // Added for SchedulePage integration
                 justification: restrictionReason || "Closed for business",
                 shiftScope: typeOfShiftLabel(),
                 startTime,
@@ -209,12 +290,53 @@ export default function AvailabilitySlotsPage() {
         }
     }
 
+    const bootstrapData = () => {
+        setIsBootstrapping(true)
+        // The existing onSnapshot in useEffect will handle the data update
+        // We just toggle the loading state to give visual feedback
+        setTimeout(() => setIsBootstrapping(false), 800)
+    }
+
     const removeSlot = async (id: string) => {
         try {
             await deleteDoc(doc(db, "blocked_slots", id))
+            setSelectedIds(prev => {
+                const next = new Set(prev)
+                next.delete(id)
+                return next
+            })
             toast.success("Removed successfully")
         } catch (error) {
             toast.error("Error removing item")
+        }
+    }
+
+    const removeBatchSlots = async () => {
+        if (selectedIds.size === 0) return
+        const toastId = toast.loading(`Removing ${selectedIds.size} slots...`)
+        try {
+            await Promise.all(Array.from(selectedIds).map(id => deleteDoc(doc(db, "blocked_slots", id))))
+            setSelectedIds(new Set())
+            toast.success("Batch removal successful", { id: toastId })
+        } catch (error) {
+            toast.error("Error during batch removal", { id: toastId })
+        }
+    }
+
+    const toggleSelection = (id: string) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev)
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
+            return next
+        })
+    }
+
+    const toggleAllOnPage = () => {
+        if (selectedIds.size === displayedSlots.length && displayedSlots.length > 0) {
+            setSelectedIds(new Set())
+        } else {
+            setSelectedIds(new Set(displayedSlots.map(s => s.id)))
         }
     }
 
@@ -222,16 +344,17 @@ export default function AvailabilitySlotsPage() {
         <ProtectedPageWrapper>
             <SidebarProvider defaultOpen={false}>
                 <AppSidebar userId={userId} />
-                <SidebarInset className={cn(COLORS.pageBg, "min-h-screen relative flex flex-col")}>
-
+                <SidebarInset className="bg-[#F8FAFA] pb-24 md:pb-10 min-h-screen m-0 rounded-none border-none shadow-none overflow-visible pt-14 md:pt-16 font-sans">
                     <PageHeader
-                        title="Availability Slots"
+                        title="Appointments / Slots"
                         version="SYS-v2.6"
-                        trigger={<SidebarTrigger className="size-9 rounded-xl bg-white border border-gray-200 text-gray-600 shadow-sm" />}
+                        trigger={<SidebarTrigger className="mr-2" />}
                         showBackButton={true}
                         actions={
                             <div className="flex items-center gap-3">
-                                {/* NOTIFICATION BELL INTEGRATION */}
+                                <Button onClick={bootstrapData} variant="ghost" size="icon" className="rounded-full">
+                                    <RotateCcw className={cn("size-4", isBootstrapping && "animate-spin")} />
+                                </Button>
                                 <button className="p-2 text-gray-400 hover:text-[#E33636] hover:bg-red-50 rounded-xl transition-all relative group">
                                     <Bell size={20} />
                                     {totalNotifications > 0 && (
@@ -255,28 +378,35 @@ export default function AvailabilitySlotsPage() {
                         }
                     />
 
-                    <main className="p-4 md:p-8 pb-24 md:pb-8 max-w-[1600px] mx-auto w-full space-y-6 flex-1">
-                        <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                            <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
-                                <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">Selected date</p>
-                                <p className="text-sm font-black text-gray-900 mt-1">{selectedDateSummary}</p>
-                            </div>
-                            <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
-                                <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">Today blocks</p>
-                                <p className="text-xl font-black text-gray-900 mt-1">
-                                    {blockedDates.filter((d) => d.dateString === new Date().toDateString()).length}
-                                </p>
-                            </div>
-                            <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
-                                <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">Upcoming blocks</p>
-                                <p className="text-xl font-black text-gray-900 mt-1">{upcomingBlocks}</p>
-                            </div>
-                            <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
-                                <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">Quick date</p>
-                                <div className="flex gap-2 mt-2">
+                    <main className="p-4 md:p-8 max-w-[1600px] mx-auto w-full space-y-4">
+                        <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+                            <DashboardCard
+                                label="Selected Date"
+                                value={selectedDateSummary}
+                                icon={CalendarDays}
+                                colorClass="text-zinc-600 bg-zinc-50"
+                                isActive={true}
+                            />
+                            <DashboardCard
+                                label="Today Blocks"
+                                value={blockedDates.filter((d) => d.dateString === new Date().toDateString()).length}
+                                icon={Activity}
+                                colorClass="text-rose-600 bg-rose-50"
+                            />
+                            <DashboardCard
+                                label="Upcoming Blocks"
+                                value={upcomingBlocks}
+                                icon={Clock}
+                                colorClass="text-blue-600 bg-blue-50"
+                            />
+                            <div className="flex-1 bg-white rounded-2xl p-3 border border-zinc-200/60 shadow-sm flex items-center gap-3">
+                                <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl flex-shrink-0">
+                                    <Zap className="size-4" />
+                                </div>
+                                <div className="flex gap-1.5">
                                     <button
                                         onClick={() => setSelectedDate(new Date())}
-                                        className="h-8 px-3 rounded-lg text-[10px] font-bold uppercase border border-gray-200 hover:bg-gray-50"
+                                        className="h-8 px-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest bg-zinc-900 text-white hover:bg-zinc-800 transition-all shadow-sm shadow-zinc-200"
                                     >
                                         Today
                                     </button>
@@ -286,13 +416,107 @@ export default function AvailabilitySlotsPage() {
                                             t.setDate(t.getDate() + 1)
                                             setSelectedDate(t)
                                         }}
-                                        className="h-8 px-3 rounded-lg text-[10px] font-bold uppercase border border-gray-200 hover:bg-gray-50"
+                                        className="h-8 px-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest bg-white border border-zinc-200 text-zinc-500 hover:bg-zinc-50 transition-all"
                                     >
-                                        Tomorrow
+                                        Tmrw
                                     </button>
                                 </div>
                             </div>
                         </section>
+
+                        <div className="sticky top-[56px] md:top-[64px] z-[45] flex flex-col xl:flex-row xl:items-center gap-3 bg-white/80 backdrop-blur-md p-2 rounded-[24px] border border-zinc-200/40 shadow-sm transition-all">
+                            <div className="flex gap-1.5 overflow-x-auto pb-1 xl:pb-0 scrollbar-none flex-1">
+                                <StatPill
+                                    label="All History"
+                                    count={blockedDates.length}
+                                    isActive={liveFilter === "ALL"}
+                                    onClick={() => setLiveFilter("ALL")}
+                                    loading={isBootstrapping}
+                                    icon={History}
+                                />
+                                <StatPill
+                                    label="All Day"
+                                    count={filteredSlots.filter(s => s.shiftScope === "All Day").length}
+                                    isActive={liveFilter === "All Day"}
+                                    onClick={() => setLiveFilter("All Day")}
+                                    loading={isBootstrapping}
+                                    icon={LayoutGrid}
+                                />
+                                <StatPill
+                                    label="Morning"
+                                    count={filteredSlots.filter(s => s.shiftScope === "Morning").length}
+                                    isActive={liveFilter === "Morning"}
+                                    onClick={() => setLiveFilter("Morning")}
+                                    loading={isBootstrapping}
+                                    icon={Clock}
+                                />
+                                <StatPill
+                                    label="Afternoon"
+                                    count={filteredSlots.filter(s => s.shiftScope === "Afternoon").length}
+                                    isActive={liveFilter === "Afternoon"}
+                                    onClick={() => setLiveFilter("Afternoon")}
+                                    loading={isBootstrapping}
+                                    icon={Clock}
+                                />
+                                <div className="h-8 w-px bg-zinc-200 mx-1 flex-shrink-0" />
+                                <StatPill
+                                    label="Custom"
+                                    count={filteredSlots.filter(s => s.shiftScope === "Custom Range").length}
+                                    isActive={liveFilter === "Custom Range"}
+                                    onClick={() => setLiveFilter("Custom Range")}
+                                    loading={isBootstrapping}
+                                    icon={ListChecks}
+                                />
+                            </div>
+
+                            <div className="flex flex-col md:flex-row gap-2 xl:min-w-[450px]">
+                                <div className="relative flex-1 group">
+                                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-300 group-focus-within:text-zinc-800 transition-colors" />
+                                    <input
+                                        ref={liveSearchRef}
+                                        placeholder='Search blocks by note or time...'
+                                        value={liveSearch}
+                                        onChange={e => setLiveSearch(e.target.value)}
+                                        className="w-full pl-10 pr-9 h-10 rounded-xl bg-white shadow-sm ring-1 ring-zinc-200 outline-none focus:ring-2 focus:ring-zinc-900 transition-all text-xs font-bold"
+                                    />
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                                        {liveSearch && (
+                                            <button
+                                                onClick={() => setLiveSearch("")}
+                                                className="text-zinc-300 hover:text-zinc-600 transition-colors"
+                                            >
+                                                <X className="size-3.5" />
+                                            </button>
+                                        )}
+                                        <div className="hidden sm:flex items-center gap-1 px-1.5 py-0.5 rounded border border-zinc-100 bg-zinc-50 text-[8px] font-black text-zinc-400">
+                                            <span>/</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <Button
+                                    variant="outline"
+                                    onClick={() => {
+                                        setLiveSearch("")
+                                        setLiveFilter("ALL")
+                                    }}
+                                    className="h-10 w-10 rounded-xl bg-white border-zinc-200 hover:bg-zinc-50 flex items-center justify-center p-0 flex-shrink-0"
+                                    title="Reset filters"
+                                >
+                                    <RotateCcw className="size-3.5 text-zinc-400" />
+                                </Button>
+
+                                {selectedIds.size > 0 && (
+                                    <Button
+                                        onClick={removeBatchSlots}
+                                        className="h-10 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-[10px] uppercase tracking-[0.2em] transition-all shadow-lg shadow-rose-200 flex items-center gap-2 animate-in slide-in-from-right-4"
+                                    >
+                                        <X size={14} />
+                                        Remove ({selectedIds.size})
+                                    </Button>
+                                )}
+                            </div>
+                        </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
@@ -453,22 +677,35 @@ export default function AvailabilitySlotsPage() {
                                                 </button>
                                             ))}
                                         </div>
-                                        <div className="flex items-center justify-between">
+                                    </div>
+
+                                    <div className="flex items-center justify-between mb-4 px-1">
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={toggleAllOnPage}
+                                                className="size-8 flex items-center justify-center rounded-lg hover:bg-white/10 transition-colors"
+                                            >
+                                                {selectedIds.size === displayedSlots.length && displayedSlots.length > 0 ? (
+                                                    <CheckSquare className="size-4 text-white" />
+                                                ) : (
+                                                    <Square className="size-4 text-white/30" />
+                                                )}
+                                            </button>
                                             <p className="text-[9px] font-black uppercase tracking-widest text-gray-500">
                                                 Showing {displayedSlots.length} of {filteredSlots.length}
                                             </p>
-                                            {(liveSearch || liveFilter !== "ALL") && (
-                                                <button
-                                                    onClick={() => {
-                                                        setLiveSearch("")
-                                                        setLiveFilter("ALL")
-                                                    }}
-                                                    className="text-[9px] uppercase tracking-widest font-black text-gray-300 hover:text-white transition-colors"
-                                                >
-                                                    Clear filters
-                                                </button>
-                                            )}
                                         </div>
+                                        {(liveSearch || liveFilter !== "ALL") && (
+                                            <button
+                                                onClick={() => {
+                                                    setLiveSearch("")
+                                                    setLiveFilter("ALL")
+                                                }}
+                                                className="text-[9px] uppercase tracking-widest font-black text-gray-300 hover:text-white transition-colors"
+                                            >
+                                                Clear filters
+                                            </button>
+                                        )}
                                     </div>
 
                                     <div className="space-y-4 flex-1 overflow-y-auto max-h-[400px] pr-1 custom-scrollbar">
@@ -487,15 +724,30 @@ export default function AvailabilitySlotsPage() {
                                             </div>
                                         ) : (
                                             displayedSlots.map((d) => (
-                                                <div key={d.id} className="bg-white/5 border border-white/10 rounded-xl p-5 hover:bg-white/[0.08] transition-all group">
-                                                    <div className="flex justify-between items-start mb-3">
-                                                        <div className="space-y-1">
-                                                            <span className="text-[9px] font-black text-red-500 uppercase tracking-widest">{d.shiftScope}</span>
-                                                            <p className="text-md font-black tracking-tight">{d.startTime} — {d.endTime}</p>
+                                                <div key={d.id} className={cn("bg-white/5 border border-white/10 rounded-xl p-5 hover:bg-white/[0.08] transition-all group relative", selectedIds.has(d.id) && "bg-white/10 border-white/30 shadow-lg")}>
+                                                    <div className="flex justify-between items-start mb-3 gap-3">
+                                                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation()
+                                                                    toggleSelection(d.id)
+                                                                }}
+                                                                className="mt-1 size-7 flex items-center justify-center rounded-lg hover:bg-white/10 transition-colors flex-shrink-0"
+                                                            >
+                                                                {selectedIds.has(d.id) ? (
+                                                                    <CheckSquare className="size-4 text-white" />
+                                                                ) : (
+                                                                    <Square className="size-4 text-white/20 group-hover:text-white/40" />
+                                                                )}
+                                                            </button>
+                                                            <div className="space-y-1 min-w-0">
+                                                                <span className="text-[9px] font-black text-red-500 uppercase tracking-widest">{d.shiftScope}</span>
+                                                                <p className="text-md font-black tracking-tight truncate">{d.startTime} — {d.endTime}</p>
+                                                            </div>
                                                         </div>
-                                                        <button onClick={() => removeSlot(d.id)} className="size-8 rounded-lg flex items-center justify-center text-gray-500 hover:text-white hover:bg-red-500 transition-all"><X size={16} /></button>
+                                                        <button onClick={() => removeSlot(d.id)} className="size-8 rounded-lg flex items-center justify-center text-gray-500 hover:text-white hover:bg-red-500 transition-all flex-shrink-0"><X size={16} /></button>
                                                     </div>
-                                                    <div className="bg-black/40 p-3 rounded-lg border border-white/5"><p className="text-[11px] text-gray-400 font-medium leading-relaxed italic">"{d.justification}"</p></div>
+                                                    <div className="bg-black/40 p-3 rounded-lg border border-white/5"><p className="text-[11px] text-gray-400 font-medium leading-relaxed italic line-clamp-2">"{d.justification}"</p></div>
                                                 </div>
                                             ))
                                         )}

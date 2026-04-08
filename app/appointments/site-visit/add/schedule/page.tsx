@@ -44,6 +44,7 @@ export default function SchedulePage() {
   const [coords, setCoords] = React.useState<[number, number] | null>(null);
   const [attachedFile, setAttachedFile] = React.useState<File | null>(null);
   const [existingAppointments, setExistingAppointments] = React.useState<any[]>([]);
+  const [blockedSlots, setBlockedSlots] = React.useState<any[]>([]);
 
   const [formData, setFormData] = React.useState({ 
     client: "", 
@@ -117,6 +118,39 @@ export default function SchedulePage() {
 
     return () => unsubscribe();
   }, [selectedPic, viewDate, isHydrated]);
+
+  // 4. BLOCKED SLOTS SYNC
+  React.useEffect(() => {
+    if (!isHydrated || !selectedPic) {
+      setBlockedSlots([]);
+      return;
+    }
+
+    // We fetch all blocked slots for the selected personnel (PIC)
+    // The slots page now saves userName in the block document
+    const q = query(
+      collection(db, "blocked_slots"),
+      where("userName", "==", selectedPic)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const slots = snapshot.docs.map(doc => {
+        const data = doc.data();
+        const date = new Date(data.dateString);
+        return {
+          id: doc.id,
+          day: date.getDate(),
+          month: date.getMonth(),
+          year: date.getFullYear(),
+          shiftScope: data.shiftScope,
+          justification: data.justification
+        };
+      });
+      setBlockedSlots(slots);
+    });
+
+    return () => unsubscribe();
+  }, [selectedPic, isHydrated]);
 
   // TSA/TSM metadata updates
   React.useEffect(() => {
@@ -216,7 +250,7 @@ export default function SchedulePage() {
           <div className="bg-white border border-black/10 w-full max-w-md rounded-lg overflow-hidden shadow-2xl">
             <div className="bg-[#121212] p-4 flex justify-between items-center text-white">
               <span className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-2">
-                <ShieldAlert className="size-4 text-amber-500" /> Conflict Detected
+                <ShieldAlert className="size-4 text-amber-500" /> {viewingDetails.isBlock ? "Personnel Unavailable" : "Conflict Detected"}
               </span>
               <button onClick={() => setViewingDetails(null)}><X className="size-4" /></button>
             </div>
@@ -230,16 +264,16 @@ export default function SchedulePage() {
               </div>
               <div className="space-y-3">
                 <div className="p-4 border border-black/5 rounded-md">
-                  <span className="block text-[8px] font-bold text-black/30 uppercase tracking-widest mb-1">Entity</span>
+                  <span className="block text-[8px] font-bold text-black/30 uppercase tracking-widest mb-1">{viewingDetails.isBlock ? "Constraint Type" : "Entity"}</span>
                   <p className="text-xs font-bold uppercase">{viewingDetails.client}</p>
                 </div>
                 <div className="p-4 border border-black/5 rounded-md">
-                  <span className="block text-[8px] font-bold text-black/30 uppercase tracking-widest mb-1">Scope</span>
+                  <span className="block text-[8px] font-bold text-black/30 uppercase tracking-widest mb-1">{viewingDetails.isBlock ? "Reason / Justification" : "Scope"}</span>
                   <p className="text-xs font-medium italic">{viewingDetails.agenda}</p>
                 </div>
               </div>
               <Button onClick={() => setViewingDetails(null)} className="w-full bg-[#121212] text-white font-bold uppercase text-[10px] tracking-widest h-12 rounded-none">
-                Acknowledge Constraint
+                {viewingDetails.isBlock ? "Acknowledge Unavailability" : "Acknowledge Constraint"}
               </Button>
             </div>
           </div>
@@ -316,23 +350,34 @@ export default function SchedulePage() {
                   {Array.from({length: daysInMonth}).map((_, i) => {
                     const dayNum = i + 1;
                     const isPast = new Date(viewDate.getFullYear(), viewDate.getMonth(), dayNum) < today;
-                    const bookedApp = existingAppointments.find(a => a.day === dayNum);
+                    
+                    const bookedApp = existingAppointments.find(a => a.day === dayNum && a.month === viewDate.getMonth() && a.year === viewDate.getFullYear());
+                    const blockedSlot = blockedSlots.find(s => s.day === dayNum && s.month === viewDate.getMonth() && s.year === viewDate.getFullYear());
+                    
                     const isBusy = !!bookedApp;
+                    const isBlocked = !!blockedSlot;
 
                     return (
                       <button 
                         key={i} 
-                        onClick={() => isBusy ? setViewingDetails(bookedApp) : setSelectedDate(dayNum)}
+                        onClick={() => {
+                          if (isBusy) setViewingDetails(bookedApp);
+                          else if (isBlocked) setViewingDetails({ client: "PERSONNEL_UNAVAILABLE", agenda: blockedSlot.justification, isBlock: true });
+                          else setSelectedDate(dayNum);
+                        }}
                         disabled={isPast} 
                         className={cn(
                           "aspect-square flex flex-col items-center justify-center text-xs font-bold transition-all relative rounded border", 
                           selectedDate === dayNum ? "bg-[#121212] text-white border-black shadow-md z-10" : 
                           isPast ? "bg-[#F9FAFA] text-black/10 border-transparent cursor-not-allowed" : 
-                          isBusy ? "bg-red-50 text-red-600 border-red-100" : "bg-white border-black/5 hover:border-black/20"
+                          isBusy ? "bg-red-50 text-red-600 border-red-100" : 
+                          isBlocked ? "bg-amber-50 text-amber-600 border-amber-100" :
+                          "bg-white border-black/5 hover:border-black/20"
                         )}
                       >
                         <span>{dayNum}</span>
                         {isBusy && !isPast && <div className="absolute top-1 right-1 size-1 bg-red-500 rounded-full" />}
+                        {isBlocked && !isPast && <div className="absolute top-1 right-1 size-1 bg-amber-500 rounded-full" />}
                       </button>
                     );
                   })}
