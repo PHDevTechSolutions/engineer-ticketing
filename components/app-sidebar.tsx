@@ -18,6 +18,7 @@ import {
   LayoutDashboard, CalendarCheck, FileText, Monitor, ClipboardCheck,
   Package, MoreHorizontal, ThumbsUp, Wrench,
   Users, ShieldCheck, BarChart3, Settings2, BookOpen, CircleUser,
+  Zap, Target, Briefcase, Clock, TrendingUp, Star, Plus, ArrowRight,
 } from "lucide-react"
 
 /* ─────────────────────────────────────────────────────────
@@ -382,6 +383,104 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
         ) : (
           <>
             <NavMain items={navMain} />
+            
+            {/* ── DEPARTMENT QUICK ACTIONS ── */}
+            {dept && !isGuest && (
+              <>
+                <div className="px-3 py-2">
+                  <div className="h-px bg-zinc-100" />
+                </div>
+                <div className="px-3 space-y-2">
+                  <p className="text-[9px] font-black text-zinc-400 uppercase tracking-[0.18em] px-2">
+                    Quick Actions
+                  </p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {(() => {
+                      const d = dept.toUpperCase()
+                      const r = role?.toUpperCase() || "MEMBER"
+                      
+                      // Department-specific quick actions
+                      const actions: { icon: any; label: string; href: string; color: string; show?: () => boolean }[] = [
+                        { 
+                          icon: Plus, label: "New Request", href: appendId("/request/job/add"), 
+                          color: "bg-blue-50 text-blue-600 hover:bg-blue-100",
+                          show: () => ["SALES", "ENGINEERING", "IT"].includes(d)
+                        },
+                        { 
+                          icon: CalendarCheck, label: "Schedule", href: appendId("/appointments/site-visit/add"), 
+                          color: "bg-emerald-50 text-emerald-600 hover:bg-emerald-100",
+                          show: () => ["ENGINEERING", "SALES", "IT"].includes(d)
+                        },
+                        { 
+                          icon: Target, label: "My Tasks", href: appendId("/dashboard?tab=My Tasks"), 
+                          color: "bg-violet-50 text-violet-600 hover:bg-violet-100",
+                          show: () => true
+                        },
+                        { 
+                          icon: Zap, label: "Priority", href: appendId("/notifications"), 
+                          color: "bg-amber-50 text-amber-600 hover:bg-amber-100",
+                          show: () => ["MANAGER", "LEADER", "SUPER ADMIN"].includes(r)
+                        },
+                        { 
+                          icon: BarChart3, label: "Analytics", href: appendId("/admin/staff"), 
+                          color: "bg-indigo-50 text-indigo-600 hover:bg-indigo-100",
+                          show: () => ["MANAGER", "SUPER ADMIN"].includes(r)
+                        },
+                        { 
+                          icon: Clock, label: "Time Log", href: appendId("/admin/logs"), 
+                          color: "bg-cyan-50 text-cyan-600 hover:bg-cyan-100",
+                          show: () => ["MANAGER", "SUPER ADMIN"].includes(r) || d === "IT"
+                        },
+                      ]
+                      
+                      return actions
+                        .filter(a => !a.show || a.show())
+                        .slice(0, 4)
+                        .map((action, i) => (
+                          <Link
+                            key={i}
+                            href={action.href}
+                            className={`flex flex-col items-center justify-center p-2.5 rounded-xl ${action.color} transition-all active:scale-95 group`}
+                          >
+                            <action.icon className="w-4 h-4 mb-1" />
+                            <span className="text-[9px] font-bold">{action.label}</span>
+                          </Link>
+                        ))
+                    })()}
+                  </div>
+                </div>
+                
+                {/* ── PRODUCTIVITY TIPS ── */}
+                <div className="px-3 mt-3">
+                  <div className="bg-gradient-to-br from-zinc-900 to-zinc-800 rounded-xl p-3 text-white">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Star className="w-3.5 h-3.5 text-amber-400" />
+                      <span className="text-[9px] font-black uppercase tracking-wider text-zinc-300">
+                        {dept.toUpperCase()} Tip
+                      </span>
+                    </div>
+                    <p className="text-[10px] font-medium text-zinc-200 leading-relaxed">
+                      {(() => {
+                        const tips: Record<string, string> = {
+                          ENGINEERING: "Use the Assignment Matrix to manage your PIC assignments efficiently.",
+                          SALES: "Check client pipeline daily to stay on top of opportunities.",
+                          PROCUREMENT: "Monitor testing schedules to ensure timely product releases.",
+                          IT: "Review system logs regularly to maintain platform stability.",
+                        }
+                        return tips[dept.toUpperCase()] || "Stay organized with your daily task list."
+                      })()}
+                    </p>
+                    <Link 
+                      href={appendId("/docs")}
+                      className="inline-flex items-center gap-1 mt-2 text-[9px] font-bold text-amber-400 hover:text-amber-300 transition-colors"
+                    >
+                      Learn more <ArrowRight className="w-3 h-3" />
+                    </Link>
+                  </div>
+                </div>
+              </>
+            )}
+            
             {navSecondary.length > 0 && (
               <>
                 <div className="px-3 py-2">

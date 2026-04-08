@@ -25,6 +25,8 @@ import { cn } from "@/lib/utils";
 import { isAfter, format } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/utils/supabase";
+import { FloatingActionButton } from "@/components/floating-action-button";
+import { DashboardGuide } from "@/components/dashboard-guide";
 
 /* ─────────────────────────────────────────────
    CUSTOM ICON
@@ -1267,13 +1269,11 @@ export default function EngiconnectDashboard() {
                         </div>
                     </main>
 
-                    {/* Mobile FAB */}
-                    <button
-                        onClick={() => router.push("/request/testing/add")}
-                        className="fixed bottom-8 right-6 size-14 bg-[#E33636] text-white rounded-full shadow-2xl flex items-center justify-center active:scale-90 transition-all z-50"
-                    >
-                        <Plus size={24} strokeWidth={3} />
-                    </button>
+                    {/* ── FLOATING ACTION BUTTON (New) ── */}
+                    <FloatingActionButton department={userDept || ""} userId={userId} />
+
+                    {/* ── DASHBOARD GUIDE / FEATURES TUTORIAL ── */}
+                    <DashboardGuide department={userDept || ""} role={userRole || "MEMBER"} />
                 </SidebarInset>
             </SidebarProvider>
             <style jsx global>{`
