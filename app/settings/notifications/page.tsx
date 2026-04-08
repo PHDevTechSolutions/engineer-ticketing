@@ -135,54 +135,51 @@ export default function NotificationSettingsPage() {
     <div className="min-h-screen bg-[#F4F7F7] font-sans pb-10">
       <PageHeader
         title="NOTIFICATION SETTINGS"
+        version="V1.0"
         showBackButton={true}
       />
 
-      <main className="p-4 md:p-8 max-w-4xl mx-auto w-full space-y-6">
-        {/* Header Card */}
-        <Card className="bg-gradient-to-br from-indigo-600 to-purple-700 text-white rounded-3xl border-0 shadow-xl overflow-hidden">
-          <div className="absolute inset-0 opacity-10">
-            <div className="absolute -top-20 -right-20 w-60 h-60 bg-white rounded-full blur-3xl" />
-            <div className="absolute -bottom-20 -left-20 w-60 h-60 bg-purple-400 rounded-full blur-3xl" />
-          </div>
-          <CardContent className="relative p-8">
-            <div className="flex items-center gap-4">
-              <div className="size-16 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                <Bell size={32} className="text-white" />
+      <main className="p-4 md:p-8 max-w-3xl mx-auto w-full space-y-6">
+        {/* Header Card - Standard Style */}
+        <Card className="bg-white rounded-[24px] border border-zinc-200/60 shadow-sm overflow-hidden">
+          <CardHeader className="border-b border-zinc-100 p-8">
+            <CardTitle className="flex items-center gap-3">
+              <div className="p-2 bg-zinc-900 text-white rounded-[8px]">
+                <Bell size={16} />
               </div>
-              <div>
-                <h1 className="text-2xl font-black tracking-tight">Stay Informed</h1>
-                <p className="text-white/80 text-sm mt-1">
-                  Customize how and when you receive notifications
-                </p>
-              </div>
-            </div>
+              <span className="font-black text-[10px] uppercase tracking-widest text-zinc-500">
+                Notification Preferences
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-8">
+            <p className="text-sm text-zinc-600 leading-relaxed">
+              Customize how and when you receive notifications. Control your sound alerts, 
+              delivery methods, and quiet hours.
+            </p>
           </CardContent>
         </Card>
 
         {/* Sound Settings Section */}
-        <Card className="bg-white rounded-3xl border border-zinc-200/60 shadow-sm">
+        <Card className="bg-white rounded-[24px] border border-zinc-200/60 shadow-sm overflow-hidden">
           <CardHeader className="border-b border-zinc-100 p-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="size-10 rounded-xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center">
-                  <Music size={20} className="text-white" />
+                <div className="p-2 bg-zinc-900 text-white rounded-[8px]">
+                  <Music size={16} />
                 </div>
-                <div>
-                  <CardTitle className="text-lg font-black text-zinc-900">Sound Alerts</CardTitle>
-                  <CardDescription className="text-xs text-zinc-500">
-                    Choose your notification sound style
-                  </CardDescription>
-                </div>
+                <span className="font-black text-[10px] uppercase tracking-widest text-zinc-500">
+                  Sound Alerts
+                </span>
               </div>
               <div className="flex items-center gap-3">
-                <span className="text-xs font-bold text-zinc-500 uppercase">
+                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
                   {soundConfig.enabled ? "On" : "Off"}
                 </span>
                 <Switch
                   checked={soundConfig.enabled}
                   onCheckedChange={handleToggleSound}
-                  className="data-[state=checked]:bg-indigo-500"
+                  className="data-[state=checked]:bg-zinc-900"
                 />
               </div>
             </div>
@@ -280,18 +277,15 @@ export default function NotificationSettingsPage() {
         </Card>
 
         {/* Delivery Preferences */}
-        <Card className="bg-white rounded-3xl border border-zinc-200/60 shadow-sm">
+        <Card className="bg-white rounded-[24px] border border-zinc-200/60 shadow-sm overflow-hidden">
           <CardHeader className="border-b border-zinc-100 p-6">
             <div className="flex items-center gap-3">
-              <div className="size-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center">
-                <Smartphone size={20} className="text-white" />
+              <div className="p-2 bg-zinc-900 text-white rounded-[8px]">
+                <Smartphone size={16} />
               </div>
-              <div>
-                <CardTitle className="text-lg font-black text-zinc-900">Delivery Methods</CardTitle>
-                <CardDescription className="text-xs text-zinc-500">
-                  How you want to receive notifications
-                </CardDescription>
-              </div>
+              <span className="font-black text-[10px] uppercase tracking-widest text-zinc-500">
+                Delivery Methods
+              </span>
             </div>
           </CardHeader>
 
@@ -350,18 +344,15 @@ export default function NotificationSettingsPage() {
         </Card>
 
         {/* Do Not Disturb */}
-        <Card className="bg-white rounded-3xl border border-zinc-200/60 shadow-sm">
+        <Card className="bg-white rounded-[24px] border border-zinc-200/60 shadow-sm overflow-hidden">
           <CardHeader className="border-b border-zinc-100 p-6">
             <div className="flex items-center gap-3">
-              <div className="size-10 rounded-xl bg-gradient-to-br from-slate-500 to-zinc-600 flex items-center justify-center">
-                <Clock size={20} className="text-white" />
+              <div className="p-2 bg-zinc-900 text-white rounded-[8px]">
+                <Clock size={16} />
               </div>
-              <div>
-                <CardTitle className="text-lg font-black text-zinc-900">Quiet Hours</CardTitle>
-                <CardDescription className="text-xs text-zinc-500">
-                  Temporarily pause notifications
-                </CardDescription>
-              </div>
+              <span className="font-black text-[10px] uppercase tracking-widest text-zinc-500">
+                Quiet Hours
+              </span>
             </div>
           </CardHeader>
 
@@ -411,40 +402,39 @@ export default function NotificationSettingsPage() {
 
         {/* IT Admin Section */}
         {isIT && (
-          <Card className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-3xl border-2 border-amber-200 shadow-sm">
-            <CardHeader className="border-b border-amber-200/60 p-6">
+          <Card className="bg-white rounded-[24px] border border-zinc-200/60 shadow-sm overflow-hidden">
+            <CardHeader className="border-b border-zinc-100 p-6">
               <div className="flex items-center gap-3">
-                <div className="size-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
-                  <Shield size={20} className="text-white" />
+                <div className="p-2 bg-zinc-900 text-white rounded-[8px]">
+                  <Shield size={16} />
                 </div>
-                <div>
-                  <CardTitle className="text-lg font-black text-zinc-900">IT Admin Controls</CardTitle>
-                  <CardDescription className="text-xs text-zinc-600">
-                    Manage notification sounds for all users
-                  </CardDescription>
-                </div>
+                <span className="font-black text-[10px] uppercase tracking-widest text-zinc-500">
+                  IT Admin Controls
+                </span>
               </div>
             </CardHeader>
 
             <CardContent className="p-6 space-y-4">
-              <div className="p-4 bg-white/70 backdrop-blur-sm rounded-2xl border border-amber-200/50">
+              <div className="p-4 bg-zinc-50 rounded-2xl">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    <HardDrive size={18} className="text-amber-600" />
+                    <div className="p-2 bg-zinc-200 rounded-lg">
+                      <HardDrive size={16} className="text-zinc-700" />
+                    </div>
                     <span className="font-bold text-sm text-zinc-900">Sound Library</span>
                   </div>
-                  <Badge variant="outline" className="text-xs border-amber-300 text-amber-700">
+                  <Badge variant="outline" className="text-[10px] font-bold">
                     5 sounds
                   </Badge>
                 </div>
-                <p className="text-xs text-zinc-600 mb-4">
+                <p className="text-xs text-zinc-500 mb-4">
                   Upload and manage notification sounds available to all users
                 </p>
                 <Button
                   onClick={() => router.push("/admin/sounds")}
-                  className="w-full h-11 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-xs uppercase tracking-widest hover:shadow-lg"
+                  className="w-full h-11 rounded-xl bg-zinc-900 text-white font-bold text-[10px] uppercase tracking-widest hover:bg-zinc-800"
                 >
-                  <Settings size={16} className="mr-2" />
+                  <Settings size={14} className="mr-2" />
                   Manage Sound Library
                 </Button>
               </div>
@@ -457,22 +447,22 @@ export default function NotificationSettingsPage() {
           <Button
             onClick={handleReset}
             variant="outline"
-            className="flex-1 h-14 rounded-2xl font-bold text-xs uppercase tracking-widest text-zinc-500 hover:text-zinc-700 border-2 border-zinc-200"
+            className="flex-1 h-12 rounded-[12px] font-bold text-[10px] uppercase tracking-widest text-zinc-500 hover:text-zinc-700 border-zinc-200"
           >
-            <RotateCcw size={16} className="mr-2" />
-            Reset Defaults
+            <RotateCcw size={14} className="mr-2" />
+            Reset
           </Button>
           <Button
             onClick={handleSave}
             disabled={!hasChanges}
             className={cn(
-              "flex-[2] h-14 rounded-2xl font-black text-xs uppercase tracking-widest transition-all",
+              "flex-[2] h-12 rounded-[12px] font-black text-[10px] uppercase tracking-widest transition-all",
               hasChanges
-                ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:shadow-xl"
+                ? "bg-zinc-900 text-white hover:bg-zinc-800"
                 : "bg-zinc-200 text-zinc-400 cursor-not-allowed"
             )}
           >
-            <Save size={16} className="mr-2" />
+            <Save size={14} className="mr-2" />
             Save Changes
           </Button>
         </div>

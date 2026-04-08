@@ -3,10 +3,8 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { 
-  Bell, X, Clock, ExternalLink, Check, 
-  Calendar, FileText, AlertTriangle, 
-  MessageSquare, Wrench, Package, Eye,
-  LucideIcon
+  Bell, X, Clock, CheckCircle2, AlertCircle, 
+  Info, FileText, Eye, LucideIcon
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { playNotificationSound } from "@/lib/notification-sounds";
@@ -30,57 +28,105 @@ interface NotificationPopupProps {
   autoCloseDelay?: number;
 }
 
-const TYPE_CONFIG = {
+// Elegant design system with gradients
+const TYPE_STYLES = {
   default: {
     icon: Bell,
+    gradient: "from-indigo-500 to-purple-600",
     bg: "bg-white",
-    accent: "border-l-4 border-indigo-500",
-    iconBg: "bg-indigo-100",
-    iconColor: "text-indigo-600",
+    shadow: "shadow-indigo-500/20",
+    ring: "ring-indigo-500/20",
+    pulse: false,
   },
   success: {
-    icon: Check,
+    icon: CheckCircle2,
+    gradient: "from-emerald-500 to-teal-600",
     bg: "bg-white",
-    accent: "border-l-4 border-emerald-500",
-    iconBg: "bg-emerald-100",
-    iconColor: "text-emerald-600",
+    shadow: "shadow-emerald-500/20",
+    ring: "ring-emerald-500/20",
+    pulse: false,
   },
   warning: {
-    icon: AlertTriangle,
+    icon: AlertCircle,
+    gradient: "from-amber-500 to-orange-600",
     bg: "bg-white",
-    accent: "border-l-4 border-amber-500",
-    iconBg: "bg-amber-100",
-    iconColor: "text-amber-600",
+    shadow: "shadow-amber-500/20",
+    ring: "ring-amber-500/20",
+    pulse: false,
   },
   error: {
-    icon: AlertTriangle,
+    icon: AlertCircle,
+    gradient: "from-red-500 to-rose-600",
     bg: "bg-white",
-    accent: "border-l-4 border-red-500",
-    iconBg: "bg-red-100",
-    iconColor: "text-red-600",
+    shadow: "shadow-red-500/20",
+    ring: "ring-red-500/20",
+    pulse: false,
   },
   info: {
-    icon: FileText,
+    icon: Info,
+    gradient: "from-blue-500 to-cyan-600",
     bg: "bg-white",
-    accent: "border-l-4 border-blue-500",
-    iconBg: "bg-blue-100",
-    iconColor: "text-blue-600",
+    shadow: "shadow-blue-500/20",
+    ring: "ring-blue-500/20",
+    pulse: false,
   },
   urgent: {
-    icon: AlertTriangle,
+    icon: AlertCircle,
+    gradient: "from-red-600 to-pink-600",
     bg: "bg-white",
-    accent: "border-l-4 border-red-600",
-    iconBg: "bg-red-100",
-    iconColor: "text-red-600",
+    shadow: "shadow-red-600/30",
+    ring: "ring-red-600/30",
+    pulse: true,
   },
 };
 
-const PRIORITY_BADGES = {
-  low: { text: "LOW", color: "bg-slate-100 text-slate-600" },
-  normal: { text: "NORMAL", color: "bg-blue-100 text-blue-600" },
-  high: { text: "HIGH", color: "bg-amber-100 text-amber-600" },
-  urgent: { text: "URGENT", color: "bg-red-100 text-red-600 animate-pulse" },
-};
+// Circular progress indicator
+function CircularProgress({ 
+  progress, 
+  size = 36, 
+  strokeWidth = 3,
+  color 
+}: { 
+  progress: number; 
+  size?: number; 
+  strokeWidth?: number;
+  color: string;
+}) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const offset = circumference - (progress / 100) * circumference;
+
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg className="transform -rotate-90 w-full h-full">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={strokeWidth}
+          className="text-zinc-100"
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          className={color}
+          style={{
+            strokeDasharray: circumference,
+            strokeDashoffset: offset,
+            transition: "stroke-dashoffset 100ms linear",
+          }}
+        />
+      </svg>
+    </div>
+  );
+}
 
 export function NotificationPopup({ 
   notification, 
@@ -131,131 +177,136 @@ export function NotificationPopup({
   if (!notification) return null;
 
   const type = notification.type || "default";
-  const config = TYPE_CONFIG[type];
-  const Icon = notification.icon || config.icon;
+  const style = TYPE_STYLES[type];
+  const Icon = notification.icon || style.icon;
   const priority = notification.priority || "normal";
-  const priorityBadge = PRIORITY_BADGES[priority];
+
+  // Priority config
+  const priorityConfig = {
+    low: { label: "Low", dot: "bg-slate-400" },
+    normal: { label: "Normal", dot: "bg-blue-500" },
+    high: { label: "High", dot: "bg-amber-500" },
+    urgent: { label: "Urgent", dot: "bg-red-500 animate-pulse" },
+  }[priority];
 
   return (
     <div 
-      className="fixed top-4 right-4 z-[120] max-w-[380px] w-full animate-in slide-in-from-right-full duration-300"
+      className="fixed top-5 right-5 z-[120] w-[320px] animate-in slide-in-from-right-8 fade-in duration-300"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
     >
+      {/* Floating card with glassmorphism */}
       <div className={cn(
-        "relative rounded-2xl shadow-2xl overflow-hidden",
-        config.bg,
-        config.accent
+        "relative rounded-[20px] overflow-hidden",
+        "bg-white/95 backdrop-blur-xl",
+        "shadow-[0_8px_32px_rgba(0,0,0,0.12)]",
+        style.shadow,
+        "ring-1 ring-white/50",
+        style.pulse && "animate-pulse"
       )}>
-        {/* Progress bar */}
+        {/* Top gradient accent bar */}
+        <div className={cn(
+          "h-1 w-full bg-gradient-to-r",
+          style.gradient
+        )} />
+
+        {/* Progress ring in corner */}
         {autoClose && (
-          <div className="absolute top-0 left-0 right-0 h-1 bg-zinc-100">
-            <div 
-              className={cn(
-                "h-full transition-all duration-100",
-                type === "urgent" ? "bg-red-500" : 
-                type === "warning" ? "bg-amber-500" :
-                type === "success" ? "bg-emerald-500" : "bg-indigo-500"
-              )}
-              style={{ width: `${progress}%` }}
+          <div className="absolute top-3 right-3">
+            <CircularProgress 
+              progress={progress} 
+              size={28} 
+              strokeWidth={2}
+              color={cn("text-transparent bg-gradient-to-r bg-clip-text", style.gradient).replace("text-transparent bg-gradient-to-r bg-clip-text ", "")}
             />
           </div>
         )}
 
-        <div className="p-4 pt-5">
-          {/* Header */}
-          <div className="flex items-start gap-3 mb-3">
+        <div className="p-4">
+          {/* Compact Header Row */}
+          <div className="flex items-center gap-3 mb-2.5">
+            {/* Icon with gradient background */}
             <div className={cn(
-              "size-12 rounded-xl flex items-center justify-center flex-shrink-0",
-              config.iconBg
+              "size-9 rounded-lg flex items-center justify-center flex-shrink-0",
+              "bg-gradient-to-br",
+              style.gradient,
+              "shadow-lg"
             )}>
-              <Icon size={22} className={config.iconColor} />
+              <Icon size={18} className="text-white" />
             </div>
             
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <h4 className="font-black text-sm text-zinc-900 leading-tight truncate">
-                  {notification.title}
-                </h4>
-                {notification.priority && (
-                  <span className={cn(
-                    "text-[8px] font-black px-1.5 py-0.5 rounded-full",
-                    priorityBadge.color
-                  )}>
-                    {priorityBadge.text}
-                  </span>
-                )}
-              </div>
-              
-              <div className="flex items-center gap-1.5 text-[10px] font-medium text-zinc-400">
-                <Clock size={10} />
-                <span>Just now</span>
-                {notification.senderName && (
-                  <>
-                    <span className="mx-1">•</span>
-                    <span>from {notification.senderName}</span>
-                  </>
-                )}
+            {/* Title and meta */}
+            <div className="flex-1 min-w-0 pr-8">
+              <h4 className="font-bold text-[13px] text-zinc-900 leading-tight truncate">
+                {notification.title}
+              </h4>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className={cn("w-1.5 h-1.5 rounded-full", priorityConfig.dot)} />
+                <span className="text-[10px] font-medium text-zinc-500">
+                  {priorityConfig.label} priority
+                </span>
+                <span className="text-zinc-300">·</span>
+                <span className="text-[10px] text-zinc-400">Just now</span>
               </div>
             </div>
 
+            {/* Close button */}
             <button
               onClick={onClose}
-              className="p-1.5 hover:bg-zinc-100 rounded-lg transition-colors flex-shrink-0"
+              className="absolute top-3.5 right-3.5 p-1.5 hover:bg-zinc-100 rounded-lg transition-colors"
             >
-              <X size={16} className="text-zinc-400" />
+              <X size={14} className="text-zinc-400" />
             </button>
           </div>
 
-          {/* Body */}
-          <p className="text-sm font-medium text-zinc-600 leading-relaxed mb-4 line-clamp-3">
+          {/* Body text */}
+          <p className="text-[12px] text-zinc-600 leading-relaxed mb-3 pl-12 line-clamp-2">
             {notification.body}
           </p>
 
-          {/* Actions */}
-          <div className="flex items-center gap-2">
+          {/* Action Buttons Row */}
+          <div className="flex items-center gap-2 pl-12">
             {notification.url ? (
               <button
                 onClick={handleAction}
                 className={cn(
-                  "flex-1 py-2.5 px-4 rounded-xl font-bold text-xs uppercase tracking-widest",
-                  "flex items-center justify-center gap-2 transition-all",
-                  "bg-zinc-900 text-white hover:bg-zinc-800 active:scale-[0.98]"
+                  "flex-1 h-8 px-3 rounded-lg font-bold text-[10px] uppercase tracking-wider",
+                  "flex items-center justify-center gap-1.5 transition-all",
+                  "bg-zinc-900 text-white hover:bg-zinc-800 active:scale-[0.97]",
+                  "shadow-md shadow-zinc-900/20"
                 )}
               >
-                <Eye size={14} />
-                View Details
+                <Eye size={12} />
+                View
               </button>
             ) : (
               <button
                 onClick={handleMarkAsRead}
                 className={cn(
-                  "flex-1 py-2.5 px-4 rounded-xl font-bold text-xs uppercase tracking-widest",
-                  "flex items-center justify-center gap-2 transition-all",
-                  "bg-emerald-500 text-white hover:bg-emerald-600 active:scale-[0.98]"
+                  "flex-1 h-8 px-3 rounded-lg font-bold text-[10px] uppercase tracking-wider",
+                  "flex items-center justify-center gap-1.5 transition-all",
+                  "bg-gradient-to-r from-emerald-500 to-teal-500 text-white",
+                  "hover:shadow-lg hover:shadow-emerald-500/25 active:scale-[0.97]"
                 )}
               >
-                <Check size={14} />
-                Mark as Read
+                <CheckCircle2 size={12} />
+                Got it
               </button>
             )}
 
             <button
               onClick={onClose}
-              className="py-2.5 px-4 rounded-xl font-bold text-xs uppercase tracking-widest text-zinc-500 hover:bg-zinc-100 transition-all"
+              className="h-8 px-3 rounded-lg font-bold text-[10px] uppercase tracking-wider text-zinc-500 hover:bg-zinc-100 transition-all"
             >
               Dismiss
             </button>
           </div>
         </div>
 
-        {/* Subtle pattern overlay */}
-        <div 
-          className="absolute inset-0 pointer-events-none opacity-[0.02]"
-          style={{
-            backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23000000' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
-          }}
-        />
+        {/* Bottom subtle glow */}
+        <div className={cn(
+          "absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-zinc-200 to-transparent"
+        )} />
       </div>
     </div>
   );

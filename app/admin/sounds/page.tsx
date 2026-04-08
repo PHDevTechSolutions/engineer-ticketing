@@ -291,45 +291,43 @@ export default function SoundManagementPage() {
     <div className="min-h-screen bg-[#F4F7F7] font-sans pb-10">
       <PageHeader
         title="SOUND MANAGEMENT"
+        version="V1.0"
         showBackButton={true}
       />
 
-      <main className="p-4 md:p-8 max-w-4xl mx-auto w-full space-y-6">
-        {/* Stats Card */}
+      <main className="p-4 md:p-8 max-w-3xl mx-auto w-full space-y-6">
+        {/* Stats Cards - Standard Style */}
         <div className="grid grid-cols-3 gap-4">
-          <Card className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-2xl border-0">
-            <CardContent className="p-5">
-              <p className="text-[10px] font-black uppercase tracking-wider opacity-70">Total Sounds</p>
-              <p className="text-3xl font-black mt-1">{allSounds.length}</p>
+          <Card className="bg-white rounded-[16px] border border-zinc-200/60 shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-[9px] font-black uppercase tracking-wider text-zinc-400">Total Sounds</p>
+              <p className="text-2xl font-black mt-1 text-zinc-900">{allSounds.length}</p>
             </CardContent>
           </Card>
-          <Card className="bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-2xl border-0">
-            <CardContent className="p-5">
-              <p className="text-[10px] font-black uppercase tracking-wider opacity-70">Enabled</p>
-              <p className="text-3xl font-black mt-1">{enabledCount}</p>
+          <Card className="bg-white rounded-[16px] border border-zinc-200/60 shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-[9px] font-black uppercase tracking-wider text-zinc-400">Enabled</p>
+              <p className="text-2xl font-black mt-1 text-zinc-900">{enabledCount}</p>
             </CardContent>
           </Card>
-          <Card className="bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-2xl border-0">
-            <CardContent className="p-5">
-              <p className="text-[10px] font-black uppercase tracking-wider opacity-70">Custom</p>
-              <p className="text-3xl font-black mt-1">{customSounds.length}</p>
+          <Card className="bg-white rounded-[16px] border border-zinc-200/60 shadow-sm">
+            <CardContent className="p-4">
+              <p className="text-[9px] font-black uppercase tracking-wider text-zinc-400">Custom</p>
+              <p className="text-2xl font-black mt-1 text-zinc-900">{customSounds.length}</p>
             </CardContent>
           </Card>
         </div>
 
         {/* Upload Section */}
-        <Card className="bg-white rounded-3xl border border-zinc-200/60 shadow-sm">
+        <Card className="bg-white rounded-[24px] border border-zinc-200/60 shadow-sm overflow-hidden">
           <CardHeader className="border-b border-zinc-100 p-6">
             <div className="flex items-center gap-3">
-              <div className="size-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center">
-                <Upload size={20} className="text-white" />
+              <div className="p-2 bg-zinc-900 text-white rounded-[8px]">
+                <Upload size={16} />
               </div>
-              <div>
-                <CardTitle className="text-lg font-black text-zinc-900">Upload New Sound</CardTitle>
-                <CardDescription className="text-xs text-zinc-500">
-                  MP3 files only, max 2MB
-                </CardDescription>
-              </div>
+              <span className="font-black text-[10px] uppercase tracking-widest text-zinc-500">
+                Upload New Sound
+              </span>
             </div>
           </CardHeader>
           <CardContent className="p-6">
@@ -377,21 +375,18 @@ export default function SoundManagementPage() {
         </Card>
 
         {/* Built-in Sounds */}
-        <Card className="bg-white rounded-3xl border border-zinc-200/60 shadow-sm">
+        <Card className="bg-white rounded-[24px] border border-zinc-200/60 shadow-sm overflow-hidden">
           <CardHeader className="border-b border-zinc-100 p-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="size-10 rounded-xl bg-gradient-to-br from-slate-500 to-zinc-600 flex items-center justify-center">
-                  <HardDrive size={20} className="text-white" />
+                <div className="p-2 bg-zinc-900 text-white rounded-[8px]">
+                  <HardDrive size={16} />
                 </div>
-                <div>
-                  <CardTitle className="text-lg font-black text-zinc-900">Built-in Sounds</CardTitle>
-                  <CardDescription className="text-xs text-zinc-500">
-                    System default notification sounds
-                  </CardDescription>
-                </div>
+                <span className="font-black text-[10px] uppercase tracking-widest text-zinc-500">
+                  Built-in Sounds
+                </span>
               </div>
-              <Badge variant="secondary" className="font-bold">
+              <Badge variant="outline" className="text-[10px] font-bold">
                 {sounds.length} sounds
               </Badge>
             </div>
@@ -415,21 +410,18 @@ export default function SoundManagementPage() {
 
         {/* Custom Sounds */}
         {customSounds.length > 0 && (
-          <Card className="bg-white rounded-3xl border border-zinc-200/60 shadow-sm">
+          <Card className="bg-white rounded-[24px] border border-zinc-200/60 shadow-sm overflow-hidden">
             <CardHeader className="border-b border-zinc-100 p-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="size-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
-                    <Music size={20} className="text-white" />
+                  <div className="p-2 bg-zinc-900 text-white rounded-[8px]">
+                    <Music size={16} />
                   </div>
-                  <div>
-                    <CardTitle className="text-lg font-black text-zinc-900">Custom Sounds</CardTitle>
-                    <CardDescription className="text-xs text-zinc-500">
-                      User uploaded notification sounds
-                    </CardDescription>
-                  </div>
+                  <span className="font-black text-[10px] uppercase tracking-widest text-zinc-500">
+                    Custom Sounds
+                  </span>
                 </div>
-                <Badge variant="secondary" className="font-bold bg-amber-100 text-amber-700">
+                <Badge variant="outline" className="text-[10px] font-bold">
                   {customSounds.length} sounds
                 </Badge>
               </div>
@@ -454,16 +446,16 @@ export default function SoundManagementPage() {
         )}
 
         {/* Instructions Card */}
-        <Card className="bg-blue-50 rounded-3xl border border-blue-200">
+        <Card className="bg-zinc-50 rounded-[20px] border border-zinc-200">
           <CardContent className="p-6">
             <div className="flex items-start gap-3">
-              <div className="size-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
-                <AlertTriangle size={16} className="text-blue-600" />
+              <div className="p-2 bg-zinc-200 rounded-lg flex-shrink-0">
+                <AlertTriangle size={16} className="text-zinc-700" />
               </div>
               <div>
-                <p className="font-bold text-sm text-blue-900 mb-1">Important Notes</p>
-                <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
-                  <li>Sound files must be placed in <code className="bg-blue-100 px-1 rounded">public/sounds/</code></li>
+                <p className="font-bold text-sm text-zinc-900 mb-1">Important Notes</p>
+                <ul className="text-xs text-zinc-600 space-y-1 list-disc list-inside">
+                  <li>Sound files must be placed in <code className="bg-zinc-200 px-1.5 py-0.5 rounded text-zinc-700 font-mono">public/sounds/</code></li>
                   <li>MP3 format recommended for best browser compatibility</li>
                   <li>Keep files under 2MB for fast loading</li>
                   <li>Disabled sounds won't appear in user preferences</li>
