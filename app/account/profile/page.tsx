@@ -6,7 +6,8 @@ import {
   User, Mail, ShieldCheck, MapPin, 
   Camera, Save, Fingerprint, 
   Phone, PenTool, Eraser, CheckCircle2,
-  Building2, Lock, Eye, EyeOff, Sparkles
+  Building2, Lock, Eye, EyeOff, Sparkles,
+  Activity, Clock3
 } from "lucide-react"
 import SignatureCanvas from "react-signature-canvas"
 import { toast } from "sonner"
@@ -18,6 +19,37 @@ import { PageHeader } from "@/components/page-header"
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/app-sidebar"
 import ProtectedPageWrapper from "@/components/protected-page-wrapper"
+import { cn } from "@/lib/utils"
+
+/* ─────────────────────────────────────────────
+   DASHBOARD CARD
+───────────────────────────────────────────── */
+function DashboardCard({ label, value, subValue, icon: Icon, colorClass, loading }: {
+  label: string; value: string; subValue?: string; icon: any; colorClass: string; loading?: boolean
+}) {
+  return (
+    <div className="flex-1 bg-white rounded-xl md:rounded-2xl p-2.5 md:p-3 border border-zinc-200/60 shadow-sm flex items-center gap-3 group hover:shadow-md transition-all min-w-0">
+      <div className={cn("p-2 rounded-lg md:rounded-xl flex-shrink-0", colorClass)}>
+        <Icon className="size-3.5 md:size-4" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5 mb-0.5">
+          {loading ? (
+            <div className="h-3.5 md:h-4 w-12 md:w-16 bg-zinc-100 rounded animate-pulse" />
+          ) : (
+            <p className="text-[13px] md:text-[14px] font-black text-zinc-900 leading-none truncate tracking-tight">{value}</p>
+          )}
+          {!loading && subValue && (
+            <span className="hidden xl:inline-block text-[7px] font-black text-zinc-400 uppercase tracking-widest bg-zinc-50 px-1 py-0.5 rounded border border-zinc-100 whitespace-nowrap flex-shrink-0">
+              {subValue}
+            </span>
+          )}
+        </div>
+        <p className="text-[7px] font-black uppercase text-zinc-400 tracking-[0.1em] truncate">{label}</p>
+      </div>
+    </div>
+  )
+}
 
 export default function ProfilePage() {
   const [userId, setUserId] = React.useState<string | null>(null)
@@ -58,6 +90,26 @@ export default function ProfilePage() {
     if (pass.length < 10) return { label: "Medium", color: "bg-yellow-500", width: "66%" }
     return { label: "Strong", color: "bg-emerald-500", width: "100%" }
   }
+
+  const calculateProfileCompletion = () => {
+    const totalFields = 9 // Firstname, Lastname, Email, ContactNumber, Address, Position, Department, Company, profilePicture, signatureImage
+    let filledFields = 0
+
+    if (userDetails.Firstname) filledFields++
+    if (userDetails.Lastname) filledFields++
+    if (userDetails.Email) filledFields++
+    if (userDetails.ContactNumber) filledFields++
+    if (userDetails.Address) filledFields++
+    if (userDetails.Position) filledFields++
+    if (userDetails.Department) filledFields++
+    if (userDetails.Company) filledFields++
+    if (userDetails.profilePicture) filledFields++
+    // if (userDetails.signatureImage) filledFields++ // Signature is optional
+
+    return Math.round((filledFields / totalFields) * 100)
+  }
+
+  const profileCompletion = calculateProfileCompletion()
 
   const strength = getStrength(userDetails.Password)
 
@@ -150,7 +202,7 @@ export default function ProfilePage() {
     <ProtectedPageWrapper>
       <SidebarProvider defaultOpen={false}>
         <AppSidebar userId={userId} />
-        <SidebarInset className="bg-[#F4F7F7]">
+        <SidebarInset className="bg-[#F4F7F7] min-h-screen pt-14 md:pt-16 overflow-visible m-0 rounded-none border-none shadow-none font-sans">
           
           <PageHeader 
             title="MY ACCOUNT" 
@@ -161,7 +213,7 @@ export default function ProfilePage() {
               <Button 
                 onClick={handleSave}
                 disabled={saving}
-                className="h-10 rounded-[12px] bg-black text-white font-bold text-[10px] tracking-widest uppercase px-6 gap-2"
+                className="h-10 rounded-xl bg-black text-white font-bold text-[10px] tracking-widest uppercase px-6 gap-2"
               >
                 <Save className={`size-4 ${saving ? "animate-spin" : ""}`} /> 
                 {saving ? "Updating..." : "Save Changes"}
@@ -172,7 +224,7 @@ export default function ProfilePage() {
           <main className="p-4 md:p-8 max-w-5xl mx-auto w-full space-y-6 pb-20">
             
             {/* PROFILE HEADER - 24px Radius */}
-            <div className="bg-white rounded-[24px] border border-zinc-200/60 p-8 flex flex-col md:flex-row items-center gap-8 shadow-sm">
+            <div className="bg-white rounded-2xl border border-zinc-200/60 p-8 flex flex-col md:flex-row items-center gap-8 shadow-sm">
               <div className="relative">
                 <div className="size-32 bg-zinc-100 rounded-[24px] flex items-center justify-center border-4 border-white shadow-inner overflow-hidden relative">
                   {userDetails.profilePicture ? (
@@ -200,10 +252,34 @@ export default function ProfilePage() {
               </div>
             </div>
 
+            {/* PROFILE STATS */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <DashboardCard
+                label="Profile Completion"
+                value={`${profileCompletion}%`}
+                icon={CheckCircle2}
+                colorClass="text-emerald-600 bg-emerald-50"
+              />
+              <DashboardCard
+                label="Last Login"
+                value="2024-04-08" // Placeholder
+                subValue="10:30 AM"
+                icon={Clock3}
+                colorClass="text-blue-600 bg-blue-50"
+              />
+              <DashboardCard
+                label="Total Requests"
+                value="12" // Placeholder
+                subValue="All Time"
+                icon={Activity}
+                colorClass="text-violet-600 bg-violet-50"
+              />
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               
               {/* PERSONAL DETAILS - 24px Radius */}
-              <div className="bg-white rounded-[24px] border border-zinc-200/60 p-8 space-y-6 shadow-sm">
+              <div className="bg-white rounded-2xl border border-zinc-200/60 p-8 space-y-6 shadow-sm">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-zinc-900 text-white rounded-[8px]"><Fingerprint className="size-4" /></div>
                   <h3 className="font-black text-[10px] uppercase tracking-widest">Personal Details</h3>
@@ -213,11 +289,11 @@ export default function ProfilePage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <Label className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest ml-1">First Name</Label>
-                      <Input value={userDetails.Firstname} onChange={(e) => setUserDetails({...userDetails, Firstname: e.target.value})} className="h-12 rounded-[12px] border-zinc-100" />
+                      <Input value={userDetails.Firstname} onChange={(e) => setUserDetails({...userDetails, Firstname: e.target.value})} className="h-12 rounded-xl border-zinc-100" />
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Last Name</Label>
-                      <Input value={userDetails.Lastname} onChange={(e) => setUserDetails({...userDetails, Lastname: e.target.value})} className="h-12 rounded-[12px] border-zinc-100" />
+                      <Input value={userDetails.Lastname} onChange={(e) => setUserDetails({...userDetails, Lastname: e.target.value})} className="h-12 rounded-xl border-zinc-100" />
                     </div>
                   </div>
 
@@ -225,7 +301,7 @@ export default function ProfilePage() {
                     <Label className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Contact Number</Label>
                     <div className="relative">
                       <Phone className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-zinc-300" />
-                      <Input value={userDetails.ContactNumber || ""} onChange={(e) => setUserDetails({...userDetails, ContactNumber: e.target.value})} className="pl-11 h-12 rounded-[12px] border-zinc-100" />
+                      <Input value={userDetails.ContactNumber || ""} onChange={(e) => setUserDetails({...userDetails, ContactNumber: e.target.value})} className="pl-11 h-12 rounded-xl border-zinc-100" />
                     </div>
                   </div>
 
@@ -233,14 +309,14 @@ export default function ProfilePage() {
                     <Label className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Home Address</Label>
                     <div className="relative">
                       <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-zinc-300" />
-                      <Input value={userDetails.Address || ""} onChange={(e) => setUserDetails({...userDetails, Address: e.target.value})} className="pl-11 h-12 rounded-[12px] border-zinc-100" />
+                      <Input value={userDetails.Address || ""} onChange={(e) => setUserDetails({...userDetails, Address: e.target.value})} className="pl-11 h-12 rounded-xl border-zinc-100" />
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* SECURITY SECTION - 24px Radius */}
-              <div className="bg-white rounded-[24px] border border-zinc-200/60 p-8 space-y-6 shadow-sm">
+              <div className="bg-white rounded-2xl border border-zinc-200/60 p-8 space-y-6 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-zinc-900 text-white rounded-[8px]"><Lock className="size-4" /></div>
@@ -260,7 +336,7 @@ export default function ProfilePage() {
                         placeholder="••••••••"
                         value={userDetails.Password} 
                         onChange={(e) => setUserDetails({...userDetails, Password: e.target.value})} 
-                        className="h-12 rounded-[12px] border-zinc-100 pr-12" 
+                        className="h-12 rounded-xl border-zinc-100 pr-12" 
                       />
                       <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-300">
                         {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
@@ -285,7 +361,7 @@ export default function ProfilePage() {
                       placeholder="••••••••"
                       value={userDetails.ConfirmPassword} 
                       onChange={(e) => setUserDetails({...userDetails, ConfirmPassword: e.target.value})} 
-                      className={`h-12 rounded-[12px] border-zinc-100 ${userDetails.Password !== userDetails.ConfirmPassword && userDetails.ConfirmPassword ? "border-red-500 bg-red-50/10" : ""}`}
+                      className={`h-12 rounded-xl border-zinc-100 ${userDetails.Password !== userDetails.ConfirmPassword && userDetails.ConfirmPassword ? "border-red-500 bg-red-50/10" : ""}`}
                     />
                     {userDetails.Password !== userDetails.ConfirmPassword && userDetails.ConfirmPassword && (
                       <p className="text-[8px] text-red-500 font-bold uppercase italic ml-1">Passwords do not match</p>
@@ -295,7 +371,7 @@ export default function ProfilePage() {
               </div>
 
               {/* SIGNATURE PAD - 24px Radius */}
-              <div className="bg-white rounded-[24px] border border-zinc-200/60 p-8 space-y-6 shadow-sm lg:col-span-2">
+              <div className="bg-white rounded-2xl border border-zinc-200/60 p-8 space-y-6 shadow-sm lg:col-span-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-zinc-900 text-white rounded-[8px]"><PenTool className="size-4" /></div>
@@ -314,7 +390,7 @@ export default function ProfilePage() {
                         const data = sigCanvas.current?.getTrimmedCanvas().toDataURL("image/png");
                         if (data) handleUpload(data, "signature");
                       }}
-                      className="w-full bg-zinc-100 text-black border border-zinc-200 h-10 rounded-[12px] text-[9px] font-bold uppercase"
+                      className="w-full bg-zinc-100 text-black border border-zinc-200 h-10 rounded-xl text-[9px] font-bold uppercase"
                     >
                       Sync Signature
                     </Button>
@@ -333,7 +409,7 @@ export default function ProfilePage() {
             </div>
 
             {/* ORGANIZATION INFO - 24px Radius */}
-            <div className="bg-white rounded-[24px] border border-zinc-200/60 p-8 shadow-sm">
+            <div className="bg-white rounded-2xl border border-zinc-200/60 p-8 shadow-sm">
                <div className="flex items-center gap-3 mb-6">
                 <div className="p-2 bg-zinc-900 text-white rounded-[8px]"><Building2 className="size-4" /></div>
                 <h3 className="font-black text-[10px] uppercase tracking-widest">Organization</h3>
