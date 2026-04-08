@@ -22,7 +22,7 @@ import {
 import { db } from "@/lib/firebase";
 import { collection, query, where, onSnapshot, limit, orderBy, doc } from "firebase/firestore";
 import { cn } from "@/lib/utils";
-import { isAfter } from "date-fns";
+import { isAfter, format } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/utils/supabase";
 
@@ -179,6 +179,13 @@ export default function EngiconnectDashboard() {
         productRequest: 0
     })
     const [recentActivity, setRecentActivity] = useState<any[]>([])
+    const [scheduleData, setScheduleData] = useState<{ today: any[], upcoming: any[], next: any | null }>({
+        today: [], upcoming: [], next: null
+    })
+    const [myTasks, setMyTasks] = useState<{ siteVisits: any[], jobRequests: any[], testingItems: any[] }>({
+        siteVisits: [], jobRequests: [], testingItems: []
+    })
+    const [perms, setPerms] = useState<any>(null)
 
     /* ── AUTH & PERMISSIONS ── */
     useEffect(() => {
@@ -216,7 +223,17 @@ export default function EngiconnectDashboard() {
 
         const permissionsRef = collection(db, "role_permissions")
         const unsubPermissions = onSnapshot(permissionsRef, (snap) => {
-            setDynamicPermissions(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })))
+            const allPerms = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+            setDynamicPermissions(allPerms)
+            
+            if (storedUserId) {
+                // Determine target ID for current user
+                const roleKey = localStorage.getItem("userRole")?.toUpperCase() || "MEMBER"
+                const deptKey = localStorage.getItem("userDepartment")?.toUpperCase().trim() || ""
+                const targetId = deptKey ? `${deptKey}_${roleKey}` : `_${roleKey}`
+                const myPerms = allPerms.find(p => p.id === targetId) || allPerms.find(p => p.id.endsWith(`_${roleKey}`))
+                setPerms(myPerms)
+            }
             setIsDataLoading(false)
         })
 
@@ -264,35 +281,71 @@ export default function EngiconnectDashboard() {
     useEffect(() => {
         if (!db || !userId) return
 
-        const unsubSite = onSnapshot(query(collection(db, "appointments"), where("status", "==", "PENDING")),
-            snap => setNotifications(prev => ({ ...prev, siteVisit: snap.size })))
-        const unsubShop = onSnapshot(query(collection(db, "shop_drawing_requests"), where("department", "==", "ENGINEERING"), where("status", "==", "PEND_REVIEW")),
-            snap => setNotifications(prev => ({ ...prev, shopDrawing: snap.size })))
-        const unsubJob = onSnapshot(query(collection(db, "job_requests"), where("status", "==", "PENDING")),
-            snap => setNotifications(prev => ({ ...prev, jobRequest: snap.size })))
+        // 1. General System Notifications (for Stat Cards & Dropdown)
+        const unsubSite = onSnapshot(collection(db, "appointments"), snap => {
+            const pending = snap.docs.filter(d => d.data().status === "PENDING").length
+            const unread = calculateUnread(snap)
+            setNotifications(prev => ({ 
+                ...prev, 
+                siteVisit: pending,
+                unreadByService: { ...prev.unreadByService, siteVisit: unread }
+            }))
+            // Also update My Tasks for Site Visits
+            setMyTasks(prev => ({
+                ...prev,
+                siteVisits: snap.docs
+                    .filter(d => d.data().pic === userId && d.data().status !== "COMPLETED")
+                    .map(doc => ({ id: doc.id, ...doc.data() }))
+            }))
+        })
+
+        const unsubShop = onSnapshot(collection(db, "shop_drawing_requests"), snap => {
+            const pending = snap.docs.filter(d => d.data().department === "ENGINEERING" && d.data().status === "PEND_REVIEW").length
+            const unread = calculateUnread(snap)
+            setNotifications(prev => ({ 
+                ...prev, 
+                shopDrawing: pending,
+                unreadByService: { ...prev.unreadByService, shopDrawing: unread }
+            }))
+        })
+
+        const unsubJob = onSnapshot(collection(db, "job_requests"), snap => {
+            const pending = snap.docs.filter(d => d.data().status === "PENDING").length
+            const unread = calculateUnread(snap)
+            setNotifications(prev => ({ 
+                ...prev, 
+                jobRequest: pending,
+                unreadByService: { ...prev.unreadByService, jobRequest: unread }
+            }))
+            // Also update My Tasks for Job Requests
+            setMyTasks(prev => ({
+                ...prev,
+                jobRequests: snap.docs
+                    .filter(d => d.data().assignedTo === userId && d.data().status !== "COMPLETED")
+                    .map(doc => ({ id: doc.id, ...doc.data() }))
+            }))
+        })
+
         const unsubOther = onSnapshot(query(collection(db, "other_requests"), where("status", "==", "PENDING")),
             snap => setNotifications(prev => ({ ...prev, otherRequest: snap.size })))
-        const unsubDialuxPending = onSnapshot(query(collection(db, "dialux_requests"), where("status", "==", "PENDING")),
-            snap => setNotifications(prev => ({ ...prev, dialuxRequest: snap.size })))
-        const unsubDialuxDone = onSnapshot(query(collection(db, "dialux_requests"), where("status", "==", "COMPLETED")),
-            snap => setNotifications(prev => ({ ...prev, dialuxCompleted: snap.size })))
+
+        const unsubDialux = onSnapshot(collection(db, "dialux_requests"), snap => {
+            const pending = snap.docs.filter(d => d.data().status === "PENDING").length
+            const completed = snap.docs.filter(d => d.data().status === "COMPLETED").length
+            const unread = calculateUnread(snap)
+            setNotifications(prev => ({ 
+                ...prev, 
+                dialuxRequest: pending, 
+                dialuxCompleted: completed,
+                unreadByService: { ...prev.unreadByService, dialux: unread }
+            }))
+        })
+
         const unsubTesting = onSnapshot(collection(db, "testing_tracker"), snap => {
             let active = 0; let overdue = 0
             const today = new Date()
-            snap.docs.forEach(doc => {
-                const d = doc.data()
-                if (!d.releaseDate) {
-                    const target = d.targetDate?.toDate()
-                    if (target && isAfter(today, target)) overdue++
-                    else if (d.arrivalDate) active++
-                }
-            })
-            setNotifications(prev => ({ ...prev, testingActive: active, testingOverdue: overdue }))
-        })
+            const myItems: any[] = []
 
-        const unsubProduct = onSnapshot(collection(db, "testing_tracker"), snap => {
-            let active = 0; let overdue = 0
-            const today = new Date()
             snap.docs.forEach(doc => {
                 const d = doc.data()
                 if (!d.releaseDate) {
@@ -300,8 +353,12 @@ export default function EngiconnectDashboard() {
                     if (target && isAfter(today, target)) overdue++
                     else if (d.arrivalDate) active++
                 }
+                if (d.assignedTo === userId && d.status !== "RELEASED") {
+                    myItems.push({ id: doc.id, ...d })
+                }
             })
             setNotifications(prev => ({ ...prev, testingActive: active, testingOverdue: overdue }))
+            setMyTasks(prev => ({ ...prev, testingItems: myItems }))
         })
 
         const calculateUnread = (snap: any) => {
@@ -319,15 +376,8 @@ export default function EngiconnectDashboard() {
             return total
         }
 
-        const unsubMsgShop = onSnapshot(collection(db, "shop_drawing_requests"), snap => setNotifications(prev => ({ ...prev, unreadByService: { ...prev.unreadByService, shopDrawing: calculateUnread(snap) } })))
-        const unsubMsgDialux = onSnapshot(collection(db, "dialux_requests"), snap => setNotifications(prev => ({ ...prev, unreadByService: { ...prev.unreadByService, dialux: calculateUnread(snap) } })))
-        const unsubMsgJob = onSnapshot(collection(db, "job_requests"), snap => setNotifications(prev => ({ ...prev, unreadByService: { ...prev.unreadByService, jobRequest: calculateUnread(snap) } })))
-        const unsubMsgSite = onSnapshot(collection(db, "appointments"), snap => setNotifications(prev => ({ ...prev, unreadByService: { ...prev.unreadByService, siteVisit: calculateUnread(snap) } })))
-
         return () => {
-            unsubSite(); unsubShop(); unsubTesting(); unsubJob(); unsubOther()
-            unsubDialuxPending(); unsubDialuxDone()
-            unsubMsgShop(); unsubMsgDialux(); unsubMsgJob(); unsubMsgSite()
+            unsubSite(); unsubShop(); unsubTesting(); unsubJob(); unsubOther(); unsubDialux()
         }
     }, [userId])
 
@@ -359,11 +409,98 @@ export default function EngiconnectDashboard() {
         return () => { unsubDialux(); unsubJob(); unsubShop() }
     }, [])
 
+    /* ── SCHEDULE & TASKS ── */
+    useEffect(() => {
+        if (!db) return
+        
+        const qApps = query(collection(db, "appointments"), orderBy("appointmentDate", "asc"))
+        const qTesting = query(collection(db, "testing_tracker"), orderBy("targetDate", "asc"))
+
+        const unsubApps = onSnapshot(qApps, snap => {
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+            
+            const tomorrow = new Date(today)
+            tomorrow.setDate(tomorrow.getDate() + 1)
+
+            const apps = snap.docs.map(doc => {
+                const data = doc.data()
+                return { id: doc.id, type: "Site Visit", date: data.appointmentDate?.toDate(), title: data.client || "Untitled Visit", ...data }
+            }).filter(a => a.date)
+
+            setScheduleData(prev => {
+                const combined = [...apps, ...prev.upcoming.filter(i => i.type === "Testing")].sort((a, b) => a.date.getTime() - b.date.getTime())
+                const todayItems = combined.filter(i => i.date >= today && i.date < tomorrow)
+                const upcomingItems = combined.filter(i => i.date >= tomorrow)
+                const nextItem = combined.find(i => i.date >= new Date()) || null
+                
+                return { today: todayItems, upcoming: upcomingItems, next: nextItem }
+            })
+        })
+
+        const unsubTesting = onSnapshot(qTesting, snap => {
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+            
+            const tomorrow = new Date(today)
+            tomorrow.setDate(tomorrow.getDate() + 1)
+
+            const items = snap.docs.map(doc => {
+                const data = doc.data()
+                return { 
+                    id: doc.id, 
+                    type: "Testing", 
+                    date: data.targetDate?.toDate(), 
+                    title: data.productName || "Untitled Product", 
+                    releaseDate: data.releaseDate,
+                    ...data 
+                }
+            }).filter(a => a.date && !a.releaseDate)
+
+            setScheduleData(prev => {
+                const combined = [...items, ...prev.today.filter(i => i.type === "Site Visit"), ...prev.upcoming.filter(i => i.type === "Site Visit")].sort((a, b) => a.date.getTime() - b.date.getTime())
+                const todayItems = combined.filter(i => i.date >= today && i.date < tomorrow)
+                const upcomingItems = combined.filter(i => i.date >= tomorrow)
+                const nextItem = combined.find(i => i.date >= new Date()) || null
+                
+                return { today: todayItems, upcoming: upcomingItems, next: nextItem }
+            })
+        })
+
+        return () => { unsubApps(); unsubTesting() }
+    }, [])
+
     /* ── DERIVED ── */
     const tabs = useMemo(() => {
-        const base = ["Monitoring", "Projects", "Requests"]
-        return (userRole === "SUPER ADMIN" || userRole === "MANAGER") ? [...base, "Admin"] : base
-    }, [userRole])
+        const dept = (userDept || "").toUpperCase()
+        const role = (userRole || "").toUpperCase()
+        
+        let base = ["Monitoring"]
+        
+        if (dept === "ENGINEERING") base = ["Monitoring", "My Tasks", "Schedule"]
+        else if (dept === "SALES") base = ["Job Requests", "My Tasks", "Site Visits"]
+        else if (dept === "PROCUREMENT" || dept === "WAREHOUSE OPERATIONS") base = ["Product Requests", "Testing"]
+        else if (dept === "IT") base = ["Monitoring", "System", "Schedule"]
+
+        if (role === "SUPER ADMIN" || role === "MANAGER") {
+            if (!base.includes("Admin")) base.push("Admin")
+        }
+        
+        return base
+    }, [userRole, userDept, perms])
+
+    const quickActions = useMemo(() => {
+        const dept = (userDept || "").toUpperCase()
+        const actions = [
+            { label: "Site Visit", icon: CalendarCheck, path: "/appointments/site-visit/add", color: "bg-blue-50 text-blue-600", depts: ["ENGINEERING", "SALES", "IT"] },
+            { label: "Job Request", icon: FileText, path: "/request/job/add", color: "bg-orange-50 text-orange-600", depts: ["SALES", "ENGINEERING", "IT"] },
+            { label: "DIAlux", icon: Monitor, path: "/request/dialux/add", color: "bg-indigo-50 text-indigo-600", depts: ["SALES", "IT"] },
+            { label: "Product SPF", icon: Package, path: "/request/product/add", color: "bg-emerald-50 text-emerald-600", depts: ["SALES", "PROCUREMENT", "IT"] },
+            { label: "Shop Drawing", icon: StreetLightIcon, path: "/request/shop-drawing/add", color: "bg-violet-50 text-violet-600", depts: ["ENGINEERING", "IT"] },
+            { label: "Testing", icon: ClipboardCheck, path: "/request/testing/add", color: "bg-red-50 text-[#E33636]", depts: ["ENGINEERING", "PROCUREMENT", "IT"] },
+        ]
+        return actions.filter(a => !a.depts || a.depts.includes(dept))
+    }, [userDept])
 
     /* ── SPF PRODUCT (SUPABASE - CORRECT) ── */
     useEffect(() => {
@@ -691,8 +828,40 @@ export default function EngiconnectDashboard() {
                     ══════════════════════ */}
                     <main className="px-4 -mt-8 space-y-6 pb-32 relative z-20 md:mt-0 md:px-6 lg:px-10 md:py-6 max-w-7xl mx-auto animate-in fade-in duration-500">
 
+                        {/* ── UPCOMING NEXT SUMMARY ── */}
+                        {!isDataLoading && scheduleData.next && (
+                            <div className="bg-white rounded-2xl p-4 border border-zinc-200/60 shadow-sm flex items-center justify-between group cursor-pointer hover:shadow-md transition-all active:scale-[0.99]"
+                                onClick={() => {
+                                    const paths: Record<string, string> = {
+                                        "Site Visit": `/appointments/site-visit/${scheduleData.next.id}`,
+                                        "Testing": `/request/testing/${scheduleData.next.id}`,
+                                        "Job Request": `/request/job/${scheduleData.next.id}`
+                                    }
+                                    router.push(paths[scheduleData.next.type] || "#")
+                                }}>
+                                <div className="flex items-center gap-4">
+                                    <div className="size-10 bg-zinc-900 rounded-xl flex items-center justify-center text-white shadow-lg shadow-zinc-200">
+                                        <CalendarCheck size={20} />
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Upcoming Next</p>
+                                        <h3 className="text-sm font-black text-gray-900 uppercase tracking-tight leading-none">{scheduleData.next.title}</h3>
+                                        <p className="text-[9px] text-gray-400 font-bold mt-1 uppercase tracking-wider">
+                                            {format(scheduleData.next.date, "EEEE, MMM dd · HH:mm")}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-lg border border-blue-100 uppercase tracking-widest">
+                                        {scheduleData.next.type}
+                                    </span>
+                                    <ArrowUpRight size={14} className="text-gray-300 group-hover:text-zinc-900 transition-colors" />
+                                </div>
+                            </div>
+                        )}
+
                         {/* ── CRITICAL ALERT ── */}
-                        {!isDataLoading && notifications.testingOverdue > 0 && (
+                        {!isDataLoading && perms?.dashboard?.showAlertBanner !== false && notifications.testingOverdue > 0 && (
                             <div
                                 className="flex items-center justify-between gap-3 bg-[#E33636] text-white px-4 py-3 rounded-2xl shadow-lg cursor-pointer active:scale-[0.99] transition-all"
                                 onClick={() => router.push("/request/testing")}
@@ -775,89 +944,98 @@ export default function EngiconnectDashboard() {
                         </section>
 
                         {/* ── STATS ROW ── */}
-                        <section className="grid grid-cols-3 gap-3">
-                            <StatCard label="Pending" value={isDataLoading ? "--" : totalNotifications} icon={Layers} color={totalNotifications > 0 ? "text-[#E33636]" : "text-gray-400"} loading={isDataLoading} onClick={totalNotifications > 0 ? () => setShowNotifDropdown(true) : undefined} />
-                            <StatCard label="Messages" value={isDataLoading ? "--" : notifications.unreadMessages} icon={MessageSquare} color={notifications.unreadMessages > 0 ? "text-blue-600" : "text-gray-400"} loading={isDataLoading} onClick={() => router.push("/messages")} />
-                            <StatCard label="Success" value={isDataLoading ? "--" : notifications.dialuxCompleted} icon={CheckCircle2} color="text-emerald-600" loading={isDataLoading} />
-                        </section>
+                        {perms?.dashboard?.showStats !== false && (
+                            <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                                <StatCard label="Pending" value={isDataLoading ? "--" : totalNotifications} icon={Layers} color={totalNotifications > 0 ? "text-[#E33636]" : "text-gray-400"} loading={isDataLoading} onClick={totalNotifications > 0 ? () => setShowNotifDropdown(true) : undefined} />
+                                <StatCard label="Messages" value={isDataLoading ? "--" : notifications.unreadMessages} icon={MessageSquare} color={notifications.unreadMessages > 0 ? "text-blue-600" : "text-gray-400"} loading={isDataLoading} onClick={() => router.push("/messages")} />
+                                <StatCard label="Next Task" value={isDataLoading ? "--" : (scheduleData.next ? format(scheduleData.next.date, "HH:mm") : "None")} icon={Clock} color="text-violet-600" loading={isDataLoading} />
+                                <StatCard label="Success" value={isDataLoading ? "--" : notifications.dialuxCompleted} icon={CheckCircle2} color="text-emerald-600" loading={isDataLoading} />
+                            </section>
+                        )}
 
                         {/* ── BOTTOM: Activity + Overview (desktop side by side) ── */}
                         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
 
                             {/* Recent Activity */}
-                            <section className="lg:col-span-3 space-y-3">
-                                <div className="flex items-center justify-between">
-                                    <h2 className="text-lg font-bold text-gray-900 tracking-tight">Recent Activity</h2>
-                                    <button onClick={() => router.push("/notifications")} className="text-[10px] font-bold text-[#E33636] uppercase tracking-wider flex items-center gap-1 hover:gap-1.5 transition-all">
-                                        View All <ArrowUpRight size={12} />
-                                    </button>
-                                </div>
-                                <div className="space-y-2.5">
-                                    {isDataLoading ? (
-                                        [...Array(3)].map((_, i) => <ActivitySkeleton key={i} />)
-                                    ) : recentActivity.length > 0 ? (
-                                        recentActivity.map(item => {
-                                            const cfg = activityTypeConfig[item.type] || activityTypeConfig.DIAlux
-                                            const Icon = cfg.icon
-                                            const paths: Record<string, string> = {
-                                                DIAlux: `/request/dialux/${item.id}`,
-                                                Job: `/request/job/${item.id}`,
-                                                Shop: `/request/shop-drawing/${item.id}`,
-                                            }
-                                            return (
-                                                <div
-                                                    key={item.id}
-                                                    className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between group active:scale-[0.98] transition-all cursor-pointer hover:shadow-md hover:border-gray-200"
-                                                    onClick={() => router.push(paths[item.type] || "#")}
-                                                >
-                                                    <div className="flex items-center gap-3 min-w-0">
-                                                        <div className={cn("size-10 rounded-xl flex items-center justify-center flex-shrink-0", cfg.bg, cfg.text)}>
-                                                            <Icon size={17} />
-                                                        </div>
-                                                        <div className="min-w-0">
-                                                            <div className="flex items-center gap-2 mb-0.5">
-                                                                <span className="text-[8px] font-black px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded uppercase tracking-widest flex-shrink-0">{item.type}</span>
-                                                                <p className="text-xs font-bold text-gray-900 truncate">{item.projectTitle || item.requestTitle || "New Activity"}</p>
+                            {perms?.dashboard?.showRecentActivity !== false && (
+                                <section className="lg:col-span-3 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <h2 className="text-lg font-bold text-gray-900 tracking-tight">Recent Activity</h2>
+                                        <button onClick={() => router.push("/notifications")} className="text-[10px] font-bold text-[#E33636] uppercase tracking-wider flex items-center gap-1 hover:gap-1.5 transition-all">
+                                            View All <ArrowUpRight size={12} />
+                                        </button>
+                                    </div>
+                                    <div className="space-y-2.5">
+                                        {isDataLoading ? (
+                                            [...Array(3)].map((_, i) => <ActivitySkeleton key={i} />)
+                                        ) : recentActivity.length > 0 ? (
+                                            recentActivity.map(item => {
+                                                const cfg = activityTypeConfig[item.type] || activityTypeConfig.DIAlux
+                                                const Icon = cfg.icon
+                                                const paths: Record<string, string> = {
+                                                    DIAlux: `/request/dialux/${item.id}`,
+                                                    Job: `/request/job/${item.id}`,
+                                                    Shop: `/request/shop-drawing/${item.id}`,
+                                                }
+                                                return (
+                                                    <div
+                                                        key={item.id}
+                                                        className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between group active:scale-[0.98] transition-all cursor-pointer hover:shadow-md hover:border-gray-200"
+                                                        onClick={() => router.push(paths[item.type] || "#")}
+                                                    >
+                                                        <div className="flex items-center gap-3 min-w-0">
+                                                            <div className={cn("size-10 rounded-xl flex items-center justify-center flex-shrink-0", cfg.bg, cfg.text)}>
+                                                                <Icon size={17} />
                                                             </div>
-                                                            <p className="text-[10px] font-medium text-gray-400">
-                                                                {item.company || "General"}
-                                                                {item.createdAt && <span className="text-gray-300 ml-1">· {relativeTime(item.createdAt.toDate())}</span>}
-                                                            </p>
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-2 mb-0.5">
+                                                                    <span className="text-[8px] font-black px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded uppercase tracking-widest flex-shrink-0">{item.type}</span>
+                                                                    <p className="text-xs font-bold text-gray-900 truncate">{item.projectTitle || item.requestTitle || "New Activity"}</p>
+                                                                </div>
+                                                                <p className="text-[10px] font-medium text-gray-400">
+                                                                    {item.company || "General"}
+                                                                    {item.createdAt && <span className="text-gray-300 ml-1">· {relativeTime(item.createdAt.toDate())}</span>}
+                                                                </p>
+                                                            </div>
                                                         </div>
+                                                        <ChevronRight size={13} className="text-gray-300 group-hover:translate-x-0.5 transition-transform flex-shrink-0 ml-2" />
                                                     </div>
-                                                    <ChevronRight size={13} className="text-gray-300 group-hover:translate-x-0.5 transition-transform flex-shrink-0 ml-2" />
-                                                </div>
-                                            )
-                                        })
-                                    ) : (
-                                        <div className="py-10 flex flex-col items-center justify-center bg-white/60 rounded-2xl border border-dashed border-gray-200">
-                                            <Activity size={22} className="text-gray-200 mb-2" />
-                                            <p className="text-[10px] font-bold text-gray-400 uppercase">System Idle</p>
-                                        </div>
-                                    )}
-                                </div>
-                            </section>
+                                                )
+                                            })
+                                        ) : (
+                                            <div className="py-10 flex flex-col items-center justify-center bg-white/60 rounded-2xl border border-dashed border-gray-200">
+                                                <Activity size={22} className="text-gray-200 mb-2" />
+                                                <p className="text-[10px] font-bold text-gray-400 uppercase">System Idle</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </section>
+                            )}
 
                             {/* Overview */}
-                            <section className="lg:col-span-2 space-y-3">
-                                <h2 className="text-lg font-bold text-gray-900 tracking-tight">Overview</h2>
-                                {/* Tabs */}
-                                <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-                                    {tabs.map(tab => (
-                                        <button
-                                            key={tab}
-                                            onClick={() => setActiveTab(tab)}
-                                            className={cn(
-                                                "px-5 py-1.5 rounded-full text-[10px] font-bold transition-all border whitespace-nowrap",
-                                                activeTab === tab
-                                                    ? "bg-[#E33636] text-white border-[#E33636] shadow-md"
-                                                    : "bg-white text-gray-400 border-gray-100 hover:border-gray-200"
-                                            )}
-                                        >
-                                            {tab}
-                                        </button>
-                                    ))}
-                                </div>
+                            <section className={cn("space-y-3", perms?.dashboard?.showRecentActivity === false ? "lg:col-span-5" : "lg:col-span-2")}>
+                                {perms?.dashboard?.showOverviewTabs !== false && (
+                                    <>
+                                        <h2 className="text-lg font-bold text-gray-900 tracking-tight">Overview</h2>
+                                        {/* Tabs */}
+                                        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                                            {tabs.map(tab => (
+                                                <button
+                                                    key={tab}
+                                                    onClick={() => setActiveTab(tab)}
+                                                    className={cn(
+                                                        "px-5 py-1.5 rounded-full text-[10px] font-bold transition-all border whitespace-nowrap",
+                                                        activeTab === tab
+                                                            ? "bg-[#E33636] text-white border-[#E33636] shadow-md"
+                                                            : "bg-white text-gray-400 border-gray-100 hover:border-gray-200"
+                                                    )}
+                                                >
+                                                    {tab}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
                                 {/* Tab content */}
                                 {activeTab === "Monitoring" ? (
                                     <div className="grid grid-cols-2 gap-3">
@@ -865,6 +1043,138 @@ export default function EngiconnectDashboard() {
                                         <ActivityCard label="Critical" value={notifications.testingOverdue} icon={AlertTriangle} loading={isDataLoading} isAlert={notifications.testingOverdue > 0} onClick={() => router.push("/request/testing")} />
                                         <ActivityCard label="Site Visits" value={notifications.siteVisit} icon={CalendarCheck} loading={isDataLoading} onClick={() => router.push("/appointments/site-visit")} />
                                         <ActivityCard label="Shop Review" value={notifications.shopDrawing} icon={StreetLightIcon as LucideIcon} loading={isDataLoading} onClick={() => router.push("/request/shop-drawing")} />
+                                    </div>
+                                ) : activeTab === "My Tasks" ? (
+                                    <div className="space-y-2">
+                                        {Object.values(myTasks).every(arr => arr.length === 0) ? (
+                                            <div className="py-10 flex flex-col items-center justify-center bg-white rounded-2xl border border-dashed border-gray-200">
+                                                <ThumbsUp size={20} className="text-gray-200 mb-2" />
+                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">All tasks completed!</p>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                {myTasks.siteVisits.map(task => (
+                                                    <div key={task.id} className="bg-white p-3 rounded-2xl border border-gray-100 flex items-center justify-between group hover:shadow-sm transition-all cursor-pointer" onClick={() => router.push(`/appointments/site-visit/${task.id}`)}>
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="size-8 rounded-xl flex items-center justify-center bg-blue-50 text-blue-600">
+                                                                <CalendarCheck size={14} />
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-[11px] font-black text-gray-900 uppercase truncate max-w-[120px]">{task.client || "Site Visit"}</p>
+                                                                <p className="text-[9px] text-gray-400 font-bold">
+                                                                    {task.appointmentDate ? format(task.appointmentDate.toDate(), "MMM dd") : "No date"} · Site Visit
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <ChevronRight size={12} className="text-gray-300 group-hover:translate-x-0.5 transition-transform" />
+                                                    </div>
+                                                ))}
+                                                {myTasks.jobRequests.map(task => (
+                                                    <div key={task.id} className="bg-white p-3 rounded-2xl border border-gray-100 flex items-center justify-between group hover:shadow-sm transition-all cursor-pointer" onClick={() => router.push(`/request/job/${task.id}`)}>
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="size-8 rounded-xl flex items-center justify-center bg-orange-50 text-orange-600">
+                                                                <FileText size={14} />
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-[11px] font-black text-gray-900 uppercase truncate max-w-[120px]">{task.projectName || "Job Request"}</p>
+                                                                <p className="text-[9px] text-gray-400 font-bold">
+                                                                    {task.createdAt ? format(task.createdAt.toDate(), "MMM dd") : "No date"} · Job Request
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <ChevronRight size={12} className="text-gray-300 group-hover:translate-x-0.5 transition-transform" />
+                                                    </div>
+                                                ))}
+                                                {myTasks.testingItems.map(task => (
+                                                    <div key={task.id} className="bg-white p-3 rounded-2xl border border-gray-100 flex items-center justify-between group hover:shadow-sm transition-all cursor-pointer" onClick={() => router.push(`/request/testing/${task.id}`)}>
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="size-8 rounded-xl flex items-center justify-center bg-violet-50 text-violet-600">
+                                                                <ClipboardCheck size={14} />
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-[11px] font-black text-gray-900 uppercase truncate max-w-[120px]">{task.productName || "Testing"}</p>
+                                                                <p className="text-[9px] text-gray-400 font-bold">
+                                                                    {task.targetDate ? format(task.targetDate.toDate(), "MMM dd") : "No date"} · Testing
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <ChevronRight size={12} className="text-gray-300 group-hover:translate-x-0.5 transition-transform" />
+                                                    </div>
+                                                ))}
+                                            </>
+                                        )}
+                                    </div>
+                                ) : activeTab === "Schedule" ? (
+                                    <div className="space-y-4">
+                                        {/* TODAY */}
+                                        <div className="space-y-2">
+                                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] px-1">Today</p>
+                                            {scheduleData.today.length > 0 ? (
+                                                scheduleData.today.map(item => (
+                                                    <div key={item.id} className="bg-white p-3 rounded-2xl border border-gray-100 flex items-center justify-between group hover:shadow-sm transition-all">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className={cn("size-8 rounded-xl flex items-center justify-center", item.type === "Site Visit" ? "bg-blue-50 text-blue-600" : "bg-violet-50 text-violet-600")}>
+                                                                {item.type === "Site Visit" ? <CalendarCheck size={14} /> : <ClipboardCheck size={14} />}
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-[11px] font-black text-gray-900 uppercase truncate max-w-[120px]">{item.title}</p>
+                                                                <p className="text-[9px] text-gray-400 font-bold">{format(item.date, "HH:mm")} · {item.type}</p>
+                                                            </div>
+                                                        </div>
+                                                        <ChevronRight size={12} className="text-gray-300 group-hover:translate-x-0.5 transition-transform" />
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <div className="p-4 bg-gray-50/50 rounded-2xl border border-dashed border-gray-100 text-center">
+                                                    <p className="text-[9px] font-black text-gray-300 uppercase">No items today</p>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* UPCOMING */}
+                                        <div className="space-y-2">
+                                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] px-1">Upcoming</p>
+                                            {scheduleData.upcoming.length > 0 ? (
+                                                scheduleData.upcoming.slice(0, 3).map(item => (
+                                                    <div key={item.id} className="bg-white p-3 rounded-2xl border border-gray-100 flex items-center justify-between group hover:shadow-sm transition-all">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className={cn("size-8 rounded-xl flex items-center justify-center", item.type === "Site Visit" ? "bg-blue-50 text-blue-600" : "bg-violet-50 text-violet-600")}>
+                                                                {item.type === "Site Visit" ? <CalendarCheck size={14} /> : <ClipboardCheck size={14} />}
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-[11px] font-black text-gray-900 uppercase truncate max-w-[120px]">{item.title}</p>
+                                                                <p className="text-[9px] text-gray-400 font-bold">{format(item.date, "MMM dd")} · {item.type}</p>
+                                                            </div>
+                                                        </div>
+                                                        <ChevronRight size={12} className="text-gray-300 group-hover:translate-x-0.5 transition-transform" />
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <div className="p-4 bg-gray-50/50 rounded-2xl border border-dashed border-gray-100 text-center">
+                                                    <p className="text-[9px] font-black text-gray-300 uppercase">No upcoming items</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ) : activeTab === "Job Requests" ? (
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <ActivityCard label="Pending" value={notifications.jobRequest} icon={FileText} loading={isDataLoading} onClick={() => router.push("/request/job")} />
+                                        <ActivityCard label="Messages" value={notifications.unreadByService.jobRequest} icon={MessageSquare} loading={isDataLoading} onClick={() => router.push("/request/job")} />
+                                    </div>
+                                ) : activeTab === "Site Visits" ? (
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <ActivityCard label="Pending" value={notifications.siteVisit} icon={CalendarCheck} loading={isDataLoading} onClick={() => router.push("/appointments/site-visit")} />
+                                        <ActivityCard label="Today" value={scheduleData.today.filter(i => i.type === "Site Visit").length} icon={Clock} loading={isDataLoading} onClick={() => router.push("/appointments/site-visit")} />
+                                    </div>
+                                ) : activeTab === "Product Requests" ? (
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <ActivityCard label="Pending" value={notifications.productRequest} icon={Package} loading={isDataLoading} onClick={() => router.push("/request/product")} />
+                                        <ActivityCard label="Messages" value={notifications.unreadByService.product || 0} icon={MessageSquare} loading={isDataLoading} onClick={() => router.push("/request/product")} />
+                                    </div>
+                                ) : activeTab === "Testing" ? (
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <ActivityCard label="Active" value={notifications.testingActive} icon={ClipboardCheck} loading={isDataLoading} onClick={() => router.push("/request/testing")} />
+                                        <ActivityCard label="Critical" value={notifications.testingOverdue} icon={AlertTriangle} loading={isDataLoading} isAlert={notifications.testingOverdue > 0} onClick={() => router.push("/request/testing")} />
                                     </div>
                                 ) : (
                                     <div className="py-12 flex flex-col items-center justify-center bg-white rounded-2xl border border-dashed border-gray-200">
@@ -896,6 +1206,64 @@ export default function EngiconnectDashboard() {
                                     </div>
                                 )}
                             </section>
+
+                            {/* My Tasks Section */}
+                            {perms?.dashboard?.showMyTasks !== false && (
+                                <div className="space-y-3 mt-6">
+                                    <h2 className="text-lg font-bold text-gray-900 tracking-tight">My Tasks</h2>
+                                    {(myTasks.siteVisits.length > 0 || myTasks.jobRequests.length > 0 || myTasks.testingItems.length > 0) ? (
+                                        <div className="space-y-2">
+                                            {myTasks.siteVisits.map(task => (
+                                                <div key={task.id} className="bg-white p-3 rounded-2xl border border-gray-100 flex items-center justify-between group hover:shadow-sm transition-all">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="size-8 rounded-xl flex items-center justify-center bg-blue-50 text-blue-600">
+                                                            <CalendarCheck size={14} />
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-[11px] font-black text-gray-900 uppercase truncate max-w-[120px]">{task.client || "Site Visit"}</p>
+                                                            <p className="text-[9px] text-gray-400 font-bold">{format(task.appointmentDate.toDate(), "MMM dd, HH:mm")} · Site Visit</p>
+                                                        </div>
+                                                    </div>
+                                                    <ChevronRight size={12} className="text-gray-300 group-hover:translate-x-0.5 transition-transform" />
+                                                </div>
+                                            ))}
+                                            {myTasks.jobRequests.map(task => (
+                                                <div key={task.id} className="bg-white p-3 rounded-2xl border border-gray-100 flex items-center justify-between group hover:shadow-sm transition-all">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="size-8 rounded-xl flex items-center justify-center bg-orange-50 text-orange-600">
+                                                            <FileText size={14} />
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-[11px] font-black text-gray-900 uppercase truncate max-w-[120px]">{task.projectName || "Job Request"}</p>
+                                                            <p className="text-[9px] text-gray-400 font-bold">{format(task.createdAt.toDate(), "MMM dd, HH:mm")} · Job Request</p>
+                                                        </div>
+                                                    </div>
+                                                    <ChevronRight size={12} className="text-gray-300 group-hover:translate-x-0.5 transition-transform" />
+                                                </div>
+                                            ))}
+                                            {myTasks.testingItems.map(task => (
+                                                <div key={task.id} className="bg-white p-3 rounded-2xl border border-gray-100 flex items-center justify-between group hover:shadow-sm transition-all">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="size-8 rounded-xl flex items-center justify-center bg-violet-50 text-violet-600">
+                                                            <ClipboardCheck size={14} />
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-[11px] font-black text-gray-900 uppercase truncate max-w-[120px]">{task.productName || "Testing Item"}</p>
+                                                            <p className="text-[9px] text-gray-400 font-bold">{format(task.targetDate.toDate(), "MMM dd, HH:mm")} · Testing</p>
+                                                        </div>
+                                                    </div>
+                                                    <ChevronRight size={12} className="text-gray-300 group-hover:translate-x-0.5 transition-transform" />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="py-10 flex flex-col items-center justify-center bg-white/60 rounded-2xl border border-dashed border-gray-200">
+                                            <Activity size={22} className="text-gray-200 mb-2" />
+                                            <p className="text-[10px] font-bold text-gray-400 uppercase">No tasks assigned</p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </main>
 

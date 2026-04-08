@@ -23,7 +23,7 @@ import {
     Building2, Layers, Activity, Bell, Search, X, Sparkles,
     HelpCircle, Lightbulb, Zap, CheckSquare, Square, Info,
     Key, ShieldAlert, FileDown, ArrowRight, MousePointer2,
-    RotateCcw
+    RotateCcw, ListTodo
 } from "lucide-react"
 
 import {
@@ -79,7 +79,9 @@ type PermissionDoc = {
         showStats:          boolean
         showRecentActivity: boolean
         showOverviewTabs:   boolean
+        showSchedule:       boolean
         showAlertBanner:    boolean
+        showMyTasks:        boolean
     }
 }
 
@@ -102,7 +104,8 @@ const DEFAULT_PERMISSIONS: PermissionDoc = {
     },
     dashboard: {
         showStats: true, showRecentActivity: true,
-        showOverviewTabs: true, showAlertBanner: true,
+        showOverviewTabs: true, showSchedule: true, showAlertBanner: true,
+        showMyTasks: true,
     },
 }
 
@@ -192,7 +195,9 @@ const SECTIONS = [
             { key: "showStats",          label: "Summary Stats Cards",   icon: BarChart3 },
             { key: "showRecentActivity", label: "Recent Activity Feed",  icon: Bell },
             { key: "showOverviewTabs",   label: "Overview Tabs",         icon: Layers },
+            { key: "showSchedule",       label: "Task Schedule View",    icon: CalendarCheck },
             { key: "showAlertBanner",    label: "Critical Alert Banner", icon: Activity },
+            { key: "showMyTasks",        label: "My Tasks Section",      icon: ListTodo },
         ],
     },
 ]
