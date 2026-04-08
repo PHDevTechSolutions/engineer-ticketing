@@ -27,6 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/utils/supabase";
 import { FloatingActionButton } from "@/components/floating-action-button";
 import { DashboardGuide } from "@/components/dashboard-guide";
+import { EnhancedNotifications } from "@/components/enhanced-notifications";
 
 /* ─────────────────────────────────────────────
    CUSTOM ICON
@@ -695,35 +696,12 @@ export default function EngiconnectDashboard() {
                                 </button>
 
                                 {showNotifDropdown && (
-                                    <div className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-2xl shadow-gray-200/80 border border-gray-100 py-3 z-[60] animate-in fade-in slide-in-from-top-2 duration-150">
-                                        <div className="px-4 pb-3 border-b border-gray-50 flex justify-between items-center">
-                                            <h3 className="font-black text-gray-900 text-[13px]">Notifications</h3>
-                                            <span className="text-[9px] bg-[#E33636] text-white px-2.5 py-1 rounded-full font-black">
-                                                {totalNotifications} Pending
-                                            </span>
-                                        </div>
-                                        <div className="max-h-[320px] overflow-y-auto py-1">
-                                            {totalNotifications === 0 ? (
-                                                <div className="py-8 text-center">
-                                                    <CheckCircle2 size={22} className="text-emerald-400 mx-auto mb-2" />
-                                                    <p className="text-[10px] text-gray-400 font-bold uppercase">All Clear</p>
-                                                </div>
-                                            ) : (
-                                                <>
-                                                    {notifications.testingOverdue > 0 && <NotifItem label="Testing Critical" count={notifications.testingOverdue} icon={AlertTriangle} path="/request/testing" color="text-red-600" onClick={() => setShowNotifDropdown(false)} />}
-                                                    {notifications.siteVisit > 0 && <NotifItem label="Site Visits" count={notifications.siteVisit} icon={CalendarCheck} path="/appointments/site-visit" onClick={() => setShowNotifDropdown(false)} />}
-                                                    {notifications.jobRequest > 0 && <NotifItem label="Job Requests" count={notifications.jobRequest} icon={FileText} path="/request/job" onClick={() => setShowNotifDropdown(false)} />}
-                                                    {notifications.shopDrawing > 0 && <NotifItem label="Shop Drawings" count={notifications.shopDrawing} icon={StreetLightIcon as LucideIcon} path="/request/shop-drawing" onClick={() => setShowNotifDropdown(false)} />}
-                                                    {notifications.dialuxRequest > 0 && <NotifItem label="DIAlux Queue" count={notifications.dialuxRequest} icon={Monitor} path="/request/dialux" onClick={() => setShowNotifDropdown(false)} />}
-                                                    {notifications.productRequest > 0 && <NotifItem label="SPF Products" count={notifications.productRequest} icon={Package} path="/request/product" onClick={() => setShowNotifDropdown(false)} />}
-                                                </>
-                                            )}
-                                        </div>
-                                        <div className="px-4 pt-2 border-t border-gray-50">
-                                            <button onClick={() => { router.push("/notifications"); setShowNotifDropdown(false) }} className="w-full text-[9px] font-black text-[#E33636] uppercase tracking-widest py-1 text-center hover:underline">
-                                                View All →
-                                            </button>
-                                        </div>
+                                    <div className="absolute right-0 mt-2 z-[60]">
+                                        <EnhancedNotifications 
+                                            notifications={notifications}
+                                            userId={userId}
+                                            onClose={() => setShowNotifDropdown(false)}
+                                        />
                                     </div>
                                 )}
                             </div>
@@ -778,25 +756,11 @@ export default function EngiconnectDashboard() {
                                         </button>
                                         {/* Mobile notif dropdown */}
                                         {showNotifDropdown && (
-                                            <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-gray-100 py-3 z-[60] animate-in fade-in duration-150">
-                                                <div className="px-4 pb-2 border-b border-gray-50 flex justify-between items-center">
-                                                    <h3 className="font-black text-gray-900 text-[12px]">Notifications</h3>
-                                                    <span className="text-[9px] bg-[#E33636] text-white px-2 py-0.5 rounded-full font-black">{totalNotifications}</span>
-                                                </div>
-                                                <div className="max-h-[240px] overflow-y-auto py-1">
-                                                    {totalNotifications === 0 ? (
-                                                        <div className="py-6 text-center"><p className="text-[10px] text-gray-400 font-bold">All clear!</p></div>
-                                                    ) : (
-                                                        <>
-                                                            {notifications.testingOverdue > 0 && <NotifItem label="Testing Critical" count={notifications.testingOverdue} icon={AlertTriangle} path="/request/testing" color="text-red-600" onClick={() => setShowNotifDropdown(false)} />}
-                                                            {notifications.siteVisit > 0 && <NotifItem label="Site Visits" count={notifications.siteVisit} icon={CalendarCheck} path="/appointments/site-visit" onClick={() => setShowNotifDropdown(false)} />}
-                                                            {notifications.jobRequest > 0 && <NotifItem label="Job Requests" count={notifications.jobRequest} icon={FileText} path="/request/job" onClick={() => setShowNotifDropdown(false)} />}
-                                                            {notifications.shopDrawing > 0 && <NotifItem label="Shop Drawings" count={notifications.shopDrawing} icon={StreetLightIcon as LucideIcon} path="/request/shop-drawing" onClick={() => setShowNotifDropdown(false)} />}
-                                                            {notifications.productRequest > 0 && <NotifItem label="SPF Products" count={notifications.productRequest} icon={Package} path="/request/product" onClick={() => setShowNotifDropdown(false)} />}
-                                                        </>
-                                                    )}
-                                                </div>
-                                            </div>
+                                            <EnhancedNotifications 
+                                                notifications={notifications}
+                                                userId={userId}
+                                                onClose={() => setShowNotifDropdown(false)}
+                                            />
                                         )}
                                     </div>
                                     <SidebarTrigger className="p-2.5 bg-white text-[#E33636] rounded-full shadow-lg" />

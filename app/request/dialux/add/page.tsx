@@ -15,6 +15,7 @@ import {
 import { PageHeader } from "@/components/page-header";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { sendPushNotification, NotificationTemplates } from "@/lib/notification-service";
 
 // Database
 import { db } from "@/lib/firebase";
@@ -180,6 +181,16 @@ export default function DialuxRequestWizard() {
       });
 
       toast.success("Request submitted successfully!", { id: toastId });
+
+      // Send push notification
+      const userName = localStorage.getItem("userName") || "A client";
+      const notifResult = await sendPushNotification(
+        NotificationTemplates.dialux.created(userName, formData.projectName)
+      );
+      if (notifResult.success && notifResult.successCount! > 0) {
+        console.log(`Push sent to ${notifResult.successCount} devices`);
+      }
+
       router.push("/request/dialux");
     } catch (e: any) {
       console.error("Submission Error:", e);

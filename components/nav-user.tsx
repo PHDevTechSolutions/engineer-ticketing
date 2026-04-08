@@ -186,9 +186,13 @@ export function NavUser({ user }: NavUserProps) {
                   <ChevronRight className="size-3 text-zinc-300 group-hover:translate-x-0.5 transition-transform" />
                 </DropdownMenuItem>
 
-                <DropdownMenuItem className="rounded-xl py-2.5 px-3 cursor-pointer hover:bg-zinc-50 focus:bg-zinc-50 group">
+                <DropdownMenuItem
+                  onSelect={() => router.push("/settings/notifications")}
+                  className="rounded-xl py-2.5 px-3 cursor-pointer hover:bg-zinc-50 focus:bg-zinc-50 group"
+                >
                   <Bell className="mr-2.5 h-4 w-4 text-zinc-400 group-hover:text-zinc-700" />
                   <span className="text-[11px] font-bold text-zinc-700 flex-1">Notifications</span>
+                  <ChevronRight className="size-3 text-zinc-300 group-hover:translate-x-0.5 transition-transform" />
                 </DropdownMenuItem>
               </DropdownMenuGroup>
 

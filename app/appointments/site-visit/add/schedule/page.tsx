@@ -18,6 +18,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage"
 
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { sendPushNotification, NotificationTemplates } from "@/lib/notification-service"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { PageHeader } from "@/components/page-header"
@@ -235,6 +236,15 @@ export default function SchedulePage() {
       });
 
       toast.success("DEPLOYMENT INITIALIZED", { id: toastId });
+
+      // Send push notification
+      const notifResult = await sendPushNotification(
+        NotificationTemplates.siteVisit.created(formData.client, selectedDate ? selectedDate.toString() : "scheduled date")
+      );
+      if (notifResult.success && notifResult.successCount! > 0) {
+        console.log(`Push sent to ${notifResult.successCount} devices`);
+      }
+
       setTimeout(() => router.push("/appointments/site-visit"), 1500); 
     } catch (error: any) {
       toast.error("DEPLOYMENT FAILURE", { id: toastId });

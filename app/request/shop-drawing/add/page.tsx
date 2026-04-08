@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { toast } from "sonner";
+import { sendPushNotification, NotificationTemplates } from "@/lib/notification-service";
 
 // ZOOM & EXPORT INTEGRATION
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
@@ -195,28 +196,12 @@ export default function CompleteShopDrawingProtocol() {
       // 1. Save to Firestore
       await addDoc(collection(db, "shop_drawing_requests"), payload);
 
-      // 2. Fetch Engineering tokens to notify the team
-      const { getDocs, query, where, collection: coll } = await import("firebase/firestore");
-      const userQuery = query(coll(db, "users"), where("department", "==", "ENGINEERING"));
-      const userSnapshot = await getDocs(userQuery);
-
-      const tokens: string[] = [];
-      userSnapshot.forEach(doc => {
-        const token = doc.data().fcmToken;
-        if (token) tokens.push(token);
-      });
-
-      // 3. Trigger the Push Notification
-      if (tokens.length > 0) {
-        await fetch("/api/send-push", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: "New Shop Drawing!",
-            body: `Project: ${payload.projectName} requires review.`,
-            tokens: tokens
-          })
-        });
+      // 2. Send push notification using new service (to all devices)
+      const notifResult = await sendPushNotification(
+        NotificationTemplates.shopDrawing.created(payload.projectName)
+      );
+      if (notifResult.success && notifResult.successCount! > 0) {
+        console.log(`Push sent to ${notifResult.successCount} devices`);
       }
 
       toast.success("Protocol saved & Team Notified!", { id: toastId });

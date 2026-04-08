@@ -6,10 +6,13 @@ import { db, getMessagingInstance } from "@/lib/firebase";
 import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { getToken, onMessage } from "firebase/messaging";
 import { toast } from "sonner";
-import { X, BellRing, BellOff, CheckCircle2, RefreshCw, Wifi } from "lucide-react";
+import { X, BellRing, BellOff, CheckCircle2, RefreshCw, Wifi, Settings, Volume2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { subscribeUserToPush } from "@/lib/push-subscription";
 import { v4 as uuidv4 } from "uuid";
+import { playNotificationSound, preloadSounds, getSoundConfig } from "@/lib/notification-sounds";
+import { NotificationPopup, NotificationData, useNotificationQueue } from "@/components/notification-popup";
+import { NotificationSettings } from "@/components/notification-settings";
 
 /* ─────────────────────────────────────────────────────────
    DEVICE ID — unified with login-form.tsx
@@ -35,14 +38,15 @@ const BADGE_PAGES = ["/dashboard"];
 const PUBLIC_PAGES = ["/login", "/", "/forgot-password"];
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
-  const audioRef   = useRef<HTMLAudioElement | null>(null);
   const pathname   = usePathname();
+  const { current, addNotification, closeCurrent } = useNotificationQueue();
 
   const [isMounted, setIsMounted]     = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isSyncing, setIsSyncing]     = useState(false);
   const [showPrompt, setShowPrompt]   = useState(false);
   const [userId, setUserId]           = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   /* ── Check current subscription status ── */
   const checkSubscription = useCallback(async () => {
@@ -86,30 +90,29 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     setIsMounted(true);
     checkSubscription();
 
+    // Preload notification sounds
+    preloadSounds();
+
     // Listen for foreground messages
     getMessagingInstance().then(messaging => {
       if (!messaging) return;
       onMessage(messaging, payload => {
-        toast.info(payload.notification?.title || "New Update", {
-          description: payload.notification?.body,
-          icon: <BellRing className="size-4 text-[#E33636]" />,
-          duration: 6000,
-        });
-
-        // Play notification sound for all departments
-        if (audioRef.current) {
-          audioRef.current.currentTime = 0;
-          audioRef.current.play().catch(() => {});
-        }
+        // Show rich popup notification instead of toast
+        const notification: NotificationData = {
+          id: `fcm-${Date.now()}`,
+          title: payload.notification?.title || "New Update",
+          body: payload.notification?.body || "",
+          type: "info",
+          url: payload.data?.url || "/dashboard",
+          timestamp: new Date(),
+        };
+        addNotification(notification);
+        
+        // Play notification sound using configurable settings
+        playNotificationSound();
       });
     });
-
-    // Preload notification sound
-    if (!audioRef.current) {
-      audioRef.current = new Audio("/sounds/ticket-endorsed.mp3");
-      audioRef.current.load();
-    }
-  }, [pathname]);
+  }, [pathname, addNotification]);
 
   /* ── Sync this device to push notifications ── */
   const handleSyncPush = async () => {
@@ -260,8 +263,35 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
               <div className="size-1.5 bg-[#E33636] rounded-full animate-pulse flex-shrink-0" />
             )}
           </button>
+
+          {/* Settings button - only show when subscribed */}
+          {isSubscribed && (
+            <button
+              onClick={() => setShowSettings(true)}
+              className="mt-2 flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-zinc-200 shadow-md hover:shadow-lg transition-all active:scale-95"
+            >
+              <Settings size={14} className="text-zinc-500" />
+              <span className="text-[9px] font-bold text-zinc-600 uppercase tracking-wide">
+                Sound Settings
+              </span>
+            </button>
+          )}
         </div>
       )}
+
+      {/* Rich Notification Popup */}
+      <NotificationPopup
+        notification={current}
+        onClose={closeCurrent}
+        autoClose={true}
+        autoCloseDelay={8000}
+      />
+
+      {/* Notification Settings Modal */}
+      <NotificationSettings
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
 
       {children}
     </>

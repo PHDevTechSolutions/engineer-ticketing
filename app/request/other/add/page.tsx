@@ -7,6 +7,7 @@ import {
   Image as ImageIcon, MessageSquare, Save, Terminal 
 } from "lucide-react";
 import { toast } from "sonner";
+import { sendPushNotification, NotificationTemplates } from "@/lib/notification-service";
 
 // UI Components
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,16 +19,7 @@ import { PageHeader } from "@/components/page-header";
 
 // Database
 import { db } from "@/lib/firebase";
-import { 
-  collection, 
-  addDoc, 
-  serverTimestamp, 
-  getDocs, 
-  doc, 
-  getDoc,
-  query,
-  collectionGroup
-} from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, doc, getDoc } from "firebase/firestore";
 
 export default function AddOtherRequestPage() {
   const router = useRouter();
@@ -129,49 +121,12 @@ export default function AddOtherRequestPage() {
       });
       addLog("Firestore: Document saved");
 
-      // 4. NO-INDEX COLLECTION GROUP SCANNING
-      addLog("FCM: Scanning all devices (Local Filtering)...");
-      const allTokens: string[] = [];
-      
-      try {
-        // We remove the 'where' clause here to avoid the need for a composite index
-        const devicesQuery = query(collectionGroup(db, "devices"));
-        const devicesSnap = await getDocs(devicesQuery);
-        
-        addLog(`FCM: Found ${devicesSnap.docs.length} raw device entries.`);
-
-        devicesSnap.forEach((d) => {
-          const deviceData = d.data();
-          // We filter for 'notificationsEnabled' in code instead of the query
-          if (deviceData.fcmToken && deviceData.notificationsEnabled !== false) {
-            allTokens.push(deviceData.fcmToken);
-          }
-        });
-      } catch (tokenErr: any) {
-        addLog(`FCM Scan Error: ${tokenErr.message}`);
-      }
-
-      const uniqueTokens = [...new Set(allTokens)];
-      addLog(`FCM: Total unique tokens gathered: ${uniqueTokens.length}`);
-
-      // 5. Send Push Notification
-      if (uniqueTokens.length > 0) {
-        addLog("API: Calling broadcast push...");
-        const pushRes = await fetch("/api/send-push", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: `New Request: ${formData.title}`,
-            body: `${userName} just submitted a new entry.`,
-            tokens: uniqueTokens,
-            url: "/request/other",
-          }),
-        });
-        const pushData = await pushRes.json();
-        addLog(`API Response: Success=${pushData.success}`);
-      } else {
-        addLog("API: Skipped push (0 tokens found).");
-      }
+      // 4. Send push notification using new service
+      addLog("FCM: Sending notification via service...");
+      const notifResult = await sendPushNotification(
+        NotificationTemplates.otherRequest.created(formData.title, userName)
+      );
+      addLog(`FCM: ${notifResult.message}`);
 
       toast.success("Request synced successfully.", { id: toastId });
       setTimeout(() => router.push("/request/other"), 2000); 
