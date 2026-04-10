@@ -19,6 +19,7 @@ import {
   Package, MoreHorizontal, ThumbsUp, Wrench,
   Users, ShieldCheck, BarChart3, Settings2, BookOpen, CircleUser,
   Zap, Target, Briefcase, Clock, TrendingUp, Star, Plus, ArrowRight,
+  Activity,
 } from "lucide-react"
 
 /* ─────────────────────────────────────────────────────────
@@ -407,8 +408,13 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
                           show: () => ["SALES", "ENGINEERING", "IT"].includes(d)
                         },
                         { 
-                          icon: CalendarCheck, label: "Schedule", href: appendId("/appointments/site-visit/add"), 
+                          icon: Package, label: "SPF Request", href: appendId("/request/product"), 
                           color: "bg-emerald-50 text-emerald-600 hover:bg-emerald-100",
+                          show: () => ["SALES", "PROCUREMENT", "IT"].includes(d)
+                        },
+                        { 
+                          icon: CalendarCheck, label: "Schedule", href: appendId("/appointments/site-visit/add"), 
+                          color: "bg-amber-50 text-amber-600 hover:bg-amber-100",
                           show: () => ["ENGINEERING", "SALES", "IT"].includes(d)
                         },
                         { 
@@ -417,25 +423,20 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
                           show: () => true
                         },
                         { 
-                          icon: Zap, label: "Priority", href: appendId("/notifications"), 
-                          color: "bg-amber-50 text-amber-600 hover:bg-amber-100",
-                          show: () => ["MANAGER", "LEADER", "SUPER ADMIN"].includes(r)
-                        },
-                        { 
-                          icon: BarChart3, label: "Analytics", href: appendId("/admin/staff"), 
+                          icon: Users, label: "Staff Pulse", href: appendId("/admin/staff"), 
                           color: "bg-indigo-50 text-indigo-600 hover:bg-indigo-100",
                           show: () => ["MANAGER", "SUPER ADMIN"].includes(r)
                         },
                         { 
-                          icon: Clock, label: "Time Log", href: appendId("/admin/logs"), 
-                          color: "bg-cyan-50 text-cyan-600 hover:bg-cyan-100",
-                          show: () => ["MANAGER", "SUPER ADMIN"].includes(r) || d === "IT"
+                          icon: Activity, label: "Analytics", href: appendId("/analytics"), 
+                          color: "bg-rose-50 text-rose-600 hover:bg-rose-100",
+                          show: () => ["MANAGER", "SUPER ADMIN", "LEADER"].includes(r)
                         },
                       ]
                       
                       return actions
                         .filter(a => !a.show || a.show())
-                        .slice(0, 4)
+                        .slice(0, 6)
                         .map((action, i) => (
                           <Link
                             key={i}

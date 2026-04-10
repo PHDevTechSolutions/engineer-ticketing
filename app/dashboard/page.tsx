@@ -17,12 +17,26 @@ import {
     Plus, Activity, CloudSun, CloudRain, Sun, CloudLightning, Cloud, Moon, CloudMoon,
     ArrowUpRight, Clock, CheckCircle2, AlertTriangle, Layers, MessageSquare, ChevronRight,
     LucideProps, LucideIcon, Package, TrendingUp, LayoutDashboard,
+    Wrench, BarChart3, Zap,
+    ChevronLeft,
 } from "lucide-react";
 
 import { db } from "@/lib/firebase";
 import { collection, query, where, onSnapshot, limit, orderBy, doc } from "firebase/firestore";
 import { cn } from "@/lib/utils";
-import { isAfter, format } from "date-fns";
+import { 
+    isAfter, 
+    format, 
+    startOfMonth, 
+    endOfMonth, 
+    startOfWeek, 
+    endOfWeek, 
+    eachDayOfInterval, 
+    isSameMonth, 
+    isSameDay, 
+    addMonths, 
+    subMonths 
+} from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/utils/supabase";
 import { FloatingActionButton } from "@/components/floating-action-button";
@@ -153,6 +167,341 @@ function NotifItem({ label, count, icon: Icon, path, color = "text-gray-900", on
     );
 }
 
+function WorkloadOverview({ notifications }: { notifications: any }) {
+    const services = [
+        { label: "Site Visits", count: notifications.siteVisit, icon: CalendarCheck, color: "text-blue-600", bg: "bg-blue-50" },
+        { label: "Job Requests", count: notifications.jobRequest, icon: FileText, color: "text-orange-600", bg: "bg-orange-50" },
+        { label: "Shop Drawings", count: notifications.shopDrawing, icon: Wrench, color: "text-indigo-600", bg: "bg-indigo-50" },
+        { label: "Testing", count: notifications.testingActive, icon: ClipboardCheck, color: "text-emerald-600", bg: "bg-emerald-50" },
+        { label: "DIAlux", count: notifications.dialuxRequest, icon: Monitor, color: "text-cyan-600", bg: "bg-cyan-50" },
+        { label: "SPF Product", count: notifications.productRequest, icon: Package, color: "text-rose-600", bg: "bg-rose-50" },
+    ]
+
+    return (
+        <section className="bg-white rounded-[32px] p-6 shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-6">
+                <div>
+                    <h3 className="text-[14px] font-black text-gray-900 uppercase tracking-tight">Workload Distribution</h3>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">System-wide Pending Items</p>
+                </div>
+                <div className="size-8 bg-gray-50 rounded-lg flex items-center justify-center text-gray-400">
+                    <BarChart3 size={16} />
+                </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {services.map((s, i) => (
+                    <div key={i} className="flex items-center gap-3 p-3 rounded-2xl border border-gray-50 hover:bg-gray-50 transition-colors group">
+                        <div className={cn("size-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110", s.bg, s.color)}>
+                            <s.icon size={18} />
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-[13px] font-black text-gray-900 leading-none">{s.count}</p>
+                            <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tight mt-1 truncate">{s.label}</p>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </section>
+    )
+}
+
+function ProductivityHub({ userDetails, tasks, schedule, router }: { userDetails: any; tasks: any; schedule: any; router: any }) {
+    const totalTasks = (tasks.siteVisits?.length || 0) + (tasks.jobRequests?.length || 0) + (tasks.testingItems?.length || 0)
+    const nextItem = schedule.next
+    const todayItems = schedule.today || []
+
+    return (
+        <div className="bg-white rounded-[32px] border border-gray-100 p-6 shadow-sm overflow-hidden relative group">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-red-50 rounded-full -mr-16 -mt-16 group-hover:scale-110 transition-transform duration-500 opacity-50" />
+            
+            <div className="relative z-10">
+                <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-3">
+                        <div className="size-10 bg-red-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-red-200">
+                            <Zap size={20} />
+                        </div>
+                        <div>
+                            <h3 className="text-[15px] font-black text-gray-900 uppercase tracking-tight">Productivity Hub</h3>
+                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Your Work Management</p>
+                        </div>
+                    </div>
+                    {todayItems.length > 0 && (
+                        <div className="hidden md:flex items-center gap-2 bg-zinc-900 text-white px-3 py-1.5 rounded-full animate-pulse">
+                            <div className="size-1.5 bg-red-500 rounded-full" />
+                            <span className="text-[9px] font-black uppercase tracking-wider">{todayItems.length} Items for Today</span>
+                        </div>
+                    )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Today's Agenda - Quick Glance */}
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-black text-gray-500 uppercase">Today's Agenda</span>
+                            <span className="text-[13px] font-black text-red-600">{todayItems.length}</span>
+                        </div>
+                        <div className="space-y-2 max-h-[120px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-zinc-100">
+                            {todayItems.length > 0 ? (
+                                todayItems.map((item: any) => (
+                                    <div 
+                                        key={item.id} 
+                                        onClick={() => {
+                                            const paths: Record<string, string> = {
+                                                "Site Visit": `/appointments/site-visit/${item.id}`,
+                                                "Testing": `/request/testing/${item.id}`,
+                                                "Job Request": `/request/job/${item.id}`
+                                            }
+                                            router.push(paths[item.type] || "#")
+                                        }}
+                                        className="flex items-center justify-between p-2 bg-zinc-50 rounded-xl border border-zinc-100/50 hover:bg-white hover:border-zinc-200 transition-all cursor-pointer group/item"
+                                    >
+                                        <div className="min-w-0">
+                                            <p className="text-[10px] font-black text-zinc-900 truncate uppercase leading-none mb-1">{item.title}</p>
+                                            <p className="text-[8px] font-bold text-zinc-400 uppercase tracking-wider">{item.type}</p>
+                                        </div>
+                                        <ArrowUpRight size={12} className="text-zinc-300 group-hover/item:text-zinc-900 transition-colors" />
+                                    </div>
+                                ))
+                            ) : (
+                                <p className="text-[10px] font-bold text-gray-300 italic uppercase py-2">No tasks for today</p>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Work Agenda - Summary */}
+                    <div className="md:border-x border-gray-100 md:px-6">
+                        <div className="flex items-center justify-between mb-3">
+                            <span className="text-[11px] font-black text-gray-500 uppercase">Active Tasks</span>
+                            <span className="text-[13px] font-black text-zinc-900">{totalTasks}</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-gray-50 rounded-full overflow-hidden mb-3">
+                            <div 
+                                className="h-full bg-red-600 rounded-full transition-all duration-1000" 
+                                style={{ width: `${Math.min(100, (totalTasks / 10) * 100)}%` }}
+                            />
+                        </div>
+                        {nextItem && (
+                            <div className="bg-blue-50/50 p-2.5 rounded-xl border border-blue-100/50">
+                                <p className="text-[8px] font-black text-blue-400 uppercase tracking-widest mb-1.5">Coming Up Next</p>
+                                <div className="flex items-start gap-2">
+                                    <Clock size={12} className="text-blue-600 mt-0.5" />
+                                    <div className="min-w-0">
+                                        <p className="text-[10px] font-black text-gray-900 truncate uppercase leading-none">{nextItem.title}</p>
+                                        <p className="text-[8px] font-bold text-gray-400 uppercase mt-1">{format(nextItem.date, "MMM d · h:mm a")}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Productivity Insight */}
+                    <div className="flex flex-col justify-between">
+                        <div className="flex items-center gap-4 bg-emerald-50/50 p-3 rounded-2xl border border-emerald-100/50">
+                            <div className="size-9 bg-white rounded-xl flex items-center justify-center shadow-sm text-emerald-500">
+                                <TrendingUp size={18} />
+                            </div>
+                            <div>
+                                <p className="text-[11px] font-black text-gray-900 leading-none">Weekly Status</p>
+                                <p className="text-[9px] font-black text-emerald-600 uppercase tracking-wider mt-1.5">On Track (+12%)</p>
+                            </div>
+                        </div>
+                        <div className="mt-4">
+                            <p className="text-[9px] font-bold text-gray-400 italic uppercase leading-tight">
+                                {totalTasks > 5 ? "Busy day ahead! Prioritize your top 3 tasks." : "Good pace! Check pending requests."}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+function RecentActivityFeed({ activities, router }: { activities: any[]; router: any }) {
+    return (
+        <section className="bg-white rounded-[32px] p-6 shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-6">
+                <div>
+                    <h3 className="text-[14px] font-black text-gray-900 uppercase tracking-tight">Recent Updates</h3>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Latest status changes</p>
+                </div>
+                <div className="size-8 bg-zinc-50 rounded-lg flex items-center justify-center text-zinc-400">
+                    <Activity size={16} />
+                </div>
+            </div>
+
+            <div className="space-y-3">
+                {activities.length > 0 ? (
+                    activities.map((act) => (
+                        <div 
+                            key={act.id} 
+                            onClick={() => {
+                                const paths: Record<string, string> = {
+                                    "Job": `/request/job/${act.id}`,
+                                    "DIAlux": `/request/dialux/${act.id}`,
+                                    "Shop": `/request/shop-drawing/${act.id}`
+                                }
+                                router.push(paths[act.type] || "#")
+                            }}
+                            className="flex items-center gap-3 p-2.5 hover:bg-gray-50 rounded-2xl transition-all cursor-pointer group border border-transparent hover:border-gray-100"
+                        >
+                            <div className={cn(
+                                "size-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-110",
+                                act.type === "Job" ? "bg-orange-50 text-orange-600" : 
+                                act.type === "DIAlux" ? "bg-indigo-50 text-indigo-600" : "bg-emerald-50 text-emerald-600"
+                            )}>
+                                {act.type === "Job" ? <FileText size={16} /> : 
+                                 act.type === "DIAlux" ? <Monitor size={16} /> : <Wrench size={16} />}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between mb-0.5">
+                                    <p className="text-[11px] font-black text-gray-900 uppercase truncate pr-2">{act.client || act.projectName || "Untitled"}</p>
+                                    <span className="text-[8px] font-bold text-gray-400 uppercase whitespace-nowrap">{relativeTime(act.createdAt?.toDate())}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className={cn(
+                                        "text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wider",
+                                        act.status?.toLowerCase().includes("pending") ? "bg-amber-50 text-amber-600" : "bg-emerald-50 text-emerald-600"
+                                    )}>
+                                        {act.status || "Status Update"}
+                                    </span>
+                                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter truncate">Changed by System</p>
+                                </div>
+                            </div>
+                        </div>
+                    ))
+                ) : (
+                    <div className="py-10 text-center opacity-30">
+                        <Activity size={32} className="mx-auto mb-2" />
+                        <p className="text-[10px] font-black uppercase tracking-widest">No recent activity</p>
+                    </div>
+                )}
+            </div>
+        </section>
+    )
+}
+
+function DashboardCalendar({ scheduleData, router }: { scheduleData: any; router: any }) {
+    const [currentMonth, setCurrentMonth] = React.useState(new Date())
+    const firstDay = startOfMonth(currentMonth)
+    const lastDay = endOfMonth(currentMonth)
+    const startDate = startOfWeek(firstDay)
+    const endDate = endOfWeek(lastDay)
+    const days = eachDayOfInterval({ start: startDate, end: endDate })
+
+    // Combine all tasks for calendar
+    const allTasks = [...scheduleData.today, ...scheduleData.upcoming]
+
+    return (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden animate-in fade-in zoom-in duration-300">
+            <div className="flex items-center justify-between p-4 border-b border-gray-50 bg-gray-50/30">
+                <div>
+                    <h4 className="text-[12px] font-black text-gray-900 uppercase tracking-tight">{format(currentMonth, 'MMMM yyyy')}</h4>
+                    <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Quick Schedule</p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                    <button onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} className="size-7 flex items-center justify-center rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-colors">
+                        <ChevronLeft size={14} className="text-gray-400" />
+                    </button>
+                    <button onClick={() => setCurrentMonth(new Date())} className="px-2 h-7 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-colors text-[9px] font-black uppercase tracking-wider text-gray-600">
+                        Today
+                    </button>
+                    <button onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} className="size-7 flex items-center justify-center rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-colors">
+                        <ChevronRight size={14} className="text-gray-400" />
+                    </button>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-7 border-b border-gray-50 bg-gray-50/50">
+                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(d => (
+                    <div key={d} className="py-2 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest">{d}</div>
+                ))}
+            </div>
+
+            <div className="grid grid-cols-7 text-[10px]">
+                {days.map((day, i) => {
+                    const dayTasks = allTasks.filter(t => isSameDay(new Date(t.date), day))
+                    const isToday = isSameDay(day, new Date())
+                    const isSelectedMonth = isSameMonth(day, firstDay)
+
+                    return (
+                        <div key={i} className={cn(
+                            "min-h-[60px] p-1.5 border-r border-b border-gray-50 transition-colors hover:bg-gray-50/50 relative",
+                            !isSelectedMonth && "bg-gray-50/30 opacity-40",
+                            i % 7 === 6 && "border-r-0"
+                        )}>
+                            <span className={cn(
+                                "size-5 flex items-center justify-center rounded-md font-black",
+                                isToday ? "bg-red-600 text-white shadow-sm" : "text-gray-400"
+                            )}>{format(day, 'd')}</span>
+                            
+                            <div className="mt-1 space-y-0.5">
+                                {dayTasks.slice(0, 2).map((t: any) => (
+                                    <div 
+                                        key={t.id} 
+                                        onClick={() => {
+                                            const paths: Record<string, string> = {
+                                                "Site Visit": `/appointments/site-visit/${t.id}`,
+                                                "Testing": `/request/testing/${t.id}`,
+                                                "Job Request": `/request/job/${t.id}`
+                                            }
+                                            router.push(paths[t.type] || "#")
+                                        }}
+                                        className={cn(
+                                            "h-1 rounded-full cursor-pointer transition-all hover:scale-110",
+                                            t.type === "Site Visit" ? "bg-blue-400" : "bg-red-400"
+                                        )}
+                                        title={`${t.type}: ${t.title}`}
+                                    />
+                                ))}
+                                {dayTasks.length > 2 && (
+                                    <div className="size-1 bg-gray-300 rounded-full mx-auto" />
+                                )}
+                            </div>
+                        </div>
+                    )
+                })}
+            </div>
+        </div>
+    )
+}
+
+function DepartmentPulse({ userDept, myTasks }: { userDept: string | null; myTasks: any }) {
+    const totalActive = (myTasks.siteVisits?.length || 0) + (myTasks.jobRequests?.length || 0) + (myTasks.testingItems?.length || 0)
+    
+    return (
+        <section className="bg-zinc-900 rounded-[32px] p-6 shadow-xl text-white relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full -mr-20 -mt-20 group-hover:scale-110 transition-transform duration-700" />
+            
+            <div className="relative z-10 flex flex-col h-full justify-between">
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="size-10 bg-white/10 rounded-xl flex items-center justify-center border border-white/10">
+                        <BarChart3 size={20} className="text-white" />
+                    </div>
+                    <div>
+                        <h3 className="text-[14px] font-black uppercase tracking-tight">Department Pulse</h3>
+                        <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mt-0.5">{userDept || "All Departments"}</p>
+                    </div>
+                </div>
+
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">Your Active Load</span>
+                        <span className="text-[18px] font-black">{totalActive}</span>
+                    </div>
+                    <div className="flex gap-1.5 h-8 items-end">
+                        {[40, 70, 55, 90, 65, 80, 45].map((h, i) => (
+                            <div key={i} className="flex-1 bg-white/10 rounded-t-sm group-hover:bg-red-500 transition-all duration-500" style={{ height: `${h}%` }} />
+                        ))}
+                    </div>
+                    <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-tight">Weekly Engagement Activity</p>
+                </div>
+            </div>
+        </section>
+    )
+}
+
 /* ─────────────────────────────────────────────
    MAIN DASHBOARD
 ───────────────────────────────────────────── */
@@ -168,6 +517,7 @@ export default function EngiconnectDashboard() {
     const scrollRef = useRef<HTMLDivElement>(null)
     const notifRef = useRef<HTMLDivElement>(null)
     const [activeTab, setActiveTab] = useState("Monitoring")
+    const [scheduleView, setScheduleView] = useState<"list" | "calendar">("list")
     const [showNotifDropdown, setShowNotifDropdown] = useState(false)
     const [userDept, setUserDept] = useState<string | null>(null)
     const [userDetails, setUserDetails] = useState({
@@ -364,6 +714,24 @@ export default function EngiconnectDashboard() {
             setMyTasks(prev => ({ ...prev, testingItems: myItems }))
         })
 
+        // 7. SPF Product Requests (from Supabase)
+        const fetchProductRequests = async () => {
+            const { data, count } = await supabase
+                .from("spf_creation")
+                .select("*", { count: "exact", head: true })
+                .eq("status", "Pending For Procurement")
+            
+            if (count !== null) {
+                setNotifications(prev => ({ ...prev, productRequest: count }))
+            }
+        }
+        fetchProductRequests()
+        
+        const ch = supabase
+            .channel("spf_creation_dashboard")
+            .on("postgres_changes", { event: "*", schema: "public", table: "spf_creation" }, fetchProductRequests)
+            .subscribe()
+
         const calculateUnread = (snap: any) => {
             let total = 0
             snap.docs.forEach((doc: any) => {
@@ -380,7 +748,8 @@ export default function EngiconnectDashboard() {
         }
 
         return () => {
-            unsubSite(); unsubShop(); unsubTesting(); unsubJob(); unsubOther(); unsubDialux()
+            unsubSite(); unsubShop(); unsubTesting(); unsubJob(); unsubOther(); unsubDialux();
+            supabase.removeChannel(ch);
         }
     }, [userId])
 
@@ -794,54 +1163,6 @@ export default function EngiconnectDashboard() {
                     ══════════════════════ */}
                     <main className="px-4 -mt-8 space-y-6 pb-32 relative z-20 md:mt-0 md:px-6 lg:px-10 md:py-6 max-w-7xl mx-auto animate-in fade-in duration-500">
 
-                        {/* ── UPCOMING NEXT SUMMARY ── */}
-                        {!isDataLoading && scheduleData.next && (
-                            <div className="bg-white rounded-2xl p-4 border border-zinc-200/60 shadow-sm flex items-center justify-between group cursor-pointer hover:shadow-md transition-all active:scale-[0.99]"
-                                onClick={() => {
-                                    const paths: Record<string, string> = {
-                                        "Site Visit": `/appointments/site-visit/${scheduleData.next.id}`,
-                                        "Testing": `/request/testing/${scheduleData.next.id}`,
-                                        "Job Request": `/request/job/${scheduleData.next.id}`
-                                    }
-                                    router.push(paths[scheduleData.next.type] || "#")
-                                }}>
-                                <div className="flex items-center gap-4">
-                                    <div className="size-10 bg-zinc-900 rounded-xl flex items-center justify-center text-white shadow-lg shadow-zinc-200">
-                                        <CalendarCheck size={20} />
-                                    </div>
-                                    <div>
-                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Upcoming Next</p>
-                                        <h3 className="text-sm font-black text-gray-900 uppercase tracking-tight leading-none">{scheduleData.next.title}</h3>
-                                        <p className="text-[9px] text-gray-400 font-bold mt-1 uppercase tracking-wider">
-                                            {format(scheduleData.next.date, "EEEE, MMM dd · HH:mm")}
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-lg border border-blue-100 uppercase tracking-widest">
-                                        {scheduleData.next.type}
-                                    </span>
-                                    <ArrowUpRight size={14} className="text-gray-300 group-hover:text-zinc-900 transition-colors" />
-                                </div>
-                            </div>
-                        )}
-
-                        {/* ── CRITICAL ALERT ── */}
-                        {!isDataLoading && perms?.dashboard?.showAlertBanner !== false && notifications.testingOverdue > 0 && (
-                            <div
-                                className="flex items-center justify-between gap-3 bg-[#E33636] text-white px-4 py-3 rounded-2xl shadow-lg cursor-pointer active:scale-[0.99] transition-all"
-                                onClick={() => router.push("/request/testing")}
-                            >
-                                <div className="flex items-center gap-2.5">
-                                    <AlertTriangle size={15} className="flex-shrink-0" />
-                                    <p className="text-[11px] font-black uppercase tracking-wide">
-                                        {notifications.testingOverdue} Critical Testing Item{notifications.testingOverdue > 1 ? "s" : ""} — Action Required
-                                    </p>
-                                </div>
-                                <ChevronRight size={14} className="flex-shrink-0 opacity-70" />
-                            </div>
-                        )}
-
                         {/* ── SERVICES ── */}
                         <section className="bg-white rounded-[24px] p-5 shadow-sm border border-gray-100">
                             <div className="flex items-center justify-between mb-4">
@@ -908,6 +1229,51 @@ export default function EngiconnectDashboard() {
                                 </>
                             )}
                         </section>
+
+                        {/* ══════════════════════
+                            PRODUCTIVITY HUB
+                            (Centralized Work Management)
+                        ══════════════════════ */}
+                        {!isDataLoading && (
+                            <ProductivityHub 
+                                userDetails={userDetails} 
+                                tasks={myTasks} 
+                                schedule={scheduleData} 
+                                router={router}
+                            />
+                        )}
+
+                        {/* ── CRITICAL ALERT ── */}
+                        {!isDataLoading && perms?.dashboard?.showAlertBanner !== false && notifications.testingOverdue > 0 && (
+                            <div
+                                className="flex items-center justify-between gap-3 bg-[#E33636] text-white px-4 py-3 rounded-2xl shadow-lg cursor-pointer active:scale-[0.99] transition-all"
+                                onClick={() => router.push("/request/testing")}
+                            >
+                                <div className="flex items-center gap-2.5">
+                                    <AlertTriangle size={15} className="flex-shrink-0" />
+                                    <p className="text-[11px] font-black uppercase tracking-wide">
+                                        {notifications.testingOverdue} Critical Testing Item{notifications.testingOverdue > 1 ? "s" : ""} — Action Required
+                                    </p>
+                                </div>
+                                <ChevronRight size={14} className="flex-shrink-0 opacity-70" />
+                            </div>
+                        )}
+
+                        {/* ── QUICK GLANCE GRID ── */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {/* Activity Feed */}
+                            <div className="lg:col-span-2">
+                                <RecentActivityFeed activities={recentActivity} router={router} />
+                            </div>
+
+                            {/* Department Health */}
+                            <DepartmentPulse userDept={userDept} myTasks={myTasks} />
+                        </div>
+
+                        {/* ── WORKLOAD OVERVIEW (Admin Only) ── */}
+                        {!isDataLoading && (userRole === "SUPER ADMIN" || userRole === "MANAGER" || userDept === "IT") && (
+                            <WorkloadOverview notifications={notifications} />
+                        )}
 
                         {/* ── STATS ROW ── */}
                         {perms?.dashboard?.showStats !== false && (
@@ -1072,55 +1438,86 @@ export default function EngiconnectDashboard() {
                                     </div>
                                 ) : activeTab === "Schedule" ? (
                                     <div className="space-y-4">
-                                        {/* TODAY */}
-                                        <div className="space-y-2">
-                                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] px-1">Today</p>
-                                            {scheduleData.today.length > 0 ? (
-                                                scheduleData.today.map(item => (
-                                                    <div key={item.id} className="bg-white p-3 rounded-2xl border border-gray-100 flex items-center justify-between group hover:shadow-sm transition-all">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className={cn("size-8 rounded-xl flex items-center justify-center", item.type === "Site Visit" ? "bg-blue-50 text-blue-600" : "bg-violet-50 text-violet-600")}>
-                                                                {item.type === "Site Visit" ? <CalendarCheck size={14} /> : <ClipboardCheck size={14} />}
-                                                            </div>
-                                                            <div>
-                                                                <p className="text-[11px] font-black text-gray-900 uppercase truncate max-w-[120px]">{item.title}</p>
-                                                                <p className="text-[9px] text-gray-400 font-bold">{format(item.date, "HH:mm")} · {item.type}</p>
-                                                            </div>
-                                                        </div>
-                                                        <ChevronRight size={12} className="text-gray-300 group-hover:translate-x-0.5 transition-transform" />
-                                                    </div>
-                                                ))
-                                            ) : (
-                                                <div className="p-4 bg-gray-50/50 rounded-2xl border border-dashed border-gray-100 text-center">
-                                                    <p className="text-[9px] font-black text-gray-300 uppercase">No items today</p>
-                                                </div>
-                                            )}
+                                        {/* View Switcher */}
+                                        <div className="flex items-center justify-between">
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Schedule View</p>
+                                            <div className="flex p-1 bg-gray-100 rounded-xl">
+                                                <button 
+                                                    onClick={() => setScheduleView("list")}
+                                                    className={cn(
+                                                        "px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all",
+                                                        scheduleView === "list" ? "bg-white text-zinc-900 shadow-sm" : "text-gray-400"
+                                                    )}
+                                                >
+                                                    List
+                                                </button>
+                                                <button 
+                                                    onClick={() => setScheduleView("calendar")}
+                                                    className={cn(
+                                                        "px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all",
+                                                        scheduleView === "calendar" ? "bg-white text-zinc-900 shadow-sm" : "text-gray-400"
+                                                    )}
+                                                >
+                                                    Calendar
+                                                </button>
+                                            </div>
                                         </div>
 
-                                        {/* UPCOMING */}
-                                        <div className="space-y-2">
-                                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] px-1">Upcoming</p>
-                                            {scheduleData.upcoming.length > 0 ? (
-                                                scheduleData.upcoming.slice(0, 3).map(item => (
-                                                    <div key={item.id} className="bg-white p-3 rounded-2xl border border-gray-100 flex items-center justify-between group hover:shadow-sm transition-all">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className={cn("size-8 rounded-xl flex items-center justify-center", item.type === "Site Visit" ? "bg-blue-50 text-blue-600" : "bg-violet-50 text-violet-600")}>
-                                                                {item.type === "Site Visit" ? <CalendarCheck size={14} /> : <ClipboardCheck size={14} />}
+                                        {scheduleView === "list" ? (
+                                            <div className="space-y-4">
+                                                {/* TODAY */}
+                                                <div className="space-y-2">
+                                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] px-1">Today</p>
+                                                    {scheduleData.today.length > 0 ? (
+                                                        scheduleData.today.map(item => (
+                                                            <div key={item.id} className="bg-white p-3 rounded-2xl border border-gray-100 flex items-center justify-between group hover:shadow-sm transition-all">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className={cn("size-8 rounded-xl flex items-center justify-center", item.type === "Site Visit" ? "bg-blue-50 text-blue-600" : "bg-violet-50 text-violet-600")}>
+                                                                        {item.type === "Site Visit" ? <CalendarCheck size={14} /> : <ClipboardCheck size={14} />}
+                                                                    </div>
+                                                                    <div>
+                                                                        <p className="text-[11px] font-black text-gray-900 uppercase truncate max-w-[120px]">{item.title}</p>
+                                                                        <p className="text-[9px] text-gray-400 font-bold">{format(item.date, "HH:mm")} · {item.type}</p>
+                                                                    </div>
+                                                                </div>
+                                                                <ChevronRight size={12} className="text-gray-300 group-hover:translate-x-0.5 transition-transform" />
                                                             </div>
-                                                            <div>
-                                                                <p className="text-[11px] font-black text-gray-900 uppercase truncate max-w-[120px]">{item.title}</p>
-                                                                <p className="text-[9px] text-gray-400 font-bold">{format(item.date, "MMM dd")} · {item.type}</p>
-                                                            </div>
+                                                        ))
+                                                    ) : (
+                                                        <div className="p-4 bg-gray-50/50 rounded-2xl border border-dashed border-gray-100 text-center">
+                                                            <p className="text-[9px] font-black text-gray-300 uppercase">No items today</p>
                                                         </div>
-                                                        <ChevronRight size={12} className="text-gray-300 group-hover:translate-x-0.5 transition-transform" />
-                                                    </div>
-                                                ))
-                                            ) : (
-                                                <div className="p-4 bg-gray-50/50 rounded-2xl border border-dashed border-gray-100 text-center">
-                                                    <p className="text-[9px] font-black text-gray-300 uppercase">No upcoming items</p>
+                                                    )}
                                                 </div>
-                                            )}
-                                        </div>
+
+                                                {/* UPCOMING */}
+                                                <div className="space-y-2">
+                                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] px-1">Upcoming</p>
+                                                    {scheduleData.upcoming.length > 0 ? (
+                                                        scheduleData.upcoming.slice(0, 3).map(item => (
+                                                            <div key={item.id} className="bg-white p-3 rounded-2xl border border-gray-100 flex items-center justify-between group hover:shadow-sm transition-all">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className={cn("size-8 rounded-xl flex items-center justify-center", item.type === "Site Visit" ? "bg-blue-50 text-blue-600" : "bg-violet-50 text-violet-600")}>
+                                                                        {item.type === "Site Visit" ? <CalendarCheck size={14} /> : <ClipboardCheck size={14} />}
+                                                                    </div>
+                                                                    <div>
+                                                                        <p className="text-[11px] font-black text-gray-900 uppercase truncate max-w-[120px]">{item.title}</p>
+                                                                        <p className="text-[9px] text-gray-400 font-bold">{format(item.date, "MMM dd")} · {item.type}</p>
+                                                                    </div>
+                                                                </div>
+                                                                <ChevronRight size={12} className="text-gray-300 group-hover:translate-x-0.5 transition-transform" />
+                                                            </div>
+                                                        ))
+                                                    ) : (
+                                                        <div className="p-4 bg-gray-50/50 rounded-2xl border border-dashed border-gray-100 text-center">
+                                                            <p className="text-[9px] font-black text-gray-300 uppercase">No upcoming items</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <DashboardCalendar scheduleData={scheduleData} router={router} />
+                                        )}
                                     </div>
                                 ) : activeTab === "Job Requests" ? (
                                     <div className="grid grid-cols-2 gap-3">

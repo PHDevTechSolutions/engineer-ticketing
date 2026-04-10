@@ -310,6 +310,8 @@ export default function ProcurementListPage() {
   const router = useRouter()
 
   const [userId, setUserId]           = React.useState<string | null>(null)
+  const [userRole, setUserRole]       = React.useState<string | null>(null)
+  const [userRefId, setUserRefId]     = React.useState<string | null>(null)
   const [userDepartment, setUserDept] = React.useState<string | null>(null)
   const [requests, setRequests]       = React.useState<SPFCreation[]>([])
   const [staffNames, setStaffNames]   = React.useState<Record<string, string>>({})
@@ -328,11 +330,14 @@ export default function ProcurementListPage() {
   const searchRef = React.useRef<HTMLInputElement>(null)
 
   /* ── FETCH ── */
-  const fetchRequests = React.useCallback(async (dept?: string | null) => {
+  const fetchRequests = React.useCallback(async (dept?: string | null, role?: string | null, refId?: string | null) => {
     setIsLoading(true)
     try {
       const department = dept ?? userDepartment
+      const user_role  = role ?? userRole
+      const user_ref_id = refId ?? userRefId
       const isIT = (department || "").toUpperCase() === "IT"
+      const isHigherRole = ["SUPER ADMIN", "MANAGER", "LEADER"].includes((user_role || "").toUpperCase())
 
       let query = supabase
         .from("spf_creation")
@@ -344,7 +349,13 @@ export default function ProcurementListPage() {
         `)
         .order("date_created", { ascending: false })
 
-      if (!isIT) {
+      // IF MEMBER: Only show their own records (referenceid or tsm matches userRefId)
+      // IF IT or Higher Role: Show all
+      if (!isIT && !isHigherRole && user_ref_id) {
+        query = query.or(`referenceid.eq.${user_ref_id},tsm.eq.${user_ref_id}`)
+      } else if (!isIT) {
+        // If not IT but higher role, still show all but maybe filter by status if needed
+        // The original logic was: if (!isIT) query = query.or("status.eq.Pending For Procurement,status.eq.Approved By Procurement")
         query = query.or("status.eq.Pending For Procurement,status.eq.Approved By Procurement")
       }
 
@@ -433,10 +444,26 @@ export default function ProcurementListPage() {
   React.useEffect(() => {
     const uid  = localStorage.getItem("userId")
     const dept = localStorage.getItem("userDepartment")
+    const role = localStorage.getItem("userRole")
     setUserId(uid)
     setUserDept(dept)
-    fetchRequests(dept)
+    setUserRole(role)
     fetchRate()
+
+    const fetchCurrentUserInfo = async () => {
+      if (!uid) return
+      try {
+        const res = await fetch(`/api/user?id=${encodeURIComponent(uid)}`)
+        const mongoData = await res.json()
+        const refId = mongoData.ReferenceID || ""
+        setUserRefId(refId)
+        fetchRequests(dept, role, refId)
+      } catch (e) {
+        console.error("Error fetching user info:", e)
+        fetchRequests(dept, role, null)
+      }
+    }
+    fetchCurrentUserInfo()
 
     const fetchStaff = async () => {
       try {
@@ -455,7 +482,7 @@ export default function ProcurementListPage() {
 
     const ch = supabase
       .channel("spf_creation_changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "spf_creation" }, () => fetchRequests(dept))
+      .on("postgres_changes", { event: "*", schema: "public", table: "spf_creation" }, () => fetchRequests(dept, role, userRefId))
       .subscribe()
     return () => { supabase.removeChannel(ch) }
   }, [fetchRequests])
@@ -533,7 +560,7 @@ export default function ProcurementListPage() {
     setPage(1)
     setSortField("date_created")
     setSortDir("desc")
-    fetchRequests(userDepartment)
+    fetchRequests(userDepartment, userRole, userRefId)
   }
 
   const handleExport = () => {
@@ -593,9 +620,27 @@ export default function ProcurementListPage() {
         <SidebarInset className="bg-[#F8FAFA] pb-24 md:pb-10 min-h-screen m-0 rounded-none border-none shadow-none overflow-visible pt-14 md:pt-16">
           <PageHeader
             title="SPF PROCUREMENT"
-            version="V1.0"
+            version="V1.1"
             showBackButton
             trigger={<SidebarTrigger className="mr-2" />}
+            actions={
+              <div className="flex items-center gap-2">
+                <div className="hidden sm:flex items-center gap-2 bg-zinc-50 border border-zinc-200 rounded-lg px-2 py-1">
+                  <span className="text-[9px] font-black text-zinc-400 uppercase tracking-wider">Dept:</span>
+                  <span className="text-[10px] font-black text-zinc-900 uppercase">{userDepartment || "—"}</span>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleReset} 
+                  disabled={isLoading}
+                  className="h-8 rounded-lg bg-white border-zinc-200 text-zinc-600 font-bold text-[10px] uppercase tracking-wider"
+                >
+                  <RotateCcw className={cn("size-3 mr-1.5", isLoading && "animate-spin")} />
+                  Reset Sync
+                </Button>
+              </div>
+            }
           />
 
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-4">
