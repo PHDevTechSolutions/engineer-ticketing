@@ -11,6 +11,12 @@ interface AppointmentContextType {
   setSelectedAssistance: React.Dispatch<React.SetStateAction<string[]>>;
   otherSpec: string;
   setOtherSpec: React.Dispatch<React.SetStateAction<string>>;
+  personnel: string[];
+  setPersonnel: React.Dispatch<React.SetStateAction<string[]>>;
+  ppe: string[];
+  setPpe: React.Dispatch<React.SetStateAction<string[]>>;
+  permits: string[];
+  setPermits: React.Dispatch<React.SetStateAction<string[]>>;
   isHydrated: boolean;
 }
 
@@ -23,6 +29,9 @@ export default function AddAppointmentLayout({ children }: { children: React.Rea
   // 2. CORE OPERATIONAL STATE
   const [selectedAssistance, setSelectedAssistance] = React.useState<string[]>([]);
   const [otherSpec, setOtherSpec] = React.useState("");
+  const [personnel, setPersonnel] = React.useState<string[]>([]);
+  const [ppe, setPpe] = React.useState<string[]>([]);
+  const [permits, setPermits] = React.useState<string[]>([]);
 
   // 3. DATA RECONSTRUCTION: Restore state from local storage on mount
   React.useEffect(() => {
@@ -30,12 +39,24 @@ export default function AddAppointmentLayout({ children }: { children: React.Rea
       if (typeof window !== "undefined") {
         const savedAssistance = localStorage.getItem("eng_selected_assistance");
         const savedSpec = localStorage.getItem("eng_other_spec");
+        const savedPersonnel = localStorage.getItem("eng_personnel");
+        const savedPpe = localStorage.getItem("eng_ppe");
+        const savedPermits = localStorage.getItem("eng_permits");
 
         if (savedAssistance) {
           setSelectedAssistance(JSON.parse(savedAssistance));
         }
         if (savedSpec) {
           setOtherSpec(savedSpec);
+        }
+        if (savedPersonnel) {
+          setPersonnel(JSON.parse(savedPersonnel));
+        }
+        if (savedPpe) {
+          setPpe(JSON.parse(savedPpe));
+        }
+        if (savedPermits) {
+          setPermits(JSON.parse(savedPermits));
         }
       }
     } catch (error) {
@@ -51,8 +72,11 @@ export default function AddAppointmentLayout({ children }: { children: React.Rea
     if (isHydrated) {
       localStorage.setItem("eng_selected_assistance", JSON.stringify(selectedAssistance));
       localStorage.setItem("eng_other_spec", otherSpec);
+      localStorage.setItem("eng_personnel", JSON.stringify(personnel));
+      localStorage.setItem("eng_ppe", JSON.stringify(ppe));
+      localStorage.setItem("eng_permits", JSON.stringify(permits));
     }
-  }, [selectedAssistance, otherSpec, isHydrated]);
+  }, [selectedAssistance, otherSpec, personnel, ppe, permits, isHydrated]);
 
   return (
     <ProtectedPageWrapper>
@@ -62,6 +86,12 @@ export default function AddAppointmentLayout({ children }: { children: React.Rea
           setSelectedAssistance, 
           otherSpec, 
           setOtherSpec,
+          personnel,
+          setPersonnel,
+          ppe,
+          setPpe,
+          permits,
+          setPermits,
           isHydrated 
         }}>
           <div className="flex-1 flex flex-col min-h-screen bg-[#F9FAFA]">

@@ -14,14 +14,15 @@ import {
   RefreshCw, ShieldCheck, X, User, ChevronRight, 
   ShieldAlert, Fingerprint, ClipboardList, MapPin, 
   Activity, Info, CheckCircle2, Globe, CalendarSearch,
-  User2, Sparkles
+  User2, Sparkles, Search, Check, ChevronDown,
+  HardHat
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
 
 // FIREBASE IMPORTS
 import { db, storage } from "@/lib/firebase"
-import { collection, addDoc, onSnapshot, query, where, serverTimestamp, Timestamp } from "firebase/firestore"
+import { collection, addDoc, onSnapshot, query, where, serverTimestamp, Timestamp, getDocs } from "firebase/firestore"
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage"
 
 import { toast } from "sonner"
@@ -31,6 +32,19 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { PageHeader } from "@/components/page-header"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command"
 import "leaflet/dist/leaflet.css"
 
 export default function SchedulePage() {
@@ -42,7 +56,13 @@ export default function SchedulePage() {
   }, []);
   
   // 1. EXTRACT HYDRATION & PERSISTED DATA
-  const { selectedAssistance, isHydrated } = useAppointmentData();
+  const { 
+    selectedAssistance, 
+    personnel,
+    ppe,
+    permits,
+    isHydrated 
+  } = useAppointmentData();
   
   const today = new Date(2026, 1, 5); 
   const [viewDate, setViewDate] = React.useState(new Date(2026, 1, 1)); 
@@ -60,6 +80,10 @@ export default function SchedulePage() {
   const [existingAppointments, setExistingAppointments] = React.useState<any[]>([]);
   const [blockedSlots, setBlockedSlots] = React.useState<any[]>([]);
 
+  // ADDRESS DROPDOWN STATES
+  const [addressOptions, setAddressOptions] = React.useState<string[]>([]);
+  const [openAddress, setOpenAddress] = React.useState(false);
+
   const [formData, setFormData] = React.useState({ 
     client: "", 
     address: "", 
@@ -69,6 +93,19 @@ export default function SchedulePage() {
     tsa: "NOT_SET", 
     tsm: "NOT_SET"  
   });
+
+  // FETCH HISTORICAL ADDRESSES
+  React.useEffect(() => {
+    const fetchAddresses = async () => {
+      try {
+        const q = query(collection(db, "appointments"), where("department", "==", "ENGINEERING"));
+        const snap = await getDocs(q);
+        const addresses = Array.from(new Set(snap.docs.map(doc => doc.data().address))).filter(Boolean) as string[];
+        setAddressOptions(addresses);
+      } catch (err) { console.error(err); }
+    };
+    fetchAddresses();
+  }, []);
 
   // 2. PROTOCOL & PIC SYNC
   React.useEffect(() => {
@@ -210,10 +247,18 @@ export default function SchedulePage() {
     if (formData.address.trim().length < 5) return;
     setIsGeocoding(true);
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(formData.address)}`);
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(formData.address)}&addressdetails=1&limit=1`);
       const data = await res.json();
-      if (data?.[0]) setCoords([parseFloat(data[0].lat), parseFloat(data[0].lon)]);
-    } catch (err) { console.error(err); } 
+      if (data?.[0]) {
+        setCoords([parseFloat(data[0].lat), parseFloat(data[0].lon)]);
+        toast.success("Location verified and pinned.");
+      } else {
+        toast.error("Could not find the address. Please try a more specific location.");
+      }
+    } catch (err) { 
+      console.error(err);
+      toast.error("Map verification failed.");
+    } 
     finally { setIsGeocoding(false); }
   };
 
@@ -240,6 +285,9 @@ export default function SchedulePage() {
         pic: selectedPic, 
         appointmentDate: Timestamp.fromDate(appointmentDateObj),
         protocols: selectedAssistance || [], 
+        personnel: personnel || [],
+        ppe: ppe || [],
+        permits: permits || [],
         fileUrl, 
         coordinates: coords, 
         status: "PENDING",
@@ -247,6 +295,13 @@ export default function SchedulePage() {
         department: "ENGINEERING",
         submittedBy: currentUserId 
       });
+
+      // Clear local storage context after successful submission
+      localStorage.removeItem("eng_selected_assistance");
+      localStorage.removeItem("eng_other_spec");
+      localStorage.removeItem("eng_personnel");
+      localStorage.removeItem("eng_ppe");
+      localStorage.removeItem("eng_permits");
 
       toast.success("DEPLOYMENT INITIALIZED", { id: toastId });
 
@@ -438,13 +493,31 @@ export default function SchedulePage() {
           <div className="lg:col-span-5 space-y-6 order-2 lg:order-1">
             <div className="space-y-3">
               <p className="text-[10px] font-black uppercase text-zinc-400 tracking-widest flex items-center gap-2 px-1">
-                <Sparkles className="size-3 text-zinc-400" /> Services Selected
+                <Sparkles className="size-3 text-zinc-400" /> Requirements Selected
               </p>
               <div className="flex flex-wrap gap-2">
                 {protocolMetadata?.map((item: any, idx: number) => (
                   <div key={idx} className="px-3 py-1.5 bg-white border border-zinc-200/60 rounded-xl shadow-sm text-[10px] font-black uppercase flex items-center gap-2">
                     <div className="size-1.5 rounded-full bg-blue-500 shadow-lg shadow-blue-200" /> 
                     {item.label}
+                  </div>
+                ))}
+                {personnel?.map((item: string, idx: number) => (
+                  <div key={`p-${idx}`} className="px-3 py-1.5 bg-amber-50 border border-amber-100 rounded-xl shadow-sm text-[10px] font-black uppercase flex items-center gap-2 text-amber-700">
+                    <User2 className="size-3" /> 
+                    {item}
+                  </div>
+                ))}
+                {ppe?.map((item: string, idx: number) => (
+                  <div key={`ppe-${idx}`} className="px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-xl shadow-sm text-[10px] font-black uppercase flex items-center gap-2 text-white">
+                    <HardHat className="size-3" /> 
+                    {item}
+                  </div>
+                ))}
+                {permits?.map((item: string, idx: number) => (
+                  <div key={`perm-${idx}`} className="px-3 py-1.5 bg-emerald-50 border border-emerald-100 rounded-xl shadow-sm text-[10px] font-black uppercase flex items-center gap-2 text-emerald-700">
+                    <ClipboardList className="size-3" /> 
+                    {item}
                   </div>
                 ))}
               </div>
@@ -528,7 +601,61 @@ export default function SchedulePage() {
                       Verify Map
                     </button>
                   </div>
-                  <Textarea className="rounded-xl border-zinc-100 text-xs font-black uppercase h-20 bg-zinc-50/50 focus:bg-white focus:ring-1 focus:ring-zinc-900 transition-all p-4 resize-none" placeholder="Complete address of the site..." value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
+                  
+                  <div className="flex gap-2">
+                    <Popover open={openAddress} onOpenChange={setOpenAddress}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={openAddress}
+                          className="w-full justify-between rounded-xl border-zinc-100 h-11 bg-zinc-50/50 hover:bg-white text-xs font-black uppercase tracking-tight px-4"
+                        >
+                          <div className="flex items-center gap-2 truncate">
+                            <Search className="size-3 text-zinc-400" />
+                            <span className="truncate">{formData.address || "Select or type address..."}</span>
+                          </div>
+                          <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[300px] p-0 rounded-2xl shadow-2xl border-zinc-100" align="start">
+                        <Command className="rounded-2xl">
+                          <CommandInput placeholder="Search previous locations..." className="h-11 text-xs font-bold uppercase tracking-tight" />
+                          <CommandList className="max-h-[200px]">
+                            <CommandEmpty className="py-4 text-[10px] font-bold text-zinc-400 uppercase tracking-widest text-center">No history found</CommandEmpty>
+                            <CommandGroup heading="Recent Addresses" className="p-2">
+                              {addressOptions.map((addr) => (
+                                <CommandItem
+                                  key={addr}
+                                  value={addr}
+                                  onSelect={() => {
+                                    setFormData({ ...formData, address: addr });
+                                    setOpenAddress(false);
+                                  }}
+                                  className="rounded-xl text-[10px] font-bold uppercase tracking-tight py-3 px-4 aria-selected:bg-zinc-100"
+                                >
+                                  <Check
+                                    className={cn(
+                                      "mr-2 h-3 w-3",
+                                      formData.address === addr ? "opacity-100" : "opacity-0"
+                                    )}
+                                  />
+                                  <span className="truncate">{addr}</span>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+
+                  <Textarea 
+                    className="rounded-xl border-zinc-100 text-xs font-black uppercase h-20 bg-zinc-50/50 focus:bg-white focus:ring-1 focus:ring-zinc-900 transition-all p-4 resize-none" 
+                    placeholder="Complete address of the site..." 
+                    value={formData.address} 
+                    onChange={e => setFormData({...formData, address: e.target.value})} 
+                  />
                 </div>
 
                 <div className="w-full h-24 bg-zinc-50 border border-zinc-100 rounded-2xl flex flex-col items-center justify-center gap-2 overflow-hidden relative group">
