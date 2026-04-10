@@ -20,7 +20,7 @@ const nextConfig = {
         headers: [
           {
             key: 'Content-Security-Policy',
-            value: "frame-ancestors 'self' http://localhost:3000 http://localhost:3001 https://taskflow-project-five-gamma.vercel.app https://taskflow-demo-v2.vercel.app/ https://taskflow-crm.vercel.app/",
+            value: "frame-ancestors 'self' http://localhost:3000 http://localhost:3001 https://taskflow-project-five-gamma.vercel.app https://taskflow-demo-v2.vercel.app/ https://taskflow-crm.vercel.app/ https://taskflow.devtech-erp-solutions.cloud/",
           },
         ],
       },
