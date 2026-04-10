@@ -30,12 +30,11 @@ export function PageHeader({
   return (
     <header
       className={cn(
-        "fixed top-0 z-50 flex h-14 md:h-16 shrink-0 items-center",
+        "sticky top-0 z-40 flex h-14 md:h-16 shrink-0 items-center",
         "border-b border-zinc-200/80 bg-white/90 backdrop-blur-xl",
         "px-3 md:px-5 justify-between shadow-sm transition-all duration-200",
         className
       )}
-      style={{ width: "inherit" }}
     >
       {/* ── LEFT: trigger + back + breadcrumb ── */}
       <div className="flex items-center gap-1.5 md:gap-2 min-w-0">

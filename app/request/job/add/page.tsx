@@ -12,6 +12,9 @@ import {
   Plus, Send, Loader2, Wrench, FileText, X, ShieldCheck, Clock, Camera, ClipboardCheck
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
+import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
+import { AppSidebar } from "@/components/app-sidebar";
+import ProtectedPageWrapper from "@/components/protected-page-wrapper";
 import { toast } from "sonner";
 import { sendPushNotification, NotificationTemplates } from "@/lib/notification-service";
 
@@ -146,10 +149,18 @@ export default function JobRequestWizard() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] pb-10">
-      <PageHeader title="New Job Request" version="2.2.1" showBackButton={true} />
-      
-      <main className="p-4 md:p-8 max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
+    <ProtectedPageWrapper>
+      <SidebarProvider defaultOpen={false}>
+        <AppSidebar userId={userId || ""} />
+        <SidebarInset className="bg-[#F8FAFC] min-h-screen">
+          <PageHeader 
+            title="New Job Request" 
+            version="2.2.1" 
+            showBackButton={true}
+            trigger={<SidebarTrigger className="mr-2" />}
+          />
+          
+          <main className="p-4 md:p-8 max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
         <div className="lg:col-span-8 space-y-6">
           {/* STEP INDICATORS */}
           <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-200 flex justify-between items-center overflow-x-auto gap-2">
@@ -316,7 +327,9 @@ export default function JobRequestWizard() {
             </div>
           </Card>
         </div>
-      </main>
-    </div>
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
+  </ProtectedPageWrapper>
   );
 }

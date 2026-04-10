@@ -929,7 +929,7 @@ export default function ProcurementDetailPage() {
       <SidebarProvider defaultOpen={false}>
         <AppSidebar userId={userId} />
 
-        <SidebarInset className="bg-[#F8FAFA] min-h-screen m-0 rounded-none border-none shadow-none overflow-visible pt-14 md:pt-16">
+        <SidebarInset className="bg-[#F8FAFA] min-h-screen m-0 rounded-none border-none shadow-none overflow-visible">
           <PageHeader
             title={`PROCUREMENT / ${spfData?.spf_number ?? "---"}`}
             version="V1.0"

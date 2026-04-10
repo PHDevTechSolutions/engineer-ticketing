@@ -249,8 +249,13 @@ export default function ProcurementCostingPage() {
   const [processingTime, setProcessingTime] = useState(0);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [timerStartTime, setTimerStartTime] = useState<number | null>(null);
+  const [userId, setUserId] = useState<string>("");
 
   const allProducts = useMemo(() => parseAllProducts(offersData), [offersData]);
+
+  useEffect(() => {
+    setUserId(localStorage.getItem("userId") || "");
+  }, []);
 
   // Local state for selling costs, lead times, and procurement unit costs
   const [localSelling, setLocalSelling] = useState<Record<string, string>>({});
@@ -542,31 +547,16 @@ export default function ProcurementCostingPage() {
   return (
     <ProtectedPageWrapper>
       <SidebarProvider>
-        <AppSidebar userId={undefined} />
+        <AppSidebar userId={userId} />
         <SidebarInset className="bg-gradient-to-br from-zinc-50 via-white to-zinc-50">
           
-          {/* ── HEADER ── */}
-          <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-zinc-200">
-            <div className="flex items-center justify-between px-4 lg:px-8 h-16">
-              <div className="flex items-center gap-3">
-                <SidebarTrigger className="lg:hidden" />
-                <div className="flex items-center gap-3">
-                  <div className="size-9 rounded-2xl bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-900 flex items-center justify-center shadow-lg shadow-zinc-900/20">
-                    <TrendingUp size={16} className="text-white" />
-                  </div>
-                  <div>
-                    <h1 className="text-[13px] font-black uppercase tracking-widest text-zinc-900">
-                      Procurement Costing
-                    </h1>
-                    <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider">
-                      {spfNumber}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right side: Timer + Version History + Lock Badge */}
-              <div className="hidden lg:flex items-center gap-3">
+          <PageHeader 
+            title={`PROCUREMENT / ${spfNumber}`} 
+            version="V2.8" 
+            showBackButton={true}
+            trigger={<SidebarTrigger className="mr-2" />}
+            actions={
+              <div className="flex items-center gap-2">
                 {/* Processing Timer */}
                 <div className={cn(
                   "flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all",
@@ -638,7 +628,7 @@ export default function ProcurementCostingPage() {
                   <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
                     <Lock size={12} className="text-emerald-600" />
                     <span className="text-[9px] font-black uppercase tracking-widest text-emerald-700">
-                      Approved & Locked
+                      Approved
                     </span>
                   </div>
                 )}
@@ -658,7 +648,7 @@ export default function ProcurementCostingPage() {
                     onClick={() => setShowConfirm(true)}
                     disabled={isSaving}
                     className={cn(
-                      "rounded-2xl font-black text-[9px] uppercase tracking-widest h-10 px-6",
+                      "rounded-xl font-black text-[9px] uppercase tracking-widest h-8 px-4",
                       allFilled
                         ? "bg-emerald-600 hover:bg-emerald-700"
                         : "bg-zinc-900 hover:bg-zinc-800"
@@ -669,24 +659,24 @@ export default function ProcurementCostingPage() {
                     ) : (
                       <>
                         <Save className="size-3.5 mr-1.5" />
-                        {allFilled ? "Save & Finalize" : "Save Costing"}
+                        {allFilled ? "Finalize" : "Save"}
                       </>
                     )}
                   </Button>
                 )}
               </div>
-            </div>
+            }
+          />
 
-            {/* Workflow Progress */}
-            <div className="px-4 lg:px-8 pb-4 hidden lg:block">
-              <div className="flex items-center justify-between gap-2">
-                {WORKFLOW_STEPS.map((step, idx) => {
-                  const isActive = idx <= activeStep;
-                  const isCurrent = idx === activeStep;
-                  const Icon = step.icon;
-                  return (
-                    <div key={step.key} className="flex items-center flex-1">
-                      <div className="flex flex-col items-center flex-1">
+          <div className="px-4 lg:px-8 py-4 hidden lg:block border-b border-zinc-100 bg-white/50">
+            <div className="flex items-center justify-between gap-2">
+              {WORKFLOW_STEPS.map((step, idx) => {
+                const isActive = idx <= activeStep;
+                const isCurrent = idx === activeStep;
+                const Icon = step.icon;
+                return (
+                  <div key={step.key} className="flex items-center flex-1">
+                    <div className="flex flex-col items-center flex-1">
                         <div
                           className={cn(
                             "size-8 rounded-xl flex items-center justify-center transition-all mb-2",
@@ -728,7 +718,6 @@ export default function ProcurementCostingPage() {
                 })}
               </div>
             </div>
-          </header>
 
           {/* ── MAIN CONTENT ── */}
           <main className="p-4 lg:p-8 space-y-6 pb-32 lg:pb-8">
@@ -1154,274 +1143,206 @@ export default function ProcurementCostingPage() {
 
           </main>
         </SidebarInset>
-      </SidebarProvider>
 
-      {/* ── MOBILE STICKY BOTTOM BAR ── */}
-      {!isLocked && (
-        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-zinc-200 px-4 py-3 space-y-2 shadow-2xl shadow-zinc-900/10">
-          {/* Timer */}
-          <div className="flex items-center justify-between bg-zinc-50 border border-zinc-200 rounded-xl px-3 py-2">
-            <div className="flex items-center gap-2">
-              <Timer size={12} className={isTimerRunning ? "text-blue-600" : "text-zinc-400"} />
-              <span className={cn("text-[11px] font-black tabular-nums", isTimerRunning ? "text-blue-700" : "text-zinc-600")}>
-                {formatTime(processingTime)}
-              </span>
-            </div>
-            <div className="flex gap-1">
-              {!isTimerRunning && processingTime === 0 && (
-                <button onClick={startTimer} className="p-1.5 hover:bg-blue-100 rounded transition-colors">
-                  <Play size={12} className="text-blue-600" />
-                </button>
-              )}
-              {isTimerRunning && (
-                <button onClick={pauseTimer} className="p-1.5 hover:bg-blue-100 rounded transition-colors">
-                  <Pause size={12} className="text-blue-600" />
-                </button>
-              )}
-              {!isTimerRunning && processingTime > 0 && (
-                <>
-                  <button onClick={startTimer} className="p-1.5 hover:bg-blue-100 rounded transition-colors">
-                    <Play size={12} className="text-blue-600" />
-                  </button>
-                  <button onClick={resetTimer} className="p-1.5 hover:bg-zinc-100 rounded transition-colors">
-                    <RotateCcw size={12} className="text-zinc-600" />
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Action Bar */}
-          <div className="flex gap-2.5">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowVersionHistory(true)}
-              className="rounded-xl font-black text-[8px] uppercase tracking-widest"
-            >
-              <GitBranch size={10} className="mr-1" />
-              History
-            </Button>
-            <div className="flex items-center gap-2 bg-zinc-50 border border-zinc-200 rounded-2xl px-3 flex-shrink-0">
-              <div className="size-1.5 rounded-full bg-zinc-300" />
-              <p className="text-[9px] font-black text-zinc-500 whitespace-nowrap">{filledCount}/{totalCount}</p>
-            </div>
-            <Button
-              onClick={() => setShowConfirm(true)}
-              disabled={isSaving}
-              className={cn(
-                "flex-1 h-12 rounded-2xl font-black text-[10px] uppercase tracking-widest",
-                allFilled ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-zinc-900 hover:bg-zinc-800 text-white"
-              )}
-            >
-              {isSaving
-                ? <Loader2 className="size-4 animate-spin" />
-                : <><Save className="size-3.5 mr-1.5" /> {allFilled ? "Save & Finalize" : "Save Costing"}</>
-              }
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* ── VERSION HISTORY DIALOG ── */}
-      <Dialog open={showVersionHistory} onOpenChange={setShowVersionHistory}>
-        <DialogContent className="rounded-[24px] max-w-2xl mx-4 p-6 max-h-[80vh] overflow-auto">
-          <DialogHeader>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="size-10 rounded-2xl bg-violet-600 flex items-center justify-center">
-                <GitBranch size={16} className="text-white" />
+        {/* ── VERSION HISTORY DIALOG ── */}
+        <Dialog open={showVersionHistory} onOpenChange={setShowVersionHistory}>
+          <DialogContent className="rounded-[24px] max-w-2xl mx-4 p-6 max-h-[80vh] overflow-auto">
+            <DialogHeader>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="size-10 rounded-2xl bg-violet-600 flex items-center justify-center">
+                  <GitBranch size={16} className="text-white" />
+                </div>
+                <DialogTitle className="text-[13px] font-black uppercase tracking-widest">Version History</DialogTitle>
               </div>
-              <DialogTitle className="text-[13px] font-black uppercase tracking-widest">Version History</DialogTitle>
-            </div>
-            <DialogDescription className="text-sm text-zinc-500 leading-relaxed">
-              View and restore previous versions of this SPF costing.
-            </DialogDescription>
-          </DialogHeader>
+              <DialogDescription className="text-sm text-zinc-500 leading-relaxed">
+                View and restore previous versions of this SPF costing.
+              </DialogDescription>
+            </DialogHeader>
 
-          <div className="space-y-3 mt-4">
-            {versionHistory.length === 0 ? (
-              <div className="text-center py-8">
-                <History size={32} className="mx-auto text-zinc-300 mb-2" />
-                <p className="text-sm text-zinc-400">No version history yet</p>
-              </div>
-            ) : (
-              versionHistory.map((version, idx) => {
-                const isLatest = idx === 0;
-                const isCurrent = version.id === selectedVersion;
-                const versionMeta = getStatusMeta(version.status);
-                
-                return (
-                  <div
-                    key={version.id}
-                    className={cn(
-                      "rounded-2xl border-2 p-4 transition-all cursor-pointer hover:shadow-md",
-                      isCurrent ? "border-violet-300 bg-violet-50" : "border-zinc-200 bg-white"
-                    )}
-                    onClick={() => {
-                      if (!isCurrent) {
-                        loadVersion(version.id);
-                        setShowVersionHistory(false);
-                      }
-                    }}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Badge className={cn(
-                            "text-[8px] font-black uppercase tracking-widest",
-                            isCurrent ? "bg-violet-600 text-white" : "bg-zinc-900 text-white"
+            <div className="space-y-3 mt-4">
+              {versionHistory.length === 0 ? (
+                <div className="text-center py-8">
+                  <History size={32} className="mx-auto text-zinc-300 mb-2" />
+                  <p className="text-sm text-zinc-400">No version history yet</p>
+                </div>
+              ) : (
+                versionHistory.map((version, idx) => {
+                  const isLatest = idx === 0;
+                  const isCurrent = version.id === selectedVersion;
+                  const versionMeta = getStatusMeta(version.status);
+                  
+                  return (
+                    <div
+                      key={version.id}
+                      className={cn(
+                        "rounded-2xl border-2 p-4 transition-all cursor-pointer hover:shadow-md",
+                        isCurrent ? "border-violet-300 bg-violet-50" : "border-zinc-200 bg-white"
+                      )}
+                      onClick={() => {
+                        if (!isCurrent) {
+                          loadVersion(version.id);
+                          setShowVersionHistory(false);
+                        }
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Badge className={cn(
+                              "text-[8px] font-black uppercase tracking-widest",
+                              isCurrent ? "bg-violet-600 text-white" : "bg-zinc-900 text-white"
+                            )}>
+                              v{version.version_number}
+                            </Badge>
+                            {isLatest && !isCurrent && (
+                              <Badge variant="outline" className="bg-emerald-50 border-emerald-200 text-emerald-700 text-[7px]">
+                                Latest
+                              </Badge>
+                            )}
+                            {isCurrent && (
+                              <Badge variant="outline" className="bg-violet-100 border-violet-300 text-violet-700 text-[7px]">
+                                <Eye size={8} className="mr-1" />
+                                Viewing
+                              </Badge>
+                            )}
+                          </div>
+                          
+                          <div className={cn(
+                            "inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest mb-2",
+                            versionMeta.bg,
+                            versionMeta.border,
+                            versionMeta.color
                           )}>
-                            v{version.version_number}
-                          </Badge>
-                          {isLatest && !isCurrent && (
-                            <Badge variant="outline" className="bg-emerald-50 border-emerald-200 text-emerald-700 text-[7px]">
-                              Latest
-                            </Badge>
+                            <div className={cn("size-1.5 rounded-full", versionMeta.dot)} />
+                            {version.status}
+                          </div>
+
+                          <p className="text-[10px] text-zinc-500 mb-1">
+                            <span className="font-bold">Created:</span>{" "}
+                            {new Date(version.created_at).toLocaleString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </p>
+                          
+                          {version.edited_by && (
+                            <p className="text-[10px] text-zinc-500">
+                              <span className="font-bold">By:</span> {version.edited_by}
+                            </p>
                           )}
-                          {isCurrent && (
-                            <Badge variant="outline" className="bg-violet-100 border-violet-300 text-violet-700 text-[7px]">
-                              <Eye size={8} className="mr-1" />
-                              Viewing
-                            </Badge>
+
+                          {version.changes_summary && (
+                            <p className="text-[10px] text-zinc-600 mt-2 italic">
+                              {version.changes_summary}
+                            </p>
                           )}
                         </div>
-                        
-                        <div className={cn(
-                          "inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest mb-2",
-                          versionMeta.bg,
-                          versionMeta.border,
-                          versionMeta.color
-                        )}>
-                          <div className={cn("size-1.5 rounded-full", versionMeta.dot)} />
-                          {version.status}
-                        </div>
 
-                        <p className="text-[10px] text-zinc-500 mb-1">
-                          <span className="font-bold">Created:</span>{" "}
-                          {new Date(version.created_at).toLocaleString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </p>
-                        
-                        {version.edited_by && (
-                          <p className="text-[10px] text-zinc-500">
-                            <span className="font-bold">By:</span> {version.edited_by}
-                          </p>
-                        )}
-
-                        {version.changes_summary && (
-                          <p className="text-[10px] text-zinc-600 mt-2 italic">
-                            {version.changes_summary}
-                          </p>
+                        {!isCurrent && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="rounded-xl font-black text-[8px] uppercase tracking-widest"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              loadVersion(version.id);
+                              setShowVersionHistory(false);
+                            }}
+                          >
+                            <Eye size={10} className="mr-1" />
+                            View
+                          </Button>
                         )}
                       </div>
-
-                      {!isCurrent && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="rounded-xl font-black text-[8px] uppercase tracking-widest"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            loadVersion(version.id);
-                            setShowVersionHistory(false);
-                          }}
-                        >
-                          <Eye size={10} className="mr-1" />
-                          View
-                        </Button>
-                      )}
                     </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          {selectedVersion && (
-            <div className="mt-4 p-3 bg-violet-50 border border-violet-200 rounded-2xl">
-              <p className="text-[9px] font-black uppercase tracking-widest text-violet-600 mb-1">
-                <AlertCircle size={10} className="inline mr-1" />
-                Currently Viewing History
-              </p>
-              <p className="text-[10px] text-violet-700">
-                You're viewing a historical version. To return to the latest version, click "Back to Latest" below.
-              </p>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={async () => {
-                  setSelectedVersion(null);
-                  await fetchData();
-                  setShowVersionHistory(false);
-                }}
-                className="mt-2 rounded-xl font-black text-[8px] uppercase tracking-widest"
-              >
-                <RefreshCw size={10} className="mr-1" />
-                Back to Latest
-              </Button>
+                  );
+                })
+              )}
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
 
-      {/* ── CONFIRM DIALOG ── */}
-      <Dialog open={showConfirm} onOpenChange={setShowConfirm}>
-        <DialogContent className="rounded-[24px] max-w-sm mx-4 p-6">
-          <DialogHeader>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="size-10 rounded-2xl bg-zinc-900 flex items-center justify-center">
-                <Save size={16} className="text-white" />
+            {selectedVersion && (
+              <div className="mt-4 p-3 bg-violet-50 border border-violet-200 rounded-2xl">
+                <p className="text-[9px] font-black uppercase tracking-widest text-violet-600 mb-1">
+                  <AlertCircle size={10} className="inline mr-1" />
+                  Currently Viewing History
+                </p>
+                <p className="text-[10px] text-violet-700">
+                  You're viewing a historical version. To return to the latest version, click "Back to Latest" below.
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={async () => {
+                    setSelectedVersion(null);
+                    await fetchData();
+                    setShowVersionHistory(false);
+                  }}
+                  className="mt-2 rounded-xl font-black text-[8px] uppercase tracking-widest"
+                >
+                  <RefreshCw size={10} className="mr-1" />
+                  Back to Latest
+                </Button>
               </div>
-              <DialogTitle className="text-[13px] font-black uppercase tracking-widest">Save Costing</DialogTitle>
-            </div>
-            <DialogDescription className="text-sm text-zinc-500 leading-relaxed">
-              Save selling costs, lead times, and procurement unit costs for this SPF.
-              Choosing <span className="font-black text-emerald-600">Save + Approve</span> will mark this SPF as approved by procurement.
-              {!allFilled && (
-                <span className="block mt-2 text-amber-600 font-bold text-[11px] bg-amber-50 border border-amber-100 rounded-xl p-2">
-                  ⚠ {totalCount - filledCount} option{totalCount - filledCount !== 1 ? "s" : ""} still need costing filled in.
-                </span>
-              )}
-              {processingTime > 0 && (
-                <span className="block mt-2 text-blue-600 font-bold text-[11px] bg-blue-50 border border-blue-100 rounded-xl p-2 flex items-center gap-1.5">
-                  <Timer size={12} />
-                  Processing time: {formatTime(processingTime)}
-                </span>
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex flex-col gap-2 mt-4">
-            <Button
-              onClick={() => handleSave(true)}
-              disabled={isSaving}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest h-12"
-            >
-              {isSaving ? <Loader2 className="size-4 animate-spin" /> : <><CheckCircle2 className="size-3.5 mr-1.5" /> Save + Approved By Procurement</>}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => handleSave(false)}
-              disabled={isSaving}
-              className="w-full rounded-2xl font-black text-[10px] uppercase tracking-widest h-12"
-            >
-              Save Only (Keep Pending)
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => setShowConfirm(false)}
-              className="w-full rounded-2xl font-black text-[10px] uppercase tracking-widest h-10 text-zinc-400"
-            >
-              Cancel
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            )}
+          </DialogContent>
+        </Dialog>
 
+        {/* ── CONFIRM DIALOG ── */}
+        <Dialog open={showConfirm} onOpenChange={setShowConfirm}>
+          <DialogContent className="rounded-[24px] max-w-sm mx-4 p-6">
+            <DialogHeader>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="size-10 rounded-2xl bg-zinc-900 flex items-center justify-center">
+                  <Save size={16} className="text-white" />
+                </div>
+                <DialogTitle className="text-[13px] font-black uppercase tracking-widest">Save Costing</DialogTitle>
+              </div>
+              <DialogDescription className="text-sm text-zinc-500 leading-relaxed">
+                Save selling costs, lead times, and procurement unit costs for this SPF.
+                Choosing <span className="font-black text-emerald-600">Save + Approve</span> will mark this SPF as approved by procurement.
+                {!allFilled && (
+                  <span className="block mt-2 text-amber-600 font-bold text-[11px] bg-amber-50 border border-amber-100 rounded-xl p-2">
+                    ⚠ {totalCount - filledCount} option{totalCount - filledCount !== 1 ? "s" : ""} still need costing filled in.
+                  </span>
+                )}
+                {processingTime > 0 && (
+                  <span className="block mt-2 text-blue-600 font-bold text-[11px] bg-blue-50 border border-blue-100 rounded-xl p-2 flex items-center gap-1.5">
+                    <Timer size={12} />
+                    Processing time: {formatTime(processingTime)}
+                  </span>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex flex-col gap-2 mt-4">
+              <Button
+                onClick={() => handleSave(true)}
+                disabled={isSaving}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest h-12"
+              >
+                {isSaving ? <Loader2 className="size-4 animate-spin" /> : <><CheckCircle2 className="size-3.5 mr-1.5" /> Save + Approved By Procurement</>}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => handleSave(false)}
+                disabled={isSaving}
+                className="w-full rounded-2xl font-black text-[10px] uppercase tracking-widest h-12"
+              >
+                Save Only (Keep Pending)
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => setShowConfirm(false)}
+                className="w-full rounded-2xl font-black text-[10px] uppercase tracking-widest h-10 text-zinc-400"
+              >
+                Cancel
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </SidebarProvider>
     </ProtectedPageWrapper>
   );
 }

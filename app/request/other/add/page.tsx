@@ -16,6 +16,9 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/page-header";
+import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
+import { AppSidebar } from "@/components/app-sidebar";
+import ProtectedPageWrapper from "@/components/protected-page-wrapper";
 
 // Database
 import { db } from "@/lib/firebase";
@@ -139,14 +142,18 @@ export default function AddOtherRequestPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F4F7F7] font-sans pb-10">
-      <PageHeader 
-        title="OTHER REQUEST" 
-        version="V3.2.2" 
-        showBackButton={true} 
-      />
-      
-      <main className="p-4 md:p-8 max-w-3xl mx-auto w-full space-y-6">
+    <ProtectedPageWrapper>
+      <SidebarProvider defaultOpen={false}>
+        <AppSidebar userId={userId || ""} />
+        <SidebarInset className="bg-[#F4F7F7] min-h-screen">
+          <PageHeader 
+            title="OTHER REQUEST" 
+            version="V3.2.2" 
+            showBackButton={true}
+            trigger={<SidebarTrigger className="mr-2" />}
+          />
+          
+          <main className="p-4 md:p-8 max-w-3xl mx-auto w-full space-y-6">
         <Card className="bg-white rounded-[24px] border border-zinc-200/60 shadow-sm overflow-hidden">
           <CardHeader className="border-b border-zinc-100 p-8">
             <CardTitle className="flex items-center gap-3">
@@ -265,6 +272,8 @@ export default function AddOtherRequestPage() {
           </div>
         )}
       </main>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
+  </ProtectedPageWrapper>
   );
 }

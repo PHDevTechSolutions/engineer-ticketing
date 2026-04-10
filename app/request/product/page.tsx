@@ -617,7 +617,7 @@ export default function ProcurementListPage() {
     <ProtectedPageWrapper>
       <SidebarProvider defaultOpen={false} className="overflow-visible">
         <AppSidebar userId={userId} />
-        <SidebarInset className="bg-[#F8FAFA] pb-24 md:pb-10 min-h-screen m-0 rounded-none border-none shadow-none overflow-visible pt-14 md:pt-16">
+        <SidebarInset className="bg-[#F8FAFA] pb-24 md:pb-10 min-h-screen m-0 rounded-none border-none shadow-none overflow-visible">
           <PageHeader
             title="SPF PROCUREMENT"
             version="V1.1"

@@ -535,7 +535,9 @@ export default function SiteVisitListPage() {
           date: rawDate.toLocaleDateString('en-CA'), 
           status: data.status?.toUpperCase() || "PENDING",
           tech: data.pic || "UNASSIGNED",
-          type: Array.isArray(data.protocols) ? data.protocols.join(" + ") : (data.protocols || "Standard Engagement")
+          type: Array.isArray(data.protocols) ? data.protocols.join(" + ") : (data.protocols || "Standard Engagement"),
+          submittedBy: data.submittedBy,
+          pic: data.pic
         }
       })
 
@@ -586,7 +588,7 @@ export default function SiteVisitListPage() {
     <ProtectedPageWrapper>
       <SidebarProvider defaultOpen={false}>
         <AppSidebar userId={user.id} />
-        <SidebarInset className="bg-[#F8FAFA] pb-24 md:pb-10 min-h-screen m-0 rounded-none border-none shadow-none overflow-visible pt-14 md:pt-16">
+        <SidebarInset className="bg-[#F8FAFA] pb-24 md:pb-10 min-h-screen m-0 rounded-none border-none shadow-none overflow-visible">
           
           <PageHeader 
             title="SITE VISIT ENGAGEMENTS" 

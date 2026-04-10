@@ -3,13 +3,21 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { useAppointmentData } from "../layout"
+import { AppSidebar } from "@/components/app-sidebar"
+import {
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+} from "@/components/ui/sidebar"
 import { 
   Paperclip, Send, ChevronLeft, Layers, Navigation, Loader2,
   RefreshCw, ShieldCheck, X, User, ChevronRight, 
   ShieldAlert, Fingerprint, ClipboardList, MapPin, 
-  Activity, Info, CheckCircle2, Globe, CalendarSearch
+  Activity, Info, CheckCircle2, Globe, CalendarSearch,
+  User2, Sparkles
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { format } from "date-fns"
 
 // FIREBASE IMPORTS
 import { db, storage } from "@/lib/firebase"
@@ -27,6 +35,11 @@ import "leaflet/dist/leaflet.css"
 
 export default function SchedulePage() {
   const router = useRouter();
+  const [userId, setUserId] = React.useState<string>("");
+
+  React.useEffect(() => {
+    setUserId(localStorage.getItem("userId") || "");
+  }, []);
   
   // 1. EXTRACT HYDRATION & PERSISTED DATA
   const { selectedAssistance, isHydrated } = useAppointmentData();
@@ -252,286 +265,328 @@ export default function SchedulePage() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#F9FAFA] text-[#121212] font-sans pb-24 md:pb-0 animate-in fade-in duration-700">
-      
-      {/* CONFLICT MODAL */}
-      {viewingDetails && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#121212]/80 backdrop-blur-sm">
-          <div className="bg-white border border-black/10 w-full max-w-md rounded-lg overflow-hidden shadow-2xl">
-            <div className="bg-[#121212] p-4 flex justify-between items-center text-white">
-              <span className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-2">
-                <ShieldAlert className="size-4 text-amber-500" /> {viewingDetails.isBlock ? "Personnel Unavailable" : "Conflict Detected"}
-              </span>
-              <button onClick={() => setViewingDetails(null)}><X className="size-4" /></button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="flex items-center gap-4 p-4 bg-[#F9FAFA] border border-black/5 rounded-md">
-                <Fingerprint className="size-6 text-black/40" />
-                <div>
-                  <p className="text-[10px] font-bold text-black/40 uppercase tracking-tighter">Assigned Personnel</p>
-                  <p className="text-sm font-bold uppercase">{selectedPic}</p>
-                </div>
-              </div>
-              <div className="space-y-3">
-                <div className="p-4 border border-black/5 rounded-md">
-                  <span className="block text-[8px] font-bold text-black/30 uppercase tracking-widest mb-1">{viewingDetails.isBlock ? "Constraint Type" : "Entity"}</span>
-                  <p className="text-xs font-bold uppercase">{viewingDetails.client}</p>
-                </div>
-                <div className="p-4 border border-black/5 rounded-md">
-                  <span className="block text-[8px] font-bold text-black/30 uppercase tracking-widest mb-1">{viewingDetails.isBlock ? "Reason / Justification" : "Scope"}</span>
-                  <p className="text-xs font-medium italic">{viewingDetails.agenda}</p>
-                </div>
-              </div>
-              <Button onClick={() => setViewingDetails(null)} className="w-full bg-[#121212] text-white font-bold uppercase text-[10px] tracking-widest h-12 rounded-none">
-                {viewingDetails.isBlock ? "Acknowledge Unavailability" : "Acknowledge Constraint"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <PageHeader 
-        title="SCHEDULE_DEPLOYMENT" 
-        version="STEP: 02" 
-        showBackButton={true}
-        actions={
-          <div className="flex items-center gap-3 px-3 md:px-4 py-2 bg-black/5 border border-black/10 rounded-sm shadow-sm">
-            {isLoadingSync ? <RefreshCw className="size-3 animate-spin opacity-40" /> : <ShieldCheck className="size-3 text-emerald-600" />}
-            <span className="text-[9px] font-bold uppercase tracking-widest hidden sm:block">System_Sync_Active</span>
-          </div>
-        }
-      />
-
-      <main className="p-4 md:p-10 max-w-7xl mx-auto w-full flex flex-col lg:grid lg:grid-cols-12 gap-8 md:gap-10 pb-32">
+    <>
+      <AppSidebar userId={userId} />
+      <SidebarInset className="bg-[#F9FAFA] pb-24 md:pb-10 min-h-screen m-0 rounded-none border-none shadow-none overflow-visible">
         
-        {/* RIGHT COLUMN: CALENDAR & OVERVIEW */}
-        <div className="lg:col-span-7 order-1 lg:order-2 space-y-6">
-          <div className="bg-[#121212] p-6 rounded-lg text-white shadow-xl flex flex-col md:flex-row justify-between items-center gap-6 border border-white/5">
-            <div className="flex items-center gap-5">
-              <div className="p-3 bg-white/10 rounded-full">
-                <Activity className="size-6 text-emerald-400" />
+        {/* CONFLICT MODAL */}
+        {viewingDetails && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#121212]/80 backdrop-blur-sm">
+            <div className="bg-white border border-black/10 w-full max-w-md rounded-lg overflow-hidden shadow-2xl">
+              <div className="bg-[#121212] p-4 flex justify-between items-center text-white">
+                <span className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-2">
+                  <ShieldAlert className="size-4 text-amber-500" /> {viewingDetails.isBlock ? "Personnel Unavailable" : "Conflict Detected"}
+                </span>
+                <button onClick={() => setViewingDetails(null)}><X className="size-4" /></button>
               </div>
-              <div>
-                <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest">Target Personnel</p>
-                <p className="text-lg font-bold uppercase tracking-tighter">{selectedPic || "AWAITING_SELECTION"}</p>
-              </div>
-            </div>
-            <div className="h-px md:h-10 w-full md:w-px bg-white/10" />
-            <div className="flex items-center gap-5">
-              <div className="p-3 bg-white/10 rounded-full">
-                <CheckCircle2 className="size-6 text-blue-400" />
-              </div>
-              <div>
-                <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest">Status Readiness</p>
-                <p className="text-lg font-bold uppercase tracking-tighter">{selectedDate ? `FEB ${selectedDate}, 2026` : "DATE_PENDING"}</p>
+              <div className="p-6 space-y-4">
+                <div className="flex items-center gap-4 p-4 bg-[#F9FAFA] border border-black/5 rounded-md">
+                  <Fingerprint className="size-6 text-black/40" />
+                  <div>
+                    <p className="text-[10px] font-bold text-black/40 uppercase tracking-tighter">Assigned Personnel</p>
+                    <p className="text-sm font-bold uppercase">{selectedPic}</p>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div className="p-4 border border-black/5 rounded-md">
+                    <span className="block text-[8px] font-bold text-black/30 uppercase tracking-widest mb-1">{viewingDetails.isBlock ? "Constraint Type" : "Entity"}</span>
+                    <p className="text-xs font-bold uppercase">{viewingDetails.client}</p>
+                  </div>
+                  <div className="p-4 border border-black/5 rounded-md">
+                    <span className="block text-[8px] font-bold text-black/30 uppercase tracking-widest mb-1">{viewingDetails.isBlock ? "Reason / Justification" : "Scope"}</span>
+                    <p className="text-xs font-medium italic">{viewingDetails.agenda}</p>
+                  </div>
+                </div>
+                <Button onClick={() => setViewingDetails(null)} className="w-full bg-[#121212] text-white font-bold uppercase text-[10px] tracking-widest h-12 rounded-none">
+                  {viewingDetails.isBlock ? "Acknowledge Unavailability" : "Acknowledge Constraint"}
+                </Button>
               </div>
             </div>
           </div>
+        )}
 
-          <div className="bg-white border border-black/5 p-4 md:p-8 rounded-lg shadow-sm lg:sticky lg:top-10 overflow-hidden">
-            {!selectedPic ? (
-              <div className="flex flex-col items-center justify-center py-24 space-y-4 text-center">
-                <div className="p-6 bg-[#F9FAFA] rounded-full border border-black/5">
-                  <CalendarSearch className="size-12 text-black/10" />
+        <PageHeader 
+          title="PICK A DATE & PERSON" 
+          version="V2.8" 
+          showBackButton={true}
+          trigger={<SidebarTrigger className="mr-2" />}
+          actions={
+            <div className="flex items-center gap-3 px-3 py-1 bg-zinc-50 border border-zinc-200 rounded-lg">
+              {isLoadingSync ? (
+                <Loader2 className="size-3 animate-spin text-zinc-400" />
+              ) : (
+                <ShieldCheck className="size-3 text-emerald-600" />
+              )}
+              <span className="text-[10px] font-black uppercase tracking-wider text-zinc-900">
+                Step 2 of 4
+              </span>
+            </div>
+          }
+        />
+
+        <main className="p-4 md:p-6 max-w-7xl mx-auto w-full flex flex-col lg:grid lg:grid-cols-12 gap-6 pb-32">
+          
+          {/* RIGHT COLUMN: CALENDAR & OVERVIEW */}
+          <div className="lg:col-span-7 order-1 lg:order-2 space-y-4">
+            <div className="bg-zinc-900 p-5 rounded-[24px] text-white shadow-xl flex flex-col md:flex-row justify-between items-center gap-6 border border-zinc-800">
+              <div className="flex items-center gap-4">
+                <div className="size-10 bg-white/10 rounded-xl flex items-center justify-center text-white">
+                  <User2 size={20} />
                 </div>
                 <div>
-                  <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-[#121212]">Deployment Calendar Locked</h4>
-                  <p className="text-[9px] font-bold text-black/30 uppercase mt-1">Select Personnel to Synchronize Availability</p>
+                  <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-1.5">Who's Going?</p>
+                  <p className="text-[15px] font-black uppercase tracking-tight leading-none">{selectedPic || "Pick someone..."}</p>
                 </div>
               </div>
-            ) : (
-              <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-                <div className="flex items-center justify-between mb-6 md:mb-8">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[10px] font-bold text-black/30 uppercase tracking-[0.2em]">Operational Schedule</span>
-                    <h3 className="text-xl md:text-2xl font-bold uppercase tracking-tighter italic">{monthLabel}</h3>
+              <div className="h-px md:h-8 w-full md:w-px bg-zinc-800" />
+              <div className="flex items-center gap-4">
+                <div className="size-10 bg-white/10 rounded-xl flex items-center justify-center text-white">
+                  <CalendarSearch size={20} />
+                </div>
+                <div>
+                  <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-1.5">Selected Date</p>
+                  <p className="text-[15px] font-black uppercase tracking-tight leading-none">
+                    {selectedDate ? format(new Date(viewDate.getFullYear(), viewDate.getMonth(), selectedDate), "MMM dd, yyyy") : "Pick a date..."}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white border border-zinc-200/60 p-5 md:p-6 rounded-[32px] shadow-sm lg:sticky lg:top-20 overflow-hidden">
+              {!selectedPic ? (
+                <div className="flex flex-col items-center justify-center py-24 space-y-4 text-center">
+                  <div className="size-20 bg-zinc-50 rounded-[32px] border border-zinc-100 flex items-center justify-center">
+                    <CalendarSearch className="size-10 text-zinc-200" />
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="icon" onClick={() => handleMonthChange(-1)} disabled={viewDate.getMonth() === today.getMonth()} className="size-9 md:size-10 rounded border-black/10 hover:bg-black/5"><ChevronLeft className="size-4" /></Button>
-                    <Button variant="outline" size="icon" onClick={() => handleMonthChange(1)} className="size-9 md:size-10 rounded border-black/10 hover:bg-black/5"><ChevronRight className="size-4" /></Button>
+                  <div>
+                    <h4 className="text-[11px] font-black uppercase tracking-widest text-zinc-900">Calendar Locked</h4>
+                    <p className="text-[10px] font-bold text-zinc-400 uppercase mt-1.5 leading-relaxed max-w-[200px] mx-auto">
+                      Please select a person on the left to see their availability.
+                    </p>
                   </div>
-                </div>
-                
-                <div className="grid grid-cols-7 gap-1">
-                  {['SUN','MON','TUE','WED','THU','FRI','SAT'].map((d) => (
-                    <div key={d} className="text-center text-[8px] md:text-[9px] font-bold text-black/20 pb-2 md:pb-4">{d}</div>
-                  ))}
-                  {Array.from({ length: firstDayOfMonth }).map((_, i) => ( <div key={`pad-${i}`} className="aspect-square" /> ))}
-                  {Array.from({length: daysInMonth}).map((_, i) => {
-                    const dayNum = i + 1;
-                    const isPast = new Date(viewDate.getFullYear(), viewDate.getMonth(), dayNum) < today;
-                    
-                    const bookedApp = existingAppointments.find(a => a.day === dayNum && a.month === viewDate.getMonth() && a.year === viewDate.getFullYear());
-                    const blockedSlot = blockedSlots.find(s => s.day === dayNum && s.month === viewDate.getMonth() && s.year === viewDate.getFullYear());
-                    
-                    const isBusy = !!bookedApp;
-                    const isBlocked = !!blockedSlot;
-
-                    return (
-                      <button 
-                        key={i} 
-                        onClick={() => {
-                          if (isBusy) setViewingDetails(bookedApp);
-                          else if (isBlocked) setViewingDetails({ client: "PERSONNEL_UNAVAILABLE", agenda: blockedSlot.justification, isBlock: true });
-                          else setSelectedDate(dayNum);
-                        }}
-                        disabled={isPast} 
-                        className={cn(
-                          "aspect-square flex flex-col items-center justify-center text-xs font-bold transition-all relative rounded border", 
-                          selectedDate === dayNum ? "bg-[#121212] text-white border-black shadow-md z-10" : 
-                          isPast ? "bg-[#F9FAFA] text-black/10 border-transparent cursor-not-allowed" : 
-                          isBusy ? "bg-red-50 text-red-600 border-red-100" : 
-                          isBlocked ? "bg-amber-50 text-amber-600 border-amber-100" :
-                          "bg-white border-black/5 hover:border-black/20"
-                        )}
-                      >
-                        <span>{dayNum}</span>
-                        {isBusy && !isPast && <div className="absolute top-1 right-1 size-1 bg-red-500 rounded-full" />}
-                        {isBlocked && !isPast && <div className="absolute top-1 right-1 size-1 bg-amber-500 rounded-full" />}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="mt-6 md:mt-10 pt-6 md:pt-8 border-t border-black/5 grid grid-cols-2 gap-4">
-                    <div className="p-3 md:p-4 bg-[#F9FAFA] border border-black/5 rounded text-center">
-                      <p className="text-[8px] font-bold text-black/30 uppercase mb-1 tracking-tighter">TSA_AUTHORITY</p>
-                      <span className="text-[9px] md:text-[10px] font-bold uppercase">{formData.tsa}</span>
-                    </div>
-                    <div className="p-3 md:p-4 bg-[#F9FAFA] border border-black/5 rounded text-center">
-                      <p className="text-[8px] font-bold text-black/30 uppercase mb-1 tracking-tighter">TSM_AUTHORITY</p>
-                      <span className="text-[9px] md:text-[10px] font-bold uppercase">{formData.tsm}</span>
-                    </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* LEFT COLUMN: FORM DATA */}
-        <div className="lg:col-span-5 space-y-6 md:space-y-8 order-2 lg:order-1">
-          <div className="space-y-3">
-            <p className="text-[10px] font-bold uppercase text-black/40 tracking-widest flex items-center gap-2">
-              <Layers className="size-3" /> Engineering Protocol Stack
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {protocolMetadata?.map((item: any, idx: number) => (
-                <div key={idx} className="px-3 py-1.5 bg-white border border-black/10 rounded-sm shadow-sm text-[9px] font-bold uppercase flex items-center gap-2">
-                  <div className="size-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" /> {item.label}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <section className="p-4 md:p-6 bg-white border border-black/5 rounded-lg shadow-sm space-y-4 md:space-y-6">
-            <div className="flex items-center gap-3 border-b border-black/5 pb-4">
-              <User className="size-4 text-black/30" />
-              <span className="text-[10px] font-bold uppercase tracking-widest">Resource Allocation</span>
-            </div>
-            <div className="grid grid-cols-1 gap-2">
-              {assignedPics.map((picData, i) => {
-                const name = typeof picData === 'string' ? picData : picData.name;
-                const isSelected = selectedPic === name;
-                return (
-                  <button 
-                    key={i} onClick={() => handlePicChange(name)} 
-                    className={cn(
-                      "w-full text-left px-4 py-3 rounded-md border transition-all font-bold uppercase text-[10px] tracking-widest flex justify-between items-center group", 
-                      isSelected ? "bg-[#121212] text-white border-black shadow-lg" : "bg-white border-black/5 hover:border-black/20 shadow-sm"
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Avatar className="size-8 rounded-lg border border-black/5 grayscale group-hover:grayscale-0 transition-all shadow-sm">
-                        <AvatarImage src={picData.profilePicture} className="object-cover" />
-                        <AvatarFallback className={cn("text-[10px] font-black", isSelected ? "bg-white text-black" : "bg-[#121212] text-white")}>
-                          {name?.[0]}
-                        </AvatarFallback>
-                      </Avatar>
-                      {name}
-                    </div>
-                    {isSelected && <Info className="size-3 text-white/40" />}
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="space-y-6">
-            <div className="p-4 md:p-6 bg-white border border-black/5 rounded-lg shadow-sm space-y-5">
-              <div className="flex items-center gap-3 border-b border-black/5 pb-4">
-                <ClipboardList className="size-4 text-black/30" />
-                <span className="text-[10px] font-bold uppercase tracking-widest">Operational Registry</span>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-[9px] font-bold uppercase text-black/50 ml-1">Client / Entity Identifier*</label>
-                <Input className="rounded-md border-black/10 text-xs font-bold uppercase h-12 bg-[#F9FAFA]/50 focus:bg-white" placeholder="ID: REGISTERED NAME..." value={formData.client} onChange={e => setFormData({...formData, client: e.target.value})} />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-[9px] font-bold uppercase text-black/50 ml-1">Operational Objective</label>
-                <Input className="rounded-md border-black/10 text-xs font-bold uppercase h-12 bg-[#F9FAFA]/50 focus:bg-white" placeholder="SPECIFY GOAL..." value={formData.agenda} onChange={e => setFormData({...formData, agenda: e.target.value})} />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-[9px] font-bold uppercase text-black/50 ml-1">Deployment Briefing</label>
-                <Textarea className="rounded-md border-black/10 text-xs font-bold uppercase min-h-[100px] bg-[#F9FAFA]/50 focus:bg-white" placeholder="SUPPLEMENTAL PROTOCOLS..." value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
-              </div>
-            </div>
-
-            <div className="p-4 md:p-6 bg-white border border-black/5 rounded-lg shadow-sm space-y-5">
-              <div className="flex items-center gap-3 border-b border-black/5 pb-4">
-                <MapPin className="size-4 text-black/30" />
-                <span className="text-[10px] font-bold uppercase tracking-widest">Geospatial Logistics</span>
-              </div>
-              <div className="w-full h-32 bg-[#F9FAFA] border border-black/5 rounded-md flex flex-col items-center justify-center gap-2 overflow-hidden relative group">
-                <Globe className="size-8 text-black/10 group-hover:text-blue-500/20 transition-colors" />
-                <span className="text-[8px] font-bold text-black/20 uppercase tracking-widest">Waiting for Coordinate Lock</span>
-                {coords && <div className="absolute inset-0 bg-blue-500/5 flex items-center justify-center"><CheckCircle2 className="size-6 text-blue-500" /></div>}
-              </div>
-              <div className="space-y-1.5">
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-[9px] font-bold uppercase text-black/50 ml-1">Deployment Address*</label>
-                  <button onClick={handleVerifyMap} className="text-[9px] font-bold uppercase flex items-center gap-1.5 hover:text-blue-600 transition-colors">
-                    {isGeocoding ? <Loader2 className="size-3 animate-spin" /> : <Navigation className="size-3" />} Verify Lock
-                  </button>
-                </div>
-                <Textarea className="rounded-md border-black/10 text-xs font-bold uppercase h-20 bg-[#F9FAFA]/50" placeholder="LOCATION COORDINATES..." value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-[9px] font-bold uppercase text-black/50 ml-1">Site Landmark</label>
-                <Input className="rounded-md border-black/10 text-xs font-bold uppercase h-12 bg-[#F9FAFA]/50" placeholder="VISUAL REFERENCE..." value={formData.landmark} onChange={e => setFormData({...formData, landmark: e.target.value})} />
-              </div>
-            </div>
-
-            <div className="p-6 border-2 border-dashed border-black/10 rounded-lg bg-white/40 text-center hover:bg-white hover:border-black/20 transition-all shadow-sm">
-              {attachedFile ? (
-                <div className="flex items-center justify-between bg-white p-3 border border-black/10 rounded shadow-sm">
-                  <span className="text-[10px] font-bold uppercase truncate max-w-[200px]">{attachedFile.name}</span>
-                  <button onClick={() => setAttachedFile(null)} className="text-red-500 hover:scale-110 transition-transform"><X className="size-4" /></button>
                 </div>
               ) : (
-                <label className="cursor-pointer flex flex-col items-center gap-2 py-4 group">
-                  <Paperclip className="size-5 text-black/20 group-hover:text-black/40 transition-colors" />
-                  <span className="text-[9px] font-bold uppercase text-black/40 tracking-widest">Attach Deployment Manifest</span>
-                  <input type="file" className="hidden" onChange={(e) => setAttachedFile(e.target.files?.[0] || null)} />
-                </label>
+                <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h3 className="text-[15px] font-black text-zinc-900 uppercase tracking-tight">{monthLabel}</h3>
+                      <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest mt-0.5">Operational Schedule</p>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Button variant="outline" size="sm" onClick={() => handleMonthChange(-1)} disabled={viewDate.getMonth() === today.getMonth()} className="size-9 p-0 rounded-xl border-zinc-200 hover:bg-zinc-50"><ChevronLeft className="size-4" /></Button>
+                      <Button variant="outline" size="sm" onClick={() => handleMonthChange(1)} className="size-9 p-0 rounded-xl border-zinc-200 hover:bg-zinc-50"><ChevronRight className="size-4" /></Button>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {['SUN','MON','TUE','WED','THU','FRI','SAT'].map((d) => (
+                      <div key={d} className="text-center text-[9px] font-black text-zinc-400 pb-2 uppercase tracking-widest">{d}</div>
+                    ))}
+                    {Array.from({ length: firstDayOfMonth }).map((_, i) => ( <div key={`pad-${i}`} className="aspect-square" /> ))}
+                    {Array.from({length: daysInMonth}).map((_, i) => {
+                      const dayNum = i + 1;
+                      const isPast = new Date(viewDate.getFullYear(), viewDate.getMonth(), dayNum) < today;
+                      
+                      const bookedApp = existingAppointments.find(a => a.day === dayNum && a.month === viewDate.getMonth() && a.year === viewDate.getFullYear());
+                      const blockedSlot = blockedSlots.find(s => s.day === dayNum && s.month === viewDate.getMonth() && s.year === viewDate.getFullYear());
+                      
+                      const isBusy = !!bookedApp;
+                      const isBlocked = !!blockedSlot;
+
+                      return (
+                        <button 
+                          key={i} 
+                          onClick={() => {
+                            if (isBusy) setViewingDetails(bookedApp);
+                            else if (isBlocked) setViewingDetails({ client: "PERSONNEL_UNAVAILABLE", agenda: blockedSlot.justification, isBlock: true });
+                            else setSelectedDate(dayNum);
+                          }}
+                          disabled={isPast} 
+                          className={cn(
+                            "aspect-square flex flex-col items-center justify-center text-[13px] font-black transition-all relative rounded-xl border", 
+                            selectedDate === dayNum ? "bg-zinc-900 text-white border-zinc-900 shadow-md z-10 scale-105" : 
+                            isPast ? "bg-zinc-50 text-zinc-200 border-transparent cursor-not-allowed opacity-50" : 
+                            isBusy ? "bg-red-50 text-red-600 border-red-100" : 
+                            isBlocked ? "bg-amber-50 text-amber-600 border-amber-100" :
+                            "bg-white border-zinc-100 hover:border-zinc-300 hover:bg-zinc-50"
+                          )}
+                        >
+                          <span>{dayNum}</span>
+                          {isBusy && !isPast && <div className="absolute top-1 right-1 size-1.5 bg-red-500 rounded-full border border-white" />}
+                          {isBlocked && !isPast && <div className="absolute top-1 right-1 size-1.5 bg-amber-500 rounded-full border border-white" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-8 pt-6 border-t border-zinc-100 grid grid-cols-2 gap-3">
+                      <div className="p-4 bg-zinc-50 border border-zinc-100 rounded-2xl text-center group">
+                        <p className="text-[8px] font-black text-zinc-400 uppercase mb-1.5 tracking-widest leading-none">TSA Approval</p>
+                        <span className="text-[11px] font-black uppercase text-zinc-900 leading-none">{formData.tsa || "—"}</span>
+                      </div>
+                      <div className="p-4 bg-zinc-50 border border-zinc-100 rounded-2xl text-center group">
+                        <p className="text-[8px] font-black text-zinc-400 uppercase mb-1.5 tracking-widest leading-none">TSM Approval</p>
+                        <span className="text-[11px] font-black uppercase text-zinc-900 leading-none">{formData.tsm || "—"}</span>
+                      </div>
+                  </div>
+                </div>
               )}
             </div>
-          </section>
-        </div>
-      </main>
+          </div>
 
-      <div className="fixed bottom-6 right-4 left-4 md:left-auto md:bottom-8 md:right-8 z-[60]">
-        <Button 
-          onClick={handleSubmitProtocol} 
-          disabled={!isComplete || isSubmitting} 
-          className={cn(
-            "w-full md:w-auto h-16 px-10 rounded-full font-bold uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-4 shadow-[0_20px_50px_rgba(0,0,0,0.3)] border border-white/10 transition-all", 
-            isComplete ? "bg-[#121212] text-white hover:bg-black hover:scale-105 active:scale-95" : "bg-[#121212]/10 text-black/20 cursor-not-allowed"
-          )}
-        >
-          {isSubmitting ? "Processing..." : "Confirm Deployment"}
-          {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-        </Button>
-      </div>
-    </div>
+          {/* LEFT COLUMN: FORM DATA */}
+          <div className="lg:col-span-5 space-y-6 order-2 lg:order-1">
+            <div className="space-y-3">
+              <p className="text-[10px] font-black uppercase text-zinc-400 tracking-widest flex items-center gap-2 px-1">
+                <Sparkles className="size-3 text-zinc-400" /> Services Selected
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {protocolMetadata?.map((item: any, idx: number) => (
+                  <div key={idx} className="px-3 py-1.5 bg-white border border-zinc-200/60 rounded-xl shadow-sm text-[10px] font-black uppercase flex items-center gap-2">
+                    <div className="size-1.5 rounded-full bg-blue-500 shadow-lg shadow-blue-200" /> 
+                    {item.label}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <section className="p-5 bg-white border border-zinc-200/60 rounded-[28px] shadow-sm space-y-5">
+              <div className="flex items-center gap-3 border-b border-zinc-50 pb-4">
+                <div className="size-8 bg-zinc-900 rounded-lg flex items-center justify-center text-white">
+                  <User2 size={16} />
+                </div>
+                <span className="text-[11px] font-black uppercase tracking-tight text-zinc-900">Resource Allocation</span>
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                {assignedPics.map((picData, i) => {
+                  const name = typeof picData === 'string' ? picData : picData.name;
+                  const isSelected = selectedPic === name;
+                  return (
+                    <button 
+                      key={i} onClick={() => handlePicChange(name)} 
+                      className={cn(
+                        "w-full text-left px-4 py-3 rounded-2xl border transition-all flex justify-between items-center group active:scale-[0.98]", 
+                        isSelected 
+                          ? "bg-zinc-900 text-white border-zinc-900 shadow-lg" 
+                          : "bg-zinc-50/50 border-zinc-100 hover:border-zinc-300 hover:bg-white"
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Avatar className="size-9 rounded-xl border border-white/10 shadow-sm overflow-hidden">
+                          <AvatarImage src={picData.profilePicture} className="object-cover" />
+                          <AvatarFallback className={cn("text-[11px] font-black", isSelected ? "bg-white text-black" : "bg-zinc-900 text-white")}>
+                            {name?.[0]}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className={cn("text-[11px] font-black uppercase tracking-tight leading-none", isSelected ? "text-white" : "text-zinc-900")}>{name}</p>
+                          <p className={cn("text-[8px] font-bold uppercase tracking-widest mt-1", isSelected ? "text-zinc-400" : "text-zinc-400")}>Field Staff</p>
+                        </div>
+                      </div>
+                      {isSelected && <CheckCircle2 className="size-4 text-emerald-400" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="space-y-6">
+              <div className="p-5 bg-white border border-zinc-200/60 rounded-[28px] shadow-sm space-y-5">
+                <div className="flex items-center gap-3 border-b border-zinc-50 pb-4">
+                  <div className="size-8 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600">
+                    <ClipboardList size={16} />
+                  </div>
+                  <span className="text-[11px] font-black uppercase tracking-tight text-zinc-900">Visit Details</span>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest ml-1">Client Name*</label>
+                  <Input className="rounded-xl border-zinc-100 text-xs font-black uppercase h-11 bg-zinc-50/50 focus:bg-white focus:ring-1 focus:ring-zinc-900 transition-all px-4" placeholder="Who are you visiting?..." value={formData.client} onChange={e => setFormData({...formData, client: e.target.value})} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest ml-1">What needs to be done?</label>
+                  <Input className="rounded-xl border-zinc-100 text-xs font-black uppercase h-11 bg-zinc-50/50 focus:bg-white focus:ring-1 focus:ring-zinc-900 transition-all px-4" placeholder="Brief purpose of visit..." value={formData.agenda} onChange={e => setFormData({...formData, agenda: e.target.value})} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest ml-1">Additional Notes</label>
+                  <Textarea className="rounded-xl border-zinc-100 text-xs font-black uppercase min-h-[100px] bg-zinc-50/50 focus:bg-white focus:ring-1 focus:ring-zinc-900 transition-all p-4 resize-none" placeholder="Any extra instructions or details..." value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
+                </div>
+              </div>
+
+              <div className="p-5 bg-white border border-zinc-200/60 rounded-[28px] shadow-sm space-y-5">
+                <div className="flex items-center gap-3 border-b border-zinc-50 pb-4">
+                  <div className="size-8 bg-amber-50 rounded-lg flex items-center justify-center text-amber-600">
+                    <MapPin size={16} />
+                  </div>
+                  <span className="text-[11px] font-black uppercase tracking-tight text-zinc-900">Location Info</span>
+                </div>
+                
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest ml-1">Site Address*</label>
+                    <button onClick={handleVerifyMap} className="text-[9px] font-black uppercase flex items-center gap-2 hover:text-blue-600 transition-all bg-zinc-50 px-2 py-1 rounded-lg border border-zinc-100">
+                      {isGeocoding ? <Loader2 className="size-3 animate-spin" /> : <Navigation className="size-3" />} 
+                      Verify Map
+                    </button>
+                  </div>
+                  <Textarea className="rounded-xl border-zinc-100 text-xs font-black uppercase h-20 bg-zinc-50/50 focus:bg-white focus:ring-1 focus:ring-zinc-900 transition-all p-4 resize-none" placeholder="Complete address of the site..." value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
+                </div>
+
+                <div className="w-full h-24 bg-zinc-50 border border-zinc-100 rounded-2xl flex flex-col items-center justify-center gap-2 overflow-hidden relative group">
+                  <Globe className="size-8 text-zinc-100 group-hover:text-blue-500/10 transition-colors" />
+                  <span className="text-[9px] font-black text-zinc-300 uppercase tracking-widest">Map Pin Status</span>
+                  {coords && (
+                    <div className="absolute inset-0 bg-emerald-50/50 flex items-center justify-center animate-in zoom-in duration-300">
+                      <CheckCircle2 className="size-6 text-emerald-500" />
+                      <span className="ml-2 text-[10px] font-black text-emerald-600 uppercase">Pinned</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest ml-1">Site Landmark</label>
+                  <Input className="rounded-xl border-zinc-100 text-xs font-black uppercase h-11 bg-zinc-50/50 focus:bg-white focus:ring-1 focus:ring-zinc-900 transition-all px-4" placeholder="Near school, mall, etc..." value={formData.landmark} onChange={e => setFormData({...formData, landmark: e.target.value})} />
+                </div>
+              </div>
+
+              <div className="p-6 border-2 border-dashed border-zinc-200 rounded-[28px] bg-white/40 text-center hover:bg-white hover:border-zinc-300 transition-all shadow-sm group">
+                {attachedFile ? (
+                  <div className="flex items-center justify-between bg-zinc-900 p-3 rounded-xl shadow-lg animate-in zoom-in duration-300">
+                    <div className="flex items-center gap-3">
+                      <Paperclip className="size-4 text-zinc-400" />
+                      <span className="text-[10px] font-black text-white uppercase truncate max-w-[150px]">{attachedFile.name}</span>
+                    </div>
+                    <button onClick={() => setAttachedFile(null)} className="text-zinc-500 hover:text-white transition-colors"><X className="size-4" /></button>
+                  </div>
+                ) : (
+                  <label className="cursor-pointer flex flex-col items-center gap-2 py-4 group">
+                    <div className="size-10 bg-zinc-50 rounded-xl flex items-center justify-center text-zinc-300 group-hover:bg-zinc-900 group-hover:text-white transition-all">
+                      <Paperclip size={20} />
+                    </div>
+                    <span className="text-[10px] font-black uppercase text-zinc-400 tracking-widest mt-2">Attach Files (Optional)</span>
+                    <input type="file" className="hidden" onChange={(e) => setAttachedFile(e.target.files?.[0] || null)} />
+                  </label>
+                )}
+              </div>
+            </section>
+          </div>
+        </main>
+
+        <div className="fixed bottom-6 right-4 left-4 md:left-auto md:bottom-8 md:right-8 z-[60]">
+          <Button 
+            onClick={handleSubmitProtocol} 
+            disabled={!isComplete || isSubmitting} 
+            className={cn(
+              "w-full md:w-auto h-16 px-10 rounded-full font-black uppercase text-[11px] tracking-[0.2em] flex items-center justify-center gap-4 shadow-2xl transition-all active:scale-[0.95]", 
+              isComplete 
+                ? "bg-zinc-900 text-white hover:bg-zinc-800 hover:scale-105" 
+                : "bg-zinc-200 text-zinc-400 cursor-not-allowed shadow-none"
+            )}
+          >
+            {isSubmitting ? "Finalizing..." : "Submit Visit Request"}
+            {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+          </Button>
+        </div>
+      </SidebarInset>
+    </>
   );
 }
