@@ -330,14 +330,11 @@ export default function ProcurementListPage() {
   const searchRef = React.useRef<HTMLInputElement>(null)
 
   /* ── FETCH ── */
-  const fetchRequests = React.useCallback(async (dept?: string | null, role?: string | null, refId?: string | null) => {
+  const fetchRequests = React.useCallback(async (dept?: string | null) => {
     setIsLoading(true)
     try {
       const department = dept ?? userDepartment
-      const user_role  = role ?? userRole
-      const user_ref_id = refId ?? userRefId
       const isIT = (department || "").toUpperCase() === "IT"
-      const isHigherRole = ["SUPER ADMIN", "MANAGER", "LEADER"].includes((user_role || "").toUpperCase())
 
       let query = supabase
         .from("spf_creation")
@@ -349,13 +346,9 @@ export default function ProcurementListPage() {
         `)
         .order("date_created", { ascending: false })
 
-      // IF MEMBER: Only show their own records (referenceid or tsm matches userRefId)
-      // IF IT or Higher Role: Show all
-      if (!isIT && !isHigherRole && user_ref_id) {
-        query = query.or(`referenceid.eq.${user_ref_id},tsm.eq.${user_ref_id}`)
-      } else if (!isIT) {
-        // If not IT but higher role, still show all but maybe filter by status if needed
-        // The original logic was: if (!isIT) query = query.or("status.eq.Pending For Procurement,status.eq.Approved By Procurement")
+      // IF IT: Show all records
+      // IF NOT IT: Show only Pending and Approved for Procurement (Members now see all)
+      if (!isIT) {
         query = query.or("status.eq.Pending For Procurement,status.eq.Approved By Procurement")
       }
 
@@ -457,10 +450,10 @@ export default function ProcurementListPage() {
         const mongoData = await res.json()
         const refId = mongoData.ReferenceID || ""
         setUserRefId(refId)
-        fetchRequests(dept, role, refId)
+        fetchRequests(dept)
       } catch (e) {
         console.error("Error fetching user info:", e)
-        fetchRequests(dept, role, null)
+        fetchRequests(dept)
       }
     }
     fetchCurrentUserInfo()
@@ -482,7 +475,7 @@ export default function ProcurementListPage() {
 
     const ch = supabase
       .channel("spf_creation_changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "spf_creation" }, () => fetchRequests(dept, role, userRefId))
+      .on("postgres_changes", { event: "*", schema: "public", table: "spf_creation" }, () => fetchRequests(dept))
       .subscribe()
     return () => { supabase.removeChannel(ch) }
   }, [fetchRequests])
@@ -560,7 +553,7 @@ export default function ProcurementListPage() {
     setPage(1)
     setSortField("date_created")
     setSortDir("desc")
-    fetchRequests(userDepartment, userRole, userRefId)
+    fetchRequests(userDepartment)
   }
 
   const handleExport = () => {
