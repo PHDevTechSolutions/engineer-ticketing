@@ -83,15 +83,109 @@ export default function SchedulePage() {
   const [addressOptions, setAddressOptions] = React.useState<string[]>([]);
   const [openAddress, setOpenAddress] = React.useState(false);
 
+  // PSGC DATA STATES
+  const [regions, setRegions] = React.useState<any[]>([]);
+  const [provinces, setProvinces] = React.useState<any[]>([]);
+  const [cities, setCities] = React.useState<any[]>([]);
+  const [barangays, setBarangays] = React.useState<any[]>([]);
+
   const [formData, setFormData] = React.useState({ 
     client: "", 
     address: "", 
+    street: "",
+    barangay: "",
+    city: "",
+    province: "",
+    region: "",
     landmark: "",
     agenda: "",
     notes: "", 
     tsa: "NOT_SET", 
     tsm: "NOT_SET"  
   });
+
+  // FETCH PSGC REGIONS ON MOUNT
+  React.useEffect(() => {
+    const fetchRegions = async () => {
+      try {
+        const res = await fetch("https://psgc.gitlab.io/api/regions/");
+        const data = await res.json();
+        setRegions(data.sort((a: any, b: any) => a.name.localeCompare(b.name)));
+      } catch (err) { console.error("REGIONS_FETCH_ERROR", err); }
+    };
+    fetchRegions();
+  }, []);
+
+  // FETCH PROVINCES WHEN REGION CHANGES
+  React.useEffect(() => {
+    if (!formData.region) {
+      setProvinces([]);
+      return;
+    }
+    const fetchProvinces = async () => {
+      try {
+        const res = await fetch(`https://psgc.gitlab.io/api/regions/${formData.region}/provinces/`);
+        const data = await res.json();
+        setProvinces(data.sort((a: any, b: any) => a.name.localeCompare(b.name)));
+      } catch (err) { console.error("PROVINCES_FETCH_ERROR", err); }
+    };
+    fetchProvinces();
+  }, [formData.region]);
+
+  // FETCH CITIES WHEN PROVINCE CHANGES (OR REGION IF NCR)
+  React.useEffect(() => {
+    if (!formData.province && !formData.region) {
+      setCities([]);
+      return;
+    }
+    
+    const fetchCities = async () => {
+      try {
+        let url = "";
+        if (formData.province) {
+          url = `https://psgc.gitlab.io/api/provinces/${formData.province}/cities-municipalities/`;
+        } else if (formData.region === "130000000") { // NCR logic
+          url = `https://psgc.gitlab.io/api/regions/${formData.region}/cities-municipalities/`;
+        } else {
+          setCities([]);
+          return;
+        }
+
+        const res = await fetch(url);
+        const data = await res.json();
+        setCities(data.sort((a: any, b: any) => a.name.localeCompare(b.name)));
+      } catch (err) { console.error("CITIES_FETCH_ERROR", err); }
+    };
+    fetchCities();
+  }, [formData.province, formData.region]);
+
+  // FETCH BARANGAYS WHEN CITY CHANGES
+  React.useEffect(() => {
+    if (!formData.city) {
+      setBarangays([]);
+      return;
+    }
+    const fetchBarangays = async () => {
+      try {
+        const res = await fetch(`https://psgc.gitlab.io/api/cities-municipalities/${formData.city}/barangays/`);
+        const data = await res.json();
+        setBarangays(data.sort((a: any, b: any) => a.name.localeCompare(b.name)));
+      } catch (err) { console.error("BARANGAYS_FETCH_ERROR", err); }
+    };
+    fetchBarangays();
+  }, [formData.city]);
+
+  // AUTO-POPULATE COMBINED ADDRESS
+  React.useEffect(() => {
+    const r = regions.find(x => x.code === formData.region)?.name || "";
+    const p = provinces.find(x => x.code === formData.province)?.name || "";
+    const c = cities.find(x => x.code === formData.city)?.name || "";
+    const b = barangays.find(x => x.code === formData.barangay)?.name || "";
+    const s = formData.street || "";
+
+    const combined = [s, b, c, p, r].filter(Boolean).join(", ");
+    setFormData(prev => ({ ...prev, address: combined }));
+  }, [formData.region, formData.province, formData.city, formData.barangay, formData.street, regions, provinces, cities, barangays]);
 
   // FETCH HISTORICAL ADDRESSES
   React.useEffect(() => {
@@ -225,7 +319,16 @@ export default function SchedulePage() {
     );
   }
 
-  const isComplete = Boolean(formData.client.trim() && formData.address.trim() && selectedDate !== null && selectedPic !== "");
+  const isComplete = Boolean(
+    formData.client.trim() && 
+    formData.address.trim() && 
+    selectedDate !== null && 
+    selectedPic !== "" &&
+    formData.region !== "" &&
+    (formData.province !== "" || formData.region === "130000000") &&
+    formData.city !== "" &&
+    formData.barangay !== ""
+  );
   const daysInMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate();
   const firstDayOfMonth = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1).getDay();
   const monthLabel = viewDate.toLocaleString('default', { month: 'long', year: 'numeric' }).toUpperCase();
@@ -304,6 +407,10 @@ export default function SchedulePage() {
         personnel: personnel || [],
         ppe: ppe || [],
         permits: permits || [],
+        region: regions.find(x => x.code === formData.region)?.name || "",
+        province: provinces.find(x => x.code === formData.province)?.name || "",
+        city: cities.find(x => x.code === formData.city)?.name || "",
+        barangay: barangays.find(x => x.code === formData.barangay)?.name || "",
         fileUrl, 
         coordinates: coords, 
         status: "PENDING",
@@ -609,69 +716,123 @@ export default function SchedulePage() {
                   <span className="text-[11px] font-black uppercase tracking-tight text-zinc-900">Location Info</span>
                 </div>
                 
-                <div className="space-y-1.5">
+                <div className="space-y-4">
                   <div className="flex justify-between items-center mb-1">
-                    <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest ml-1">Site Address*</label>
+                    <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest ml-1">Site Location*</label>
                     <button onClick={handleVerifyMap} className="text-[9px] font-black uppercase flex items-center gap-2 hover:text-blue-600 transition-all bg-zinc-50 px-2 py-1 rounded-lg border border-zinc-100">
                       {isGeocoding ? <Loader2 className="size-3 animate-spin" /> : <Navigation className="size-3" />} 
                       Verify Map
                     </button>
                   </div>
                   
-                  <div className="flex gap-2">
-                    <Popover open={openAddress} onOpenChange={setOpenAddress}>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          role="combobox"
-                          aria-expanded={openAddress}
-                          className="w-full justify-between rounded-xl border-zinc-100 h-11 bg-zinc-50/50 hover:bg-white text-xs font-black uppercase tracking-tight px-4"
-                        >
-                          <div className="flex items-center gap-2 truncate">
-                            <Search className="size-3 text-zinc-400" />
-                            <span className="truncate">{formData.address || "Select or type address..."}</span>
-                          </div>
-                          <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-[300px] p-0 rounded-2xl shadow-2xl border-zinc-100" align="start">
-                        <Command className="rounded-2xl">
-                          <CommandInput placeholder="Search previous locations..." className="h-11 text-xs font-bold uppercase tracking-tight" />
-                          <CommandList className="max-h-[200px]">
-                            <CommandEmpty className="py-4 text-[10px] font-bold text-zinc-400 uppercase tracking-widest text-center">No history found</CommandEmpty>
-                            <CommandGroup heading="Recent Addresses" className="p-2">
-                              {addressOptions.map((addr) => (
-                                <CommandItem
-                                  key={addr}
-                                  value={addr}
-                                  onSelect={() => {
-                                    setFormData({ ...formData, address: addr });
-                                    setOpenAddress(false);
-                                  }}
-                                  className="rounded-xl text-[10px] font-bold uppercase tracking-tight py-3 px-4 aria-selected:bg-zinc-100"
-                                >
-                                  <Check
-                                    className={cn(
-                                      "mr-2 h-3 w-3",
-                                      formData.address === addr ? "opacity-100" : "opacity-0"
-                                    )}
-                                  />
-                                  <span className="truncate">{addr}</span>
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
+                  {/* REGION & PROVINCE */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Region</span>
+                      <select 
+                        className="w-full h-11 px-4 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-1 focus:ring-zinc-900 transition-all appearance-none"
+                        value={formData.region}
+                        onChange={(e) => setFormData({ ...formData, region: e.target.value, province: "", city: "", barangay: "" })}
+                      >
+                        <option value="">Select Region...</option>
+                        {regions.map(r => <option key={r.code} value={r.code}>{r.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Province</span>
+                      <select 
+                        className="w-full h-11 px-4 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-1 focus:ring-zinc-900 transition-all appearance-none disabled:opacity-50"
+                        value={formData.province}
+                        disabled={!formData.region || formData.region === "130000000"}
+                        onChange={(e) => setFormData({ ...formData, province: e.target.value, city: "", barangay: "" })}
+                      >
+                        <option value="">{formData.region === "130000000" ? "NOT APPLICABLE (NCR)" : "Select Province..."}</option>
+                        {provinces.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}
+                      </select>
+                    </div>
                   </div>
 
-                  <Textarea 
-                    className="rounded-xl border-zinc-100 text-xs font-black uppercase h-20 bg-zinc-50/50 focus:bg-white focus:ring-1 focus:ring-zinc-900 transition-all p-4 resize-none" 
-                    placeholder="Complete address of the site..." 
-                    value={formData.address} 
-                    onChange={e => setFormData({...formData, address: e.target.value})} 
-                  />
+                  {/* CITY & BARANGAY */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest ml-1">City / Municipality</span>
+                      <select 
+                        className="w-full h-11 px-4 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-1 focus:ring-zinc-900 transition-all appearance-none disabled:opacity-50"
+                        value={formData.city}
+                        disabled={!formData.province && formData.region !== "130000000"}
+                        onChange={(e) => setFormData({ ...formData, city: e.target.value, barangay: "" })}
+                      >
+                        <option value="">Select City...</option>
+                        {cities.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Barangay</span>
+                      <select 
+                        className="w-full h-11 px-4 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-1 focus:ring-zinc-900 transition-all appearance-none disabled:opacity-50"
+                        value={formData.barangay}
+                        disabled={!formData.city}
+                        onChange={(e) => setFormData({ ...formData, barangay: e.target.value })}
+                      >
+                        <option value="">Select Barangay...</option>
+                        {barangays.map(b => <option key={b.code} value={b.code}>{b.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* STREET & PREVIOUS ADDRESSES */}
+                  <div className="space-y-1.5">
+                    <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Street / Building / House #</span>
+                    <Input 
+                      className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-11 bg-zinc-50/50 focus:bg-white focus:ring-1 focus:ring-zinc-900 transition-all px-4" 
+                      placeholder="e.g. 123 Main St, Tower 1..." 
+                      value={formData.street} 
+                      onChange={e => setFormData({ ...formData, street: e.target.value })} 
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Full Generated Address</span>
+                    <Textarea 
+                      className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-20 bg-zinc-100/50 p-4 resize-none" 
+                      placeholder="Combined address will appear here..." 
+                      value={formData.address} 
+                      readOnly
+                    />
+                    <div className="flex justify-end">
+                      <Popover open={openAddress} onOpenChange={setOpenAddress}>
+                        <PopoverTrigger asChild>
+                          <Button variant="ghost" size="sm" className="text-[9px] font-black uppercase text-zinc-400 hover:text-zinc-900 gap-2">
+                            <RefreshCw size={10} /> Use Recent Location
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[300px] p-0 rounded-2xl shadow-2xl border-zinc-100" align="end">
+                          <Command className="rounded-2xl">
+                            <CommandInput placeholder="Search history..." className="h-11 text-xs font-bold uppercase tracking-tight" />
+                            <CommandList className="max-h-[200px]">
+                              <CommandEmpty className="py-4 text-[10px] font-bold text-zinc-400 uppercase tracking-widest text-center">No history found</CommandEmpty>
+                              <CommandGroup heading="Recent Addresses" className="p-2">
+                                {addressOptions.map((addr) => (
+                                  <CommandItem
+                                    key={addr}
+                                    value={addr}
+                                    onSelect={() => {
+                                      setFormData({ ...formData, address: addr });
+                                      setOpenAddress(false);
+                                    }}
+                                    className="rounded-xl text-[10px] font-bold uppercase tracking-tight py-3 px-4 aria-selected:bg-zinc-100"
+                                  >
+                                    <Check className={cn("mr-2 h-3 w-3", formData.address === addr ? "opacity-100" : "opacity-0")} />
+                                    <span className="truncate">{addr}</span>
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="w-full h-24 bg-zinc-50 border border-zinc-100 rounded-2xl flex flex-col items-center justify-center gap-2 overflow-hidden relative group">
