@@ -384,7 +384,7 @@ export default function AccessLogsPage() {
     <ProtectedPageWrapper>
       <SidebarProvider defaultOpen={false}>
         <AppSidebar userId={userId} />
-        <SidebarInset className="bg-[#F8FAFA] pb-24 md:pb-10 min-h-screen m-0 rounded-none border-none shadow-none overflow-visible pt-14 md:pt-16 font-sans">
+        <SidebarInset className="bg-[#F8FAFA] pb-24 md:pb-10 min-h-screen m-0 rounded-none border-none shadow-none overflow-visible font-sans">
           <PageHeader 
             title="Admin / Activity Logs" 
             version="V3.2-SECURITY" 

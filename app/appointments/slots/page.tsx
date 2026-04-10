@@ -344,7 +344,7 @@ export default function AvailabilitySlotsPage() {
         <ProtectedPageWrapper>
             <SidebarProvider defaultOpen={false}>
                 <AppSidebar userId={userId} />
-                <SidebarInset className="bg-[#F8FAFA] pb-24 md:pb-10 min-h-screen m-0 rounded-none border-none shadow-none overflow-visible pt-14 md:pt-16 font-sans">
+                <SidebarInset className="bg-[#F8FAFA] pb-24 md:pb-10 min-h-screen m-0 rounded-none border-none shadow-none overflow-visible font-sans">
                     <PageHeader
                         title="Appointments / Slots"
                         version="SYS-v2.6"

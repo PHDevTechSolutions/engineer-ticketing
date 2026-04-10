@@ -202,7 +202,7 @@ export default function ProfilePage() {
     <ProtectedPageWrapper>
       <SidebarProvider defaultOpen={false}>
         <AppSidebar userId={userId} />
-        <SidebarInset className="bg-[#F4F7F7] min-h-screen pt-14 md:pt-16 overflow-visible m-0 rounded-none border-none shadow-none font-sans">
+        <SidebarInset className="bg-[#F4F7F7] min-h-screen overflow-visible m-0 rounded-none border-none shadow-none font-sans">
           
           <PageHeader 
             title="MY ACCOUNT" 

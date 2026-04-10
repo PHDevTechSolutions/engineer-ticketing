@@ -351,7 +351,7 @@ export default function PICAssignmentMatrixPage() {
         <ProtectedPageWrapper>
             <SidebarProvider defaultOpen={false}>
                 <AppSidebar userId={currentUserId} />
-                <SidebarInset className="bg-[#F8FAFA] pb-24 md:pb-10 min-h-screen m-0 rounded-none border-none shadow-none overflow-visible pt-14 md:pt-16 font-sans">
+                <SidebarInset className="bg-[#F8FAFA] pb-24 md:pb-10 min-h-screen m-0 rounded-none border-none shadow-none overflow-visible font-sans">
                     <PageHeader
                         title="Assignment Matrix"
                         version="V4.5-MATRIX"

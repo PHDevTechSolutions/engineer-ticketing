@@ -288,7 +288,7 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
 
   return (
     <Sidebar
-      variant="inset"
+      variant="sidebar"
       collapsible="offcanvas"
       className="border-r border-zinc-200/80 bg-[#FAFAFA] z-40"
       {...props}

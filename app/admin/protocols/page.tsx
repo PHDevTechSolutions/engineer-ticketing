@@ -249,26 +249,26 @@ export default function SiteVisitManagementPage() {
         <ProtectedPageWrapper>
             <SidebarProvider defaultOpen={false}>
                 <AppSidebar userId={userId} />
-                <SidebarInset className="bg-[#F8FAFA] pb-24 md:pb-10 min-h-screen m-0 rounded-none border-none shadow-none overflow-visible pt-14 md:pt-16 font-sans">
+                <SidebarInset className="bg-[#F8FAFA] pb-24 md:pb-10 min-h-screen m-0 rounded-none border-none shadow-none overflow-visible font-sans">
                     <PageHeader
-                        title="Admin / Service Hub"
+                        title="ADMIN / SERVICE HUB"
                         version="V3.0-HUB"
                         trigger={<SidebarTrigger className="mr-2" />}
                         actions={
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2">
                                 <Button
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => setShowGuide(true)}
-                                    className="rounded-xl h-9 px-4 transition-all text-[11px] font-bold uppercase text-zinc-500 hover:bg-white border border-transparent hover:border-zinc-200"
+                                    className="rounded-xl h-8 px-3 transition-all text-[9px] font-black uppercase tracking-widest text-zinc-500 hover:bg-white border border-transparent hover:border-zinc-200"
                                 >
-                                    <HelpCircle size={15} className="mr-2" />
+                                    <HelpCircle size={14} className="mr-1.5" />
                                     <span className="hidden md:inline">Hub Guide</span>
                                 </Button>
 
                                 <Button
                                     onClick={() => { setSelectedService(null); setIsOpen(true) }}
-                                    className="h-10 px-4 rounded-2xl bg-zinc-900 text-white font-black text-[10px] uppercase tracking-widest hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-200 flex items-center gap-2"
+                                    className="h-9 px-4 rounded-xl bg-zinc-900 text-white font-black text-[9px] uppercase tracking-[0.15em] hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-200 flex items-center gap-2"
                                 >
                                     <Plus className="size-3.5" />
                                     <span>Add New Service</span>
@@ -314,7 +314,7 @@ export default function SiteVisitManagementPage() {
                             />
                         </section>
 
-                        <div className="sticky top-[56px] md:top-[64px] z-[45] flex flex-col xl:flex-row xl:items-center gap-3 bg-white/80 backdrop-blur-md p-2 rounded-[24px] border border-zinc-200/40 shadow-sm transition-all">
+                        <div className="sticky top-0 z-[45] flex flex-col xl:flex-row xl:items-center gap-3 bg-white/80 backdrop-blur-md p-2 rounded-[24px] border border-zinc-200/40 shadow-sm transition-all">
                             <div className="flex gap-1.5 overflow-x-auto pb-1 xl:pb-0 scrollbar-none flex-1">
                                 <StatPill
                                     label="All Hub"
