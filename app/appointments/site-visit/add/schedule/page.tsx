@@ -21,9 +21,8 @@ import { cn } from "@/lib/utils"
 import { format } from "date-fns"
 
 // FIREBASE IMPORTS
-import { db, storage } from "@/lib/firebase"
+import { db } from "@/lib/firebase"
 import { collection, addDoc, onSnapshot, query, where, serverTimestamp, Timestamp, getDocs } from "firebase/firestore"
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage"
 
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -262,6 +261,24 @@ export default function SchedulePage() {
     finally { setIsGeocoding(false); }
   };
 
+  const handleDirectUpload = async (file: File) => {
+    const data = new FormData();
+    data.append("file", file);
+    data.append("upload_preset", "Xchire"); 
+
+    try {
+      const res = await fetch("https://api.cloudinary.com/v1_1/dhczsyzcz/image/upload", {
+        method: "POST",
+        body: data,
+      });
+      const json = await res.json();
+      return json.secure_url;
+    } catch (error) {
+      console.error(`Cloudinary Error: ${error}`);
+      return null;
+    }
+  };
+
   const handleSubmitProtocol = async () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
@@ -273,9 +290,8 @@ export default function SchedulePage() {
     try {
       let fileUrl = "";
       if (attachedFile) {
-        const fileRef = ref(storage, `appointments/${Date.now()}_${attachedFile.name}`);
-        await uploadBytes(fileRef, attachedFile);
-        fileUrl = await getDownloadURL(fileRef);
+        fileUrl = await handleDirectUpload(attachedFile);
+        if (!fileUrl) throw new Error("Upload failed");
       }
       
       const appointmentDateObj = new Date(viewDate.getFullYear(), viewDate.getMonth(), selectedDate as number);
