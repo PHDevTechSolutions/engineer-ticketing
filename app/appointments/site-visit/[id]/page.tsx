@@ -28,6 +28,7 @@ import { Badge } from "@/components/ui/badge"
 import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/sidebar"
 
 import { AppSidebar } from "@/components/app-sidebar"
+import { CollaborationHub } from "@/components/collaboration-hub"
 
 export default function AppointmentDetailsPage() {
     const params = useParams() as { id: string }
@@ -36,7 +37,7 @@ export default function AppointmentDetailsPage() {
 
     const [loading, setLoading] = React.useState(true)
     const [data, setData] = React.useState<any>(null)
-    const [userContext, setUserContext] = React.useState({ role: "", id: "", name: "" })
+    const [userContext, setUserContext] = React.useState({ role: "", id: "", name: "", profilePicture: "" })
     const [actionLoading, setActionLoading] = React.useState(false)
     const [confNotes, setConfNotes] = React.useState("")
 
@@ -52,7 +53,8 @@ export default function AppointmentDetailsPage() {
                 setUserContext({
                     role: user.Department?.toLowerCase() || "",
                     id: storedId,
-                    name: user.Name || "Unknown Unit"
+                    name: user.Firstname + " " + user.Lastname,
+                    profilePicture: user.profilePicture || ""
                 })
 
                 const docRef = doc(db, "appointments", id)
@@ -145,24 +147,12 @@ export default function AppointmentDetailsPage() {
             <SidebarInset className="bg-[#F8FAFC] pb-24 md:pb-0 relative flex flex-col min-h-screen">
 
                 {/* --- STICKY HEADER SECTION --- */}
-                <div className="sticky top-0 z-[100] w-full bg-[#F8FAFC]/95 backdrop-blur-sm border-b border-slate-200">
-                    <header className="sticky top-0 z-40 w-full bg-[#F8FAFC]/95 backdrop-blur-md border-b border-slate-200">
-                        <PageHeader
-                            title={`FILE_REF: ${id.slice(-8).toUpperCase()}`}
-                            version={isEngineering ? "ENG_CORE_v5.4" : "SLS_MGMT_v5.4"}
-                            showBackButton={true}
-                            trigger={
-                                <SidebarTrigger className="group relative flex items-center justify-center size-9 bg-muted/5 hover:bg-primary/10 border-2 border-muted/50 hover:border-primary/50 transition-all duration-300 rounded-none overflow-hidden">
-                                    <div className="absolute top-0 left-0 size-1 border-t border-l border-primary opacity-0 group-hover:opacity-100 transition-opacity" />
-                                    <div className="flex flex-col gap-1 items-end">
-                                        <div className="h-[2px] w-5 bg-primary group-hover:w-3 transition-all" />
-                                        <div className="h-[2px] w-4 bg-primary group-hover:w-5 transition-all" />
-                                    </div>
-                                </SidebarTrigger>
-                            }
-                        />
-                    </header>
-                </div>
+                <PageHeader
+                    title={`FILE_REF: ${id.slice(-8).toUpperCase()}`}
+                    version={isEngineering ? "ENG_CORE_v5.4" : "SLS_MGMT_v5.4"}
+                    showBackButton={true}
+                    trigger={<SidebarTrigger className="mr-2" />}
+                />
 
                 <main className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 space-y-8">
 
@@ -418,6 +408,18 @@ export default function AppointmentDetailsPage() {
                         </div>
                     </div>
                 </main>
+
+                <CollaborationHub
+                    requestId={id}
+                    collectionName="appointments"
+                    messages={data?.messages || []}
+                    currentUserId={userContext.id}
+                    userName={userContext.name}
+                    profilePicture={userContext.profilePicture}
+                    userRole={userContext.role}
+                    status={status}
+                    title={data?.client || "dsiconnect"}
+                />
             </SidebarInset>
         </SidebarProvider>
     )
