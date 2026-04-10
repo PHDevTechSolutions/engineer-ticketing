@@ -15,7 +15,8 @@ import {
     Download,
     Copy,
     Building2,
-    ClipboardList
+    ClipboardList,
+    Timer
 } from "lucide-react"
 
 import { db } from "@/lib/firebase"
@@ -43,6 +44,41 @@ export default function AppointmentDetailsPage() {
     const [userContext, setUserContext] = React.useState({ role: "", id: "", name: "", profilePicture: "" })
     const [actionLoading, setActionLoading] = React.useState(false)
     const [confNotes, setConfNotes] = React.useState("")
+
+    const [countdown, setCountdown] = React.useState("00:00:00")
+    const [isOverdue, setIsOverdue] = React.useState(false)
+
+    const status = data?.status?.toUpperCase() || "PENDING"
+
+    // SLA TIMER LOGIC
+    React.useEffect(() => {
+        const timerInterval = setInterval(() => {
+            let referenceTime = data?.createdAt
+            let hoursLimit = 24 // Default SLA 24h
+
+            if (status === "CONFIRMED") {
+                referenceTime = data?.confirmedAt
+                hoursLimit = 12 // Manager approval SLA 12h
+            }
+
+            if (referenceTime) {
+                const start = new Date(referenceTime.seconds * 1000).getTime()
+                const limit = start + (hoursLimit * 60 * 60 * 1000)
+                const now = new Date().getTime()
+                const diff = limit - now
+                const absDiff = Math.abs(diff)
+
+                const hours = Math.floor(absDiff / (1000 * 60 * 60))
+                const minutes = Math.floor((absDiff % (1000 * 60 * 60)) / (1000 * 60))
+                const seconds = Math.floor((absDiff % (1000 * 60)) / 1000)
+
+                const timeString = `${diff < 0 ? '-' : ''}${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+                setCountdown(timeString)
+                setIsOverdue(diff < 0)
+            }
+        }, 1000)
+        return () => clearInterval(timerInterval)
+    }, [data, status])
 
     React.useEffect(() => {
         let unsubscribe: () => void
@@ -125,7 +161,6 @@ export default function AppointmentDetailsPage() {
 
     const isEngineering = userContext.role === "it" || userContext.role === "engineering"
     const isSales = userContext.role === "sales"
-    const status = data?.status?.toUpperCase() || "PENDING"
     const isPending = status === "PENDING"
     const isConfirmed = status === "CONFIRMED"
     const isCompleted = status === "COMPLETED"
@@ -156,18 +191,50 @@ export default function AppointmentDetailsPage() {
                     showBackButton={true}
                     trigger={<SidebarTrigger className="mr-2" />}
                     actions={
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                                navigator.clipboard.writeText(id.toUpperCase())
-                                toast.success("Reference ID copied to clipboard")
-                            }}
-                            className="h-8 rounded-lg border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-200 transition-all text-[10px] font-bold uppercase tracking-widest gap-2"
-                        >
-                            <Copy size={12} />
-                            Copy ID
-                        </Button>
+                        <div className="flex items-center gap-4">
+                            {!isCompleted && (
+                                <div className={cn(
+                                    "flex items-center gap-2 md:gap-3 px-3 py-1.5 rounded-xl border transition-all shrink-0",
+                                    isOverdue ? "bg-red-50 border-red-200" : "bg-slate-50 border-slate-200"
+                                )}>
+                                    <div className="flex flex-col items-end border-r pr-3 border-slate-200">
+                                        <span className={cn(
+                                            "text-[7px] font-black uppercase tracking-widest leading-none",
+                                            isOverdue ? "text-red-500" : "text-slate-400"
+                                        )}>
+                                            {isOverdue ? "SLA Breach" : "SLA Window"}
+                                        </span>
+                                        <span className={cn(
+                                            "text-[9px] font-bold uppercase mt-0.5",
+                                            isOverdue ? "text-red-600" : "text-slate-500"
+                                        )}>
+                                            {isPending ? "Visit (24h)" : "Approval (12h)"}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Timer size={14} className={cn("shrink-0", isOverdue ? "text-red-500" : "text-blue-500")} />
+                                        <span className={cn(
+                                            "text-sm font-mono font-black tabular-nums leading-none tracking-tighter",
+                                            isOverdue ? "text-red-600" : "text-slate-900"
+                                        )}>
+                                            {countdown}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                    navigator.clipboard.writeText(id.toUpperCase())
+                                    toast.success("Reference ID copied to clipboard")
+                                }}
+                                className="h-9 rounded-xl border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-200 transition-all text-[10px] font-bold uppercase tracking-widest gap-2 bg-white"
+                            >
+                                <Copy size={12} />
+                                Copy ID
+                            </Button>
+                        </div>
                     }
                 />
 
@@ -377,6 +444,25 @@ export default function AppointmentDetailsPage() {
                                     <TimelineItem label="Request Initiated" time={data?.createdAt} status="done" desc="The visit request was successfully created." />
                                     <TimelineItem label="Report Submitted" time={data?.confirmedAt} status={isConfirmed || isCompleted ? "done" : "pending"} desc={data.confirmedBy ? `Field notes submitted by ${data.confirmedBy}` : "Waiting for engineer report."} />
                                     <TimelineItem label="Final Approval" time={data?.completedAt} status={isCompleted ? "done" : "pending"} desc="Record approved and officially closed." isLast />
+                                </div>
+                            </div>
+
+                            {/* QUICK STATS PANEL */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm flex flex-col justify-center gap-1.5 hover:shadow-md transition-all">
+                                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">SLA Compliance</span>
+                                    <span className={cn(
+                                        "text-[11px] font-black uppercase tracking-tight",
+                                        isOverdue ? "text-red-500" : isCompleted ? "text-emerald-500" : "text-blue-500"
+                                    )}>
+                                        {isOverdue ? "Breach Detected" : isCompleted ? "Completed On-Time" : "Within Window"}
+                                    </span>
+                                </div>
+                                <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm flex flex-col justify-center gap-1.5 hover:shadow-md transition-all">
+                                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">Priority Level</span>
+                                    <span className="text-[11px] font-black text-slate-900 uppercase tracking-tight">
+                                        Standard Visit
+                                    </span>
                                 </div>
                             </div>
                         </div>
