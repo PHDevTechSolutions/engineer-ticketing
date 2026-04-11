@@ -224,8 +224,17 @@ export default function SchedulePage() {
       const matched = dbProtocols.filter((proto: any) => activeProtocols.includes(proto.id));
       setProtocolMetadata(matched);
       
-      const uniquePics = Array.from(new Set(matched.flatMap(p => p.pic || []))) as any[];
-      setAssignedPics(uniquePics.length > 0 ? uniquePics : ["ENGINEERING_STAFF"]);
+      // LOGIC: IF "INSTALLATION SERVICES" IS SELECTED, ONLY SHOW ITS PICS (Karl and Mark)
+      const installationProtocol = matched.find(p => p.label?.toLowerCase().includes("installation"));
+      
+      let finalPics: any[] = [];
+      if (installationProtocol) {
+        finalPics = Array.from(new Set((installationProtocol.pic || []).map((name: string) => name.trim().toUpperCase())));
+      } else {
+        finalPics = Array.from(new Set(matched.flatMap(p => p.pic || []).map((name: string) => name.trim().toUpperCase())));
+      }
+
+      setAssignedPics(finalPics.length > 0 ? finalPics : ["ENGINEERING_STAFF"]);
       
       setIsLoadingSync(false);
     });

@@ -16,7 +16,8 @@ import {
     Copy,
     Building2,
     ClipboardList,
-    Timer
+    Timer,
+    Info
 } from "lucide-react"
 
 import { db } from "@/lib/firebase"
@@ -50,7 +51,7 @@ export default function AppointmentDetailsPage() {
     const [isDetailsCollapsed, setIsDetailsCollapsed] = React.useState(false)
     const [timeElapsed, setTimeElapsed] = React.useState("0h 0m")
     const [availablePics, setAvailablePics] = React.useState<any[]>([])
-    const [selectedAssignee, setSelectedAssignee] = React.useState("")
+    const [selectedAssignees, setSelectedAssignees] = React.useState<string[]>([])
 
     const status = data?.status?.toUpperCase() || "PENDING"
 
@@ -64,14 +65,32 @@ export default function AppointmentDetailsPage() {
                 const unsubscribe = onSnapshot(q, (snapshot: any) => {
                     const dbProtocols = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() })) as any[];
                     const matched = dbProtocols.filter((proto: any) => data.protocols.includes(proto.id));
-                    const uniquePics = Array.from(new Set(matched.flatMap(p => p.pic || []))) as any[];
-                    setAvailablePics(uniquePics);
+                    
+                    // LOGIC: IF "INSTALLATION SERVICES" IS SELECTED, ONLY SHOW ITS PICS
+                    const installationProtocol = matched.find(p => p.label?.toLowerCase().includes("installation"));
+                    
+                    let finalPics: any[] = [];
+                    if (installationProtocol) {
+                        finalPics = Array.from(new Set((installationProtocol.pic || []).map((name: string) => name.trim().toUpperCase())));
+                    } else {
+                        finalPics = Array.from(new Set(matched.flatMap(p => p.pic || []).map((name: string) => name.trim().toUpperCase())));
+                    }
+                    
+                    setAvailablePics(finalPics);
                 });
                 return () => unsubscribe();
             } catch (err) { console.error("PIC_FETCH_ERROR", err); }
         };
         fetchPics();
     }, [data?.protocols]);
+
+    // PRE-FILL SELECTED ASSIGNEES IF ALREADY ASSIGNED
+    React.useEffect(() => {
+        if (data?.pic && data.pic !== "UNASSIGNED") {
+            const currentPics = Array.isArray(data.pic) ? data.pic : data.pic.split(", ").map((p: string) => p.trim().toUpperCase());
+            setSelectedAssignees(currentPics);
+        }
+    }, [data?.pic]);
 
     // SLA & ELAPSED TIMER LOGIC
     React.useEffect(() => {
@@ -332,7 +351,7 @@ export default function AppointmentDetailsPage() {
                                 {isEngineering && isPending && (
                                     <div className="space-y-1.5">
                                         {/* PERSONNEL ASSIGNMENT SECTION (If UNASSIGNED) */}
-                                        {data?.pic === "UNASSIGNED" ? (
+                                        {(!data?.pic || data.pic === "UNASSIGNED") ? (
                                             <div className="bg-white border border-slate-200 p-3 rounded-xl shadow-sm space-y-3">
                                                 <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
                                                     <div className="size-7 bg-amber-50 rounded-lg flex items-center justify-center text-amber-600">
@@ -344,28 +363,38 @@ export default function AppointmentDetailsPage() {
                                                     </div>
                                                 </div>
                                                 
-                                                <div className="space-y-1.5">
-                                                    <label className="text-[7px] font-black text-slate-400 uppercase tracking-widest ml-1">Select PIC*</label>
-                                                    <select 
-                                                        className="w-full h-9 px-3 rounded-lg bg-slate-50 border border-slate-100 text-[10px] font-black uppercase outline-none focus:ring-1 focus:ring-blue-500 transition-all appearance-none"
-                                                        value={selectedAssignee}
-                                                        onChange={(e) => setSelectedAssignee(e.target.value)}
-                                                    >
-                                                        <option value="">Choose Engineer...</option>
-                                                        {availablePics.map((pic: any) => (
-                                                            <option key={pic.name || pic} value={pic.name || pic}>
-                                                                {pic.name || pic}
-                                                            </option>
-                                                        ))}
-                                                    </select>
+                                                <div className="space-y-2">
+                                                    <label className="text-[7px] font-black text-slate-400 uppercase tracking-widest ml-1">Select PIC(s)*</label>
+                                                    <div className="grid grid-cols-1 gap-1 max-h-[120px] overflow-y-auto pr-1 scrollbar-hide">
+                                                        {availablePics.map((pic: any) => {
+                                                            const picName = (pic.name || pic).trim().toUpperCase();
+                                                            const isChecked = selectedAssignees.includes(picName);
+                                                            return (
+                                                                <button 
+                                                                    key={picName}
+                                                                    onClick={() => {
+                                                                        if (isChecked) setSelectedAssignees(prev => prev.filter(p => p !== picName));
+                                                                        else setSelectedAssignees(prev => [...prev, picName]);
+                                                                    }}
+                                                                    className={cn(
+                                                                        "flex items-center justify-between w-full px-3 h-8 rounded-lg border transition-all text-left",
+                                                                        isChecked ? "bg-blue-50 border-blue-200 text-blue-700 shadow-sm" : "bg-slate-50 border-slate-100 text-slate-500 hover:border-slate-200"
+                                                                    )}
+                                                                >
+                                                                    <span className="text-[9px] font-black uppercase">{picName}</span>
+                                                                    {isChecked ? <CheckCircle2 size={12} /> : <div className="size-3 rounded-full border-2 border-slate-200" />}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
                                                 </div>
 
                                                 <Button
-                                                    disabled={actionLoading || !selectedAssignee}
-                                                    onClick={() => handleStatusUpdate("PENDING", { pic: selectedAssignee })}
+                                                    disabled={actionLoading || selectedAssignees.length === 0}
+                                                    onClick={() => handleStatusUpdate("PENDING", { pic: selectedAssignees.join(", ") })}
                                                     className="w-full h-9 bg-zinc-900 hover:bg-zinc-800 text-white font-black rounded-lg uppercase tracking-widest transition-all text-[9px]"
                                                 >
-                                                    {actionLoading ? <Loader2 className="animate-spin size-3.5" /> : "Confirm Assignment"}
+                                                    {actionLoading ? <Loader2 className="animate-spin size-3.5" /> : `Confirm ${selectedAssignees.length > 1 ? 'Multiple' : 'Assignment'}`}
                                                 </Button>
                                             </div>
                                         ) : (
@@ -536,14 +565,53 @@ export default function AppointmentDetailsPage() {
 
                                         <div className="p-3 md:p-4">
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-6">
-                                                <ManifestItem label="Client / Company" value={data.client} icon={Building2} canCopy />
-                                                <ManifestItem label="Site Location" value={data.address} icon={MapPin} canCopy />
+                                                <div className="space-y-3">
+                                                    <ManifestItem label="Client / Company" value={data.client} icon={Building2} canCopy />
+                                                    <div className="grid grid-cols-2 gap-3 pl-3 border-l border-slate-100">
+                                                        <ManifestItem label="Email Address" value={data.email} icon={MessageSquare} canCopy />
+                                                        <ManifestItem label="Contact Number" value={data.contactNumber} icon={Radio} canCopy />
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-3">
+                                                    <ManifestItem label="Site Location" value={data.address} icon={MapPin} canCopy />
+                                                    {data.landmark && (
+                                                        <div className="pl-3 border-l border-slate-100">
+                                                            <ManifestItem label="Landmark / Building" value={data.landmark} icon={Building2} />
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
 
-                                        <div className="p-3 md:p-4">
+                                        <div className="p-3 md:p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <ManifestItem label="Agenda / Purpose" value={data.agenda} icon={ClipboardList} isLongText />
+                                            {data.notes && (
+                                                <ManifestItem label="Strategic Context / Notes" value={data.notes} icon={Info} isLongText />
+                                            )}
                                         </div>
+
+                                        {/* DEPLOYMENT REQUIREMENTS (PPE, Personnel, Permits) */}
+                                        {(data.ppe?.length > 0 || data.personnel?.length > 0 || data.permits?.length > 0) && (
+                                            <div className="p-3 md:p-4 bg-slate-50/20 border-t border-slate-100">
+                                                <div className="flex items-center gap-2 mb-3">
+                                                    <div className="size-5 bg-blue-50 rounded flex items-center justify-center text-blue-600 border border-blue-100">
+                                                        <ShieldCheck size={12} />
+                                                    </div>
+                                                    <span className="text-[9px] font-black uppercase text-slate-900 tracking-tight">Deployment Requirements</span>
+                                                </div>
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                    {data.personnel?.length > 0 && (
+                                                        <RequirementList label="Required Personnel" items={data.personnel} icon={User} color="bg-blue-50 text-blue-700 border-blue-100" />
+                                                    )}
+                                                    {data.ppe?.length > 0 && (
+                                                        <RequirementList label="Mandatory PPE" items={data.ppe} icon={ShieldAlert} color="bg-amber-50 text-amber-700 border-amber-100" />
+                                                    )}
+                                                    {data.permits?.length > 0 && (
+                                                        <RequirementList label="Required Permits" items={data.permits} icon={FileText} color="bg-emerald-50 text-emerald-700 border-emerald-100" />
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
 
                                         {data.fileUrl && (
                                             <div className="p-3 bg-slate-50/30 flex items-center justify-between gap-3">
@@ -612,6 +680,24 @@ export default function AppointmentDetailsPage() {
                 />
             </SidebarInset>
         </SidebarProvider>
+    )
+}
+
+function RequirementList({ label, items, icon: Icon, color }: any) {
+    return (
+        <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5">
+                <Icon size={10} className="text-slate-400" />
+                <span className="text-[7px] font-bold text-slate-400 uppercase tracking-widest">{label}</span>
+            </div>
+            <div className="flex flex-wrap gap-1">
+                {items.map((item: string, idx: number) => (
+                    <Badge key={idx} variant="outline" className={cn("text-[7px] px-1.5 py-0 rounded-md border font-black uppercase tracking-tight", color)}>
+                        {item}
+                    </Badge>
+                ))}
+            </div>
+        </div>
     )
 }
 
