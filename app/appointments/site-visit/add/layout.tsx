@@ -18,6 +18,7 @@ interface AppointmentContextType {
   permits: string[];
   setPermits: React.Dispatch<React.SetStateAction<string[]>>;
   isHydrated: boolean;
+  resetForm: () => void;
 }
 
 const AppointmentContext = React.createContext<AppointmentContextType | null>(null);
@@ -33,7 +34,24 @@ export default function AddAppointmentLayout({ children }: { children: React.Rea
   const [ppe, setPpe] = React.useState<string[]>([]);
   const [permits, setPermits] = React.useState<string[]>([]);
 
-  // 3. DATA RECONSTRUCTION: Restore state from local storage on mount
+  // 3. UTILITY: Reset all states to default
+  const resetForm = React.useCallback(() => {
+    setSelectedAssistance([]);
+    setOtherSpec("");
+    setPersonnel([]);
+    setPpe([]);
+    setPermits([]);
+    
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("eng_selected_assistance");
+      localStorage.removeItem("eng_other_spec");
+      localStorage.removeItem("eng_personnel");
+      localStorage.removeItem("eng_ppe");
+      localStorage.removeItem("eng_permits");
+    }
+  }, []);
+
+  // 4. DATA RECONSTRUCTION: Restore state from local storage on mount
   React.useEffect(() => {
     try {
       if (typeof window !== "undefined") {
@@ -92,7 +110,8 @@ export default function AddAppointmentLayout({ children }: { children: React.Rea
           setPpe,
           permits,
           setPermits,
-          isHydrated 
+          isHydrated,
+          resetForm
         }}>
           <div className="flex-1 flex flex-col min-h-screen bg-[#F9FAFA]">
             {!isHydrated ? (

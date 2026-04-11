@@ -249,7 +249,7 @@ function SkeletonRow() {
 /* ─────────────────────────────────────────────
    CALENDAR VIEW COMPONENTS
 ───────────────────────────────────────────── */
-function CalendarView({ visits, currentMonth, onMonthChange, router }: any) {
+function CalendarView({ visits, currentMonth, onMonthChange, router, staffNames }: any) {
   const firstDay = startOfMonth(currentMonth)
   const lastDay = endOfMonth(currentMonth)
   const startDate = startOfWeek(firstDay)
@@ -310,7 +310,9 @@ function CalendarView({ visits, currentMonth, onMonthChange, router }: any) {
                       )}
                     >
                       <p className={cn("text-[9px] font-black uppercase truncate leading-none", meta.color)}>{v.site}</p>
-                      <p className="text-[7px] font-bold text-zinc-400 truncate mt-1">{v.tech}</p>
+                      <p className="text-[7px] font-bold text-zinc-400 truncate mt-1">
+                        {v.tech === "UNASSIGNED" ? "TBD" : (staffNames[v.tech] || v.tech)}
+                      </p>
                     </div>
                   )
                 })}
@@ -805,8 +807,8 @@ export default function SiteVisitListPage() {
                            <div className="size-6 rounded-lg bg-zinc-100 flex items-center justify-center border border-zinc-200 flex-shrink-0">
                              <User className="size-3 text-zinc-400" />
                            </div>
-                           <p className="text-[11px] font-black text-zinc-800 truncate leading-none">
-                             {staffNames[item.tech] || item.tech}
+                           <p className={cn("text-[11px] font-black truncate leading-none", item.tech === "UNASSIGNED" ? "text-zinc-400 italic font-bold" : "text-zinc-800")}>
+                             {item.tech === "UNASSIGNED" ? "TBD (Engi Assign)" : (staffNames[item.tech] || item.tech)}
                            </p>
                          </div>
 
@@ -864,6 +866,7 @@ export default function SiteVisitListPage() {
                 currentMonth={currentMonth} 
                 onMonthChange={setCurrentMonth}
                 router={router}
+                staffNames={staffNames}
               />
             )}
           </main>

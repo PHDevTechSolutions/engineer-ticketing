@@ -15,7 +15,7 @@ import {
   ShieldAlert, Fingerprint, ClipboardList, MapPin, 
   Activity, Info, CheckCircle2, Globe, CalendarSearch,
   User2, Sparkles, Search, Check, ChevronDown,
-  HardHat
+  HardHat, ClipboardCheck
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
@@ -60,24 +60,30 @@ export default function SchedulePage() {
     personnel,
     ppe,
     permits,
-    isHydrated 
+    isHydrated,
+    resetForm 
   } = useAppointmentData();
   
-  const today = new Date(2026, 1, 5); 
-  const [viewDate, setViewDate] = React.useState(new Date(2026, 1, 1)); 
+  const today = React.useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+  
+  const [viewDate, setViewDate] = React.useState(new Date(today.getFullYear(), today.getMonth(), 1)); 
   const [selectedDate, setSelectedDate] = React.useState<number | null>(null);
   const [viewingDetails, setViewingDetails] = React.useState<any | null>(null);
   
   const [assignedPics, setAssignedPics] = React.useState<any[]>([]);
   const [protocolMetadata, setProtocolMetadata] = React.useState<any[]>([]); 
-  const [selectedPic, setSelectedPic] = React.useState<string>(""); 
+  const [selectedPic, setSelectedPic] = React.useState<string>("UNASSIGNED"); 
   const [isLoadingSync, setIsLoadingSync] = React.useState(true);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [isGeocoding, setIsGeocoding] = React.useState(false);
   const [coords, setCoords] = React.useState<[number, number] | null>(null);
   const [attachedFile, setAttachedFile] = React.useState<File | null>(null);
-  const [existingAppointments, setExistingAppointments] = React.useState<any[]>([]);
-  const [blockedSlots, setBlockedSlots] = React.useState<any[]>([]);
+  const [allAppointments, setAllAppointments] = React.useState<any[]>([]);
+  const [allBlockedSlots, setAllBlockedSlots] = React.useState<any[]>([]);
 
   // ADDRESS DROPDOWN STATES
   const [addressOptions, setAddressOptions] = React.useState<string[]>([]);
@@ -91,6 +97,8 @@ export default function SchedulePage() {
 
   const [formData, setFormData] = React.useState({ 
     client: "", 
+    email: "",
+    contactNumber: "",
     address: "", 
     street: "",
     barangay: "",
@@ -224,19 +232,21 @@ export default function SchedulePage() {
     return () => unsubscribe();
   }, [selectedAssistance, isHydrated]);
 
-  // 3. CALENDAR DATA PERSISTENCE
+  // 3. CALENDAR DATA PERSISTENCE - ENHANCED FOR ALL PICS
   React.useEffect(() => {
-    if (!isHydrated || !selectedPic) {
-      setExistingAppointments([]);
+    if (!isHydrated || assignedPics.length === 0) {
+      setAllAppointments([]);
       return;
     }
 
     const startOfMonth = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1, 0, 0, 0);
     const endOfMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0, 23, 59, 59);
     
+    // Fetch appointments for all assigned PICs in the current month
+    const picNames = assignedPics.map(p => typeof p === 'string' ? p : p.name);
     const q = query(
       collection(db, "appointments"), 
-      where("pic", "==", selectedPic), 
+      where("pic", "in", picNames), 
       where("appointmentDate", ">=", Timestamp.fromDate(startOfMonth)), 
       where("appointmentDate", "<=", Timestamp.fromDate(endOfMonth))
     );
@@ -250,31 +260,34 @@ export default function SchedulePage() {
           day: date.getDate(), 
           month: date.getMonth(), 
           year: date.getFullYear(),
+          pic: data.pic,
           client: data.client, 
           agenda: data.agenda || "Standard Operational Deployment", 
           status: data.status
         };
       });
-      setExistingAppointments(apps);
+      setAllAppointments(apps);
     }, (error) => { 
       console.error("UPLINK_SYNC_ERROR", error);
     });
 
     return () => unsubscribe();
-  }, [selectedPic, viewDate, isHydrated]);
+  }, [assignedPics, viewDate, isHydrated]);
 
-  // 4. BLOCKED SLOTS SYNC
+  // 4. BLOCKED SLOTS SYNC - ENHANCED FOR ALL PICS & GLOBAL BLOCKS
   React.useEffect(() => {
-    if (!isHydrated || !selectedPic) {
-      setBlockedSlots([]);
+    if (!isHydrated || assignedPics.length === 0) {
+      setAllBlockedSlots([]);
       return;
     }
 
-    // We fetch all blocked slots for the selected personnel (PIC)
-    // The slots page now saves userName in the block document
+    const picNames = assignedPics.map(p => typeof p === 'string' ? p : p.name);
+    // Include "ALL_STAFF" or empty string for global service blocking
+    const targetPics = [...picNames, "ALL_STAFF", "GLOBAL", "ALL", ""];
+
     const q = query(
       collection(db, "blocked_slots"),
-      where("userName", "==", selectedPic)
+      where("userName", "in", targetPics)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -283,6 +296,7 @@ export default function SchedulePage() {
         const date = new Date(data.dateString);
         return {
           id: doc.id,
+          userName: data.userName,
           day: date.getDate(),
           month: date.getMonth(),
           year: date.getFullYear(),
@@ -290,23 +304,70 @@ export default function SchedulePage() {
           justification: data.justification
         };
       });
-      setBlockedSlots(slots);
+      setAllBlockedSlots(slots);
     });
 
     return () => unsubscribe();
-  }, [selectedPic, isHydrated]);
+  }, [assignedPics, isHydrated]);
+
+  // DERIVED DATA FOR CURRENT SELECTION
+  const getDayAvailability = React.useMemo(() => {
+    return (dayNum: number, month: number, year: number) => {
+      if (assignedPics.length === 0) return { available: 0, total: 0, isGlobal: false, globalReason: "" };
+
+      const picNames = assignedPics.map(p => typeof p === 'string' ? p : p.name);
+      const total = picNames.length;
+      
+      // Global Blocking check
+      const globalBlock = allBlockedSlots.find(s => 
+        (!s.userName || s.userName === "ALL_STAFF" || s.userName === "GLOBAL" || s.userName === "ALL") && 
+        s.day === dayNum && s.month === month && s.year === year
+      );
+      
+      if (globalBlock && globalBlock.shiftScope === "FULL_DAY") {
+        return { available: 0, total, isGlobal: true, globalReason: globalBlock.justification };
+      }
+
+      const busyPics = new Set();
+
+      // Check appointments
+      allAppointments.forEach(a => {
+        if (a.day === dayNum && a.month === month && a.year === year && picNames.includes(a.pic)) {
+          busyPics.add(a.pic);
+        }
+      });
+
+      // Check personal blocks
+      allBlockedSlots.forEach(s => {
+        if (s.day === dayNum && s.month === month && s.year === year && picNames.includes(s.userName) && s.shiftScope === "FULL_DAY") {
+          busyPics.add(s.userName);
+        }
+      });
+
+      return { 
+        available: Math.max(0, total - busyPics.size), 
+        total, 
+        isGlobal: !!globalBlock,
+        globalReason: globalBlock?.justification || ""
+      };
+    };
+  }, [allAppointments, allBlockedSlots, assignedPics]);
 
   // TSA/TSM metadata updates
   React.useEffect(() => {
-    if (!selectedPic || !isHydrated) {
+    if (assignedPics.length === 0 || !isHydrated) {
        setFormData(prev => ({ ...prev, tsa: "NOT_SET", tsm: "NOT_SET" }));
        return;
     }
-    const match = protocolMetadata.find(p => p.pic?.includes(selectedPic) || p.pic?.some((person:any) => person.name === selectedPic));
-    if (match) {
-      setFormData(prev => ({ ...prev, tsa: match.tsa || "NOT_SET", tsm: match.tsm || "NOT_SET" }));
+    // Since we don't have a single PIC anymore, we can take the TSA/TSM from the first matched protocol
+    if (protocolMetadata.length > 0) {
+      setFormData(prev => ({ 
+        ...prev, 
+        tsa: protocolMetadata[0].tsa || "NOT_SET", 
+        tsm: protocolMetadata[0].tsm || "NOT_SET" 
+      }));
     }
-  }, [selectedPic, protocolMetadata, isHydrated]);
+  }, [protocolMetadata, assignedPics, isHydrated]);
 
   if (!isHydrated) {
     return (
@@ -323,7 +384,6 @@ export default function SchedulePage() {
     formData.client.trim() && 
     formData.address.trim() && 
     selectedDate !== null && 
-    selectedPic !== "" &&
     formData.region !== "" &&
     (formData.province !== "" || formData.region === "130000000") &&
     formData.city !== "" &&
@@ -401,7 +461,7 @@ export default function SchedulePage() {
       
       await addDoc(collection(db, "appointments"), {
         ...formData, 
-        pic: selectedPic, 
+        pic: "UNASSIGNED", 
         appointmentDate: Timestamp.fromDate(appointmentDateObj),
         protocols: selectedAssistance || [], 
         personnel: personnel || [],
@@ -419,12 +479,8 @@ export default function SchedulePage() {
         submittedBy: currentUserId 
       });
 
-      // Clear local storage context after successful submission
-      localStorage.removeItem("eng_selected_assistance");
-      localStorage.removeItem("eng_other_spec");
-      localStorage.removeItem("eng_personnel");
-      localStorage.removeItem("eng_ppe");
-      localStorage.removeItem("eng_permits");
+      // Reset context state and clear local storage after successful submission
+      resetForm();
 
       toast.success("DEPLOYMENT INITIALIZED", { id: toastId });
 
@@ -445,38 +501,47 @@ export default function SchedulePage() {
   return (
     <>
       <AppSidebar userId={userId} />
-      <SidebarInset className="bg-[#F9FAFA] pb-24 md:pb-10 min-h-screen m-0 rounded-none border-none shadow-none overflow-visible">
+      <SidebarInset className="bg-[#F9FAFA] min-h-screen lg:h-screen lg:overflow-hidden flex flex-col m-0 rounded-none border-none shadow-none">
         
         {/* CONFLICT MODAL */}
         {viewingDetails && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#121212]/80 backdrop-blur-sm">
-            <div className="bg-white border border-black/10 w-full max-w-md rounded-lg overflow-hidden shadow-2xl">
-              <div className="bg-[#121212] p-4 flex justify-between items-center text-white">
-                <span className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-2">
-                  <ShieldAlert className="size-4 text-amber-500" /> {viewingDetails.isBlock ? "Personnel Unavailable" : "Conflict Detected"}
+            <div className="bg-white border border-black/10 w-full max-w-md rounded-2xl overflow-hidden shadow-2xl">
+              <div className="bg-[#121212] p-5 flex justify-between items-center text-white">
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2">
+                  {viewingDetails.isGlobal ? <ShieldAlert className="size-4 text-red-500 animate-pulse" /> : <ShieldAlert className="size-4 text-amber-500" />}
+                  {viewingDetails.isBlock ? (viewingDetails.isGlobal ? "Service-Wide Blocking" : "Personnel Unavailable") : "Conflict Detected"}
                 </span>
-                <button onClick={() => setViewingDetails(null)}><X className="size-4" /></button>
+                <button onClick={() => setViewingDetails(null)} className="p-1 hover:bg-white/10 rounded-full transition-colors"><X className="size-4" /></button>
               </div>
-              <div className="p-6 space-y-4">
-                <div className="flex items-center gap-4 p-4 bg-[#F9FAFA] border border-black/5 rounded-md">
-                  <Fingerprint className="size-6 text-black/40" />
+              <div className="p-6 space-y-5">
+                <div className="flex items-center gap-4 p-4 bg-[#F9FAFA] border border-black/5 rounded-2xl">
+                  {viewingDetails.isGlobal ? (
+                    <Globe className="size-8 text-red-600" />
+                  ) : (
+                    <Fingerprint className="size-8 text-black/40" />
+                  )}
                   <div>
-                    <p className="text-[10px] font-bold text-black/40 uppercase tracking-tighter">Assigned Personnel</p>
-                    <p className="text-sm font-bold uppercase">{selectedPic}</p>
+                    <p className="text-[10px] font-black text-black/40 uppercase tracking-widest leading-none mb-1">
+                      {viewingDetails.isGlobal ? "System Constraint" : "Capacity Alert"}
+                    </p>
+                    <p className="text-sm font-black uppercase tracking-tight">
+                      {viewingDetails.isGlobal ? "Operational Lockdown" : "Full Capacity"}
+                    </p>
                   </div>
                 </div>
                 <div className="space-y-3">
-                  <div className="p-4 border border-black/5 rounded-md">
-                    <span className="block text-[8px] font-bold text-black/30 uppercase tracking-widest mb-1">{viewingDetails.isBlock ? "Constraint Type" : "Entity"}</span>
-                    <p className="text-xs font-bold uppercase">{viewingDetails.client}</p>
+                  <div className="p-4 border border-black/5 rounded-xl bg-zinc-50/50">
+                    <span className="block text-[8px] font-black text-black/30 uppercase tracking-[0.2em] mb-1.5">{viewingDetails.isBlock ? "Constraint Type" : "Entity"}</span>
+                    <p className="text-xs font-black uppercase tracking-tight">{viewingDetails.client}</p>
                   </div>
-                  <div className="p-4 border border-black/5 rounded-md">
-                    <span className="block text-[8px] font-bold text-black/30 uppercase tracking-widest mb-1">{viewingDetails.isBlock ? "Reason / Justification" : "Scope"}</span>
-                    <p className="text-xs font-medium italic">{viewingDetails.agenda}</p>
+                  <div className="p-4 border border-black/5 rounded-xl bg-amber-50/30">
+                    <span className="block text-[8px] font-black text-black/30 uppercase tracking-[0.2em] mb-1.5">{viewingDetails.isBlock ? "Reason / Justification" : "Scope"}</span>
+                    <p className="text-xs font-bold italic text-zinc-600 leading-relaxed">"{viewingDetails.agenda}"</p>
                   </div>
                 </div>
-                <Button onClick={() => setViewingDetails(null)} className="w-full bg-[#121212] text-white font-bold uppercase text-[10px] tracking-widest h-12 rounded-none">
-                  {viewingDetails.isBlock ? "Acknowledge Unavailability" : "Acknowledge Constraint"}
+                <Button onClick={() => setViewingDetails(null)} className="w-full h-12 bg-[#121212] text-white font-black uppercase text-[10px] tracking-[0.2em] rounded-xl hover:bg-black transition-all shadow-xl shadow-zinc-200">
+                  {viewingDetails.isGlobal ? "Acknowledge Service Block" : "Acknowledge Constraint"}
                 </Button>
               </div>
             </div>
@@ -484,345 +549,309 @@ export default function SchedulePage() {
         )}
 
         <PageHeader 
-          title="PICK A DATE & PERSON" 
-          version="V2.8" 
+          title="DEPLOYMENT SCHEDULER" 
+          version="V3.0" 
           showBackButton={true}
           trigger={<SidebarTrigger className="mr-2" />}
           actions={
-            <div className="flex items-center gap-3 px-3 py-1 bg-zinc-50 border border-zinc-200 rounded-lg">
-              {isLoadingSync ? (
-                <Loader2 className="size-3 animate-spin text-zinc-400" />
-              ) : (
-                <ShieldCheck className="size-3 text-emerald-600" />
-              )}
-              <span className="text-[10px] font-black uppercase tracking-wider text-zinc-900">
-                Step 2 of 4
-              </span>
+            <div className="flex items-center gap-2">
+              <div className="hidden sm:flex items-center gap-1.5">
+                {protocolMetadata?.slice(0, 1).map((item: any, idx: number) => (
+                  <div key={idx} className="px-2.5 py-1 bg-zinc-900 text-white rounded-lg text-[7px] font-black uppercase tracking-[0.15em] border border-zinc-800 shadow-sm">
+                    {item.label}
+                  </div>
+                ))}
+                <div className="px-2.5 py-1 bg-white border border-zinc-200 rounded-lg text-[7px] font-black uppercase tracking-[0.15em] flex items-center gap-1.5 shadow-sm">
+                  <div className="size-1 rounded-full bg-emerald-500 animate-pulse" /> Live Sync
+                </div>
+              </div>
+              <div className="flex items-center bg-zinc-100 p-0.5 rounded-lg border border-zinc-200/50">
+                <div className="px-2 py-0.5 bg-white rounded-md shadow-sm text-[7px] font-black text-zinc-900 uppercase tracking-tighter">Step 2</div>
+                <div className="px-2 py-0.5 text-[7px] font-black text-zinc-400 uppercase tracking-tighter">of 3</div>
+              </div>
             </div>
           }
         />
 
-        <main className="p-4 md:p-6 max-w-7xl mx-auto w-full flex flex-col lg:grid lg:grid-cols-12 gap-6 pb-32">
+        <main className="p-2 md:p-3 max-w-[1600px] mx-auto w-full flex-1 flex flex-col lg:grid lg:grid-cols-12 gap-3 lg:overflow-hidden min-h-0">
           
-          {/* RIGHT COLUMN: CALENDAR & OVERVIEW */}
-          <div className="lg:col-span-7 order-1 lg:order-2 space-y-4">
-            <div className="bg-zinc-900 p-5 rounded-[24px] text-white shadow-xl flex flex-col md:flex-row justify-between items-center gap-6 border border-zinc-800">
-              <div className="flex items-center gap-4">
-                <div className="size-10 bg-white/10 rounded-xl flex items-center justify-center text-white">
-                  <User2 size={20} />
-                </div>
-                <div>
-                  <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-1.5">Who's Going?</p>
-                  <p className="text-[15px] font-black uppercase tracking-tight leading-none">{selectedPic || "Pick someone..."}</p>
-                </div>
-              </div>
-              <div className="h-px md:h-8 w-full md:w-px bg-zinc-800" />
-              <div className="flex items-center gap-4">
-                <div className="size-10 bg-white/10 rounded-xl flex items-center justify-center text-white">
-                  <CalendarSearch size={20} />
-                </div>
-                <div>
-                  <p className="text-[9px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-1.5">Selected Date</p>
-                  <p className="text-[15px] font-black uppercase tracking-tight leading-none">
-                    {selectedDate ? format(new Date(viewDate.getFullYear(), viewDate.getMonth(), selectedDate), "MMM dd, yyyy") : "Pick a date..."}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white border border-zinc-200/60 p-5 md:p-6 rounded-[32px] shadow-sm lg:sticky lg:top-20 overflow-hidden">
-              {!selectedPic ? (
-                <div className="flex flex-col items-center justify-center py-24 space-y-4 text-center">
-                  <div className="size-20 bg-zinc-50 rounded-[32px] border border-zinc-100 flex items-center justify-center">
-                    <CalendarSearch className="size-10 text-zinc-200" />
-                  </div>
-                  <div>
-                    <h4 className="text-[11px] font-black uppercase tracking-widest text-zinc-900">Calendar Locked</h4>
-                    <p className="text-[10px] font-bold text-zinc-400 uppercase mt-1.5 leading-relaxed max-w-[200px] mx-auto">
-                      Please select a person on the left to see their availability.
-                    </p>
-                  </div>
+          {/* STEP 1: CALENDAR SELECTION (1/4 WIDTH) */}
+          <div className="lg:col-span-3 flex flex-col min-w-0 h-full overflow-hidden">
+            <section className="bg-white border border-zinc-200/60 rounded-[24px] p-3 shadow-sm h-full flex flex-col bg-zinc-50/20">
+              {isLoadingSync ? (
+                <div className="flex flex-col items-center justify-center flex-1 space-y-4 text-center">
+                  <Loader2 className="size-10 text-zinc-200 animate-spin" />
+                  <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-zinc-900">Synchronizing...</h4>
                 </div>
               ) : (
-                <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-                  <div className="flex items-center justify-between mb-6">
-                    <div>
-                      <h3 className="text-[15px] font-black text-zinc-900 uppercase tracking-tight">{monthLabel}</h3>
-                      <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest mt-0.5">Operational Schedule</p>
+                <div className="animate-in fade-in slide-in-from-right-4 duration-500 flex flex-col h-full overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-zinc-50 pb-2 mb-2 shrink-0">
+                    <div className="flex items-center gap-2">
+                      <div className="size-7 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/10">
+                        <CalendarSearch size={14} />
+                      </div>
+                      <div>
+                        <h3 className="text-[10px] font-black text-zinc-900 uppercase tracking-tight flex items-center gap-2">
+                          Pick Date
+                        </h3>
+                        <p className="text-[6px] font-bold text-zinc-400 uppercase tracking-[0.2em] leading-none mt-0.5">{monthLabel}</p>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <Button variant="outline" size="sm" onClick={() => handleMonthChange(-1)} disabled={viewDate.getMonth() === today.getMonth()} className="size-9 p-0 rounded-xl border-zinc-200 hover:bg-zinc-50"><ChevronLeft className="size-4" /></Button>
-                      <Button variant="outline" size="sm" onClick={() => handleMonthChange(1)} className="size-9 p-0 rounded-xl border-zinc-200 hover:bg-zinc-50"><ChevronRight className="size-4" /></Button>
+                    <div className="flex items-center gap-1 bg-zinc-50 p-0.5 rounded-lg border border-zinc-100">
+                      <Button variant="ghost" size="sm" onClick={() => handleMonthChange(-1)} disabled={viewDate.getMonth() === today.getMonth()} className="h-6 w-6 p-0 rounded-md hover:bg-white hover:shadow-xs transition-all"><ChevronLeft className="size-3" /></Button>
+                      <div className="w-px h-2 bg-zinc-200" />
+                      <Button variant="ghost" size="sm" onClick={() => handleMonthChange(1)} className="h-6 w-6 p-0 rounded-md hover:bg-white hover:shadow-xs transition-all"><ChevronRight className="size-3" /></Button>
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-7 gap-1.5">
-                    {['SUN','MON','TUE','WED','THU','FRI','SAT'].map((d) => (
-                      <div key={d} className="text-center text-[9px] font-black text-zinc-400 pb-2 uppercase tracking-widest">{d}</div>
-                    ))}
-                    {Array.from({ length: firstDayOfMonth }).map((_, i) => ( <div key={`pad-${i}`} className="aspect-square" /> ))}
-                    {Array.from({length: daysInMonth}).map((_, i) => {
-                      const dayNum = i + 1;
-                      const isPast = new Date(viewDate.getFullYear(), viewDate.getMonth(), dayNum) < today;
-                      
-                      const bookedApp = existingAppointments.find(a => a.day === dayNum && a.month === viewDate.getMonth() && a.year === viewDate.getFullYear());
-                      const blockedSlot = blockedSlots.find(s => s.day === dayNum && s.month === viewDate.getMonth() && s.year === viewDate.getFullYear());
-                      
-                      const isBusy = !!bookedApp;
-                      const isBlocked = !!blockedSlot;
+                  {/* CALENDAR GRID - PREVENT STRETCHING */}
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <div className="grid grid-cols-7 gap-1 mb-1.5 shrink-0">
+                      {['S','M','T','W','T','F','S'].map((d, idx) => (
+                        <div key={idx} className="text-center text-[6px] font-black text-zinc-300 py-0.5 uppercase tracking-widest">{d}</div>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-7 gap-1 content-start auto-rows-fr overflow-y-auto pr-0.5 scrollbar-hide lg:grid-rows-6">
+                      {Array.from({ length: firstDayOfMonth }).map((_, i) => ( <div key={`pad-${i}`} className="w-full h-full lg:min-h-[40px]" /> ))}
+                      {Array.from({length: daysInMonth}).map((_, i) => {
+                        const dayNum = i + 1;
+                        const dateObj = new Date(viewDate.getFullYear(), viewDate.getMonth(), dayNum);
+                        const isPast = dateObj < today;
+                        const isToday = dayNum === today.getDate() && viewDate.getMonth() === today.getMonth() && viewDate.getFullYear() === today.getFullYear();
+                        const isPastOrToday = isPast || isToday;
+                        
+                        const availability = getDayAvailability(dayNum, viewDate.getMonth(), viewDate.getFullYear());
+                        const isBusy = availability.available === 0 && !availability.isGlobal && !isPastOrToday;
+                        const isPartial = availability.available > 0 && availability.available < availability.total && !isPastOrToday;
+                        const isBlocked = availability.isGlobal;
+                        const isGlobal = availability.isGlobal;
 
-                      return (
-                        <button 
-                          key={i} 
-                          onClick={() => {
-                            if (isBusy) setViewingDetails(bookedApp);
-                            else if (isBlocked) setViewingDetails({ client: "PERSONNEL_UNAVAILABLE", agenda: blockedSlot.justification, isBlock: true });
-                            else setSelectedDate(dayNum);
-                          }}
-                          disabled={isPast} 
-                          className={cn(
-                            "aspect-square flex flex-col items-center justify-center text-[13px] font-black transition-all relative rounded-xl border", 
-                            selectedDate === dayNum ? "bg-zinc-900 text-white border-zinc-900 shadow-md z-10 scale-105" : 
-                            isPast ? "bg-zinc-50 text-zinc-200 border-transparent cursor-not-allowed opacity-50" : 
-                            isBusy ? "bg-red-50 text-red-600 border-red-100" : 
-                            isBlocked ? "bg-amber-50 text-amber-600 border-amber-100" :
-                            "bg-white border-zinc-100 hover:border-zinc-300 hover:bg-zinc-50"
-                          )}
-                        >
-                          <span>{dayNum}</span>
-                          {isBusy && !isPast && <div className="absolute top-1 right-1 size-1.5 bg-red-500 rounded-full border border-white" />}
-                          {isBlocked && !isPast && <div className="absolute top-1 right-1 size-1.5 bg-amber-500 rounded-full border border-white" />}
-                        </button>
-                      );
-                    })}
+                        return (
+                          <button 
+                            key={i} 
+                            onClick={() => {
+                              if (isBusy || isBlocked) setViewingDetails({ 
+                                client: isGlobal ? "SERVICE UNAVAILABLE" : "FULL CAPACITY", 
+                                agenda: availability.globalReason || "All personnel slots are currently booked for this date.", 
+                                isBlock: true,
+                                isGlobal: isGlobal
+                              });
+                              else if (!isPastOrToday) setSelectedDate(dayNum);
+                            }}
+                            disabled={isPastOrToday || (isBlocked && availability.available === 0)} 
+                            className={cn(
+                              "w-full h-full lg:min-h-[48px] flex flex-col items-center justify-center transition-all relative rounded-xl border group overflow-hidden p-0.5", 
+                              selectedDate === dayNum ? "bg-zinc-900 border-zinc-900 shadow-xl z-10 scale-[1.02]" : 
+                              isPastOrToday ? "bg-zinc-50/30 border-transparent cursor-not-allowed opacity-30" : 
+                              isBusy ? "bg-red-50 border-red-100 hover:bg-red-100/80" : 
+                              isPartial ? "bg-amber-50 border-amber-100 hover:bg-amber-100/80" :
+                              isGlobal ? "bg-zinc-900 border-zinc-900 opacity-90 shadow-lg" :
+                              isToday ? "bg-blue-50 border-blue-200 hover:border-blue-300" :
+                              "bg-white border-zinc-100 hover:border-zinc-300 hover:bg-zinc-50 shadow-sm"
+                            )}
+                          >
+                            <span className={cn(
+                              "text-xs font-black tracking-tight leading-none transition-transform group-hover:scale-110",
+                              selectedDate === dayNum ? "text-white" : 
+                              isPastOrToday ? "text-zinc-300" :
+                              isBusy ? "text-red-600" :
+                              isPartial ? "text-amber-600" :
+                              isToday ? "text-blue-600" :
+                              "text-zinc-900"
+                            )}>
+                              {dayNum}
+                            </span>
+                            
+                            {!isPastOrToday && (
+                              <div className={cn(
+                                "mt-1 px-1.5 py-0.5 rounded-full text-[7px] font-black uppercase tracking-tighter flex items-center gap-0.5 transition-all shrink-0",
+                                selectedDate === dayNum ? "bg-white text-zinc-900" : 
+                                isBusy ? "bg-red-500 text-white shadow-md shadow-red-500/10" :
+                                isPartial ? "bg-amber-500 text-white shadow-md shadow-amber-500/10" :
+                                "bg-emerald-500 text-white shadow-md shadow-emerald-500/10"
+                              )}>
+                                <span>{availability.available}</span>
+                                <span className="opacity-30">/</span>
+                                <span>{availability.total}</span>
+                              </div>
+                            )}
+
+                            {isToday && !selectedDate && (
+                              <div className="absolute top-1 right-1 size-1 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.5)]" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
 
-                  <div className="mt-8 pt-6 border-t border-zinc-100 grid grid-cols-2 gap-3">
-                      <div className="p-4 bg-zinc-50 border border-zinc-100 rounded-2xl text-center group">
-                        <p className="text-[8px] font-black text-zinc-400 uppercase mb-1.5 tracking-widest leading-none">TSA Approval</p>
-                        <span className="text-[11px] font-black uppercase text-zinc-900 leading-none">{formData.tsa || "—"}</span>
+                  <div className="mt-2 pt-2 border-t border-zinc-50 flex items-center justify-between shrink-0">
+                    <div className="flex gap-2">
+                      <div className="flex items-center gap-1">
+                        <div className="size-1.5 rounded-full bg-red-500" />
+                        <span className="text-[7px] font-black uppercase text-zinc-400 tracking-widest">Full</span>
                       </div>
-                      <div className="p-4 bg-zinc-50 border border-zinc-100 rounded-2xl text-center group">
-                        <p className="text-[8px] font-black text-zinc-400 uppercase mb-1.5 tracking-widest leading-none">TSM Approval</p>
-                        <span className="text-[11px] font-black uppercase text-zinc-900 leading-none">{formData.tsm || "—"}</span>
+                      <div className="flex items-center gap-1">
+                        <div className="size-1.5 rounded-full bg-amber-500" />
+                        <span className="text-[7px] font-black uppercase text-zinc-400 tracking-widest">Part</span>
                       </div>
+                      <div className="flex items-center gap-1">
+                        <div className="size-1.5 rounded-full bg-emerald-500" />
+                        <span className="text-[7px] font-black uppercase text-zinc-400 tracking-widest">Free</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 px-2 py-1 bg-zinc-900 rounded-lg shadow-lg shadow-zinc-200">
+                      <span className="text-[7px] font-black text-white/40 uppercase tracking-widest leading-none">KPI</span>
+                      <span className="text-[8px] font-black uppercase text-white leading-none tracking-tight">{formData.tsa}/{formData.tsm}</span>
+                    </div>
                   </div>
                 </div>
               )}
-            </div>
+            </section>
           </div>
 
-          {/* LEFT COLUMN: FORM DATA */}
-          <div className="lg:col-span-5 space-y-6 order-2 lg:order-1">
-            <div className="space-y-3">
-              <p className="text-[10px] font-black uppercase text-zinc-400 tracking-widest flex items-center gap-2 px-1">
-                <Sparkles className="size-3 text-zinc-400" /> Requirements Selected
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {protocolMetadata?.map((item: any, idx: number) => (
-                  <div key={idx} className="px-3 py-1.5 bg-white border border-zinc-200/60 rounded-xl shadow-sm text-[10px] font-black uppercase flex items-center gap-2">
-                    <div className="size-1.5 rounded-full bg-blue-500 shadow-lg shadow-blue-200" /> 
-                    {item.label}
+          {/* STEP 2: VISIT DETAILS (3/4 WIDTH) */}
+          <div className="lg:col-span-9 flex flex-col gap-3 min-w-0 h-full overflow-hidden">
+            <div className="bg-white border border-zinc-200/60 rounded-[24px] shadow-sm overflow-hidden divide-y divide-zinc-50 flex-1 flex flex-col min-h-0">
+              {/* VISIT PURPOSE SECTION */}
+              <div className="p-3 md:p-4 space-y-2 shrink-0">
+                <div className="flex items-center gap-2 border-b border-zinc-50 pb-1.5">
+                  <div className="size-5 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 shadow-sm border border-blue-100">
+                    <ClipboardList size={12} />
                   </div>
-                ))}
-                {personnel?.map((item: string, idx: number) => (
-                  <div key={`p-${idx}`} className="px-3 py-1.5 bg-amber-50 border border-amber-100 rounded-xl shadow-sm text-[10px] font-black uppercase flex items-center gap-2 text-amber-700">
-                    <User2 className="size-3" /> 
-                    {item}
+                  <div>
+                    <h3 className="text-[11px] font-black uppercase tracking-tight text-zinc-900 leading-none">Deployment Details</h3>
+                    <p className="text-[6px] font-bold text-zinc-400 uppercase tracking-widest mt-0.5 leading-none">Primary Engagement Information</p>
                   </div>
-                ))}
-                {ppe?.map((item: string, idx: number) => (
-                  <div key={`ppe-${idx}`} className="px-3 py-1.5 bg-zinc-900 border border-zinc-800 rounded-xl shadow-sm text-[10px] font-black uppercase flex items-center gap-2 text-white">
-                    <HardHat className="size-3" /> 
-                    {item}
-                  </div>
-                ))}
-                {permits?.map((item: string, idx: number) => (
-                  <div key={`perm-${idx}`} className="px-3 py-1.5 bg-emerald-50 border border-emerald-100 rounded-xl shadow-sm text-[10px] font-black uppercase flex items-center gap-2 text-emerald-700">
-                    <ClipboardList className="size-3" /> 
-                    {item}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <section className="p-5 bg-white border border-zinc-200/60 rounded-[28px] shadow-sm space-y-5">
-              <div className="flex items-center gap-3 border-b border-zinc-50 pb-4">
-                <div className="size-8 bg-zinc-900 rounded-lg flex items-center justify-center text-white">
-                  <User2 size={16} />
                 </div>
-                <span className="text-[11px] font-black uppercase tracking-tight text-zinc-900">Resource Allocation</span>
-              </div>
-              <div className="grid grid-cols-1 gap-2">
-                {assignedPics.map((picData, i) => {
-                  const name = typeof picData === 'string' ? picData : picData.name;
-                  const isSelected = selectedPic === name;
-                  return (
-                    <button 
-                      key={i} onClick={() => handlePicChange(name)} 
-                      className={cn(
-                        "w-full text-left px-4 py-3 rounded-2xl border transition-all flex justify-between items-center group active:scale-[0.98]", 
-                        isSelected 
-                          ? "bg-zinc-900 text-white border-zinc-900 shadow-lg" 
-                          : "bg-zinc-50/50 border-zinc-100 hover:border-zinc-300 hover:bg-white"
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Avatar className="size-9 rounded-xl border border-white/10 shadow-sm overflow-hidden">
-                          <AvatarImage src={picData.profilePicture} className="object-cover" />
-                          <AvatarFallback className={cn("text-[11px] font-black", isSelected ? "bg-white text-black" : "bg-zinc-900 text-white")}>
-                            {name?.[0]}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className={cn("text-[11px] font-black uppercase tracking-tight leading-none", isSelected ? "text-white" : "text-zinc-900")}>{name}</p>
-                          <p className={cn("text-[8px] font-bold uppercase tracking-widest mt-1", isSelected ? "text-zinc-400" : "text-zinc-400")}>Field Staff</p>
-                        </div>
-                      </div>
-                      {isSelected && <CheckCircle2 className="size-4 text-emerald-400" />}
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-
-            <section className="space-y-6">
-              <div className="p-5 bg-white border border-zinc-200/60 rounded-[28px] shadow-sm space-y-5">
-                <div className="flex items-center gap-3 border-b border-zinc-50 pb-4">
-                  <div className="size-8 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600">
-                    <ClipboardList size={16} />
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                  <div className="relative group">
+                    <Input className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-9 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-zinc-900 px-3 shadow-inner pt-3.5 transition-all" placeholder=" " value={formData.client} onChange={e => setFormData({...formData, client: e.target.value})} />
+                    <label className="absolute left-3 top-1 text-[7px] font-black uppercase text-zinc-400 tracking-widest transition-all group-focus-within:text-zinc-900">Client Name*</label>
                   </div>
-                  <span className="text-[11px] font-black uppercase tracking-tight text-zinc-900">Visit Details</span>
+                  <div className="relative group">
+                    <Input className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-9 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-zinc-900 px-3 shadow-inner pt-3.5 transition-all" placeholder=" " value={formData.agenda} onChange={e => setFormData({...formData, agenda: e.target.value})} />
+                    <label className="absolute left-3 top-1 text-[7px] font-black uppercase text-zinc-400 tracking-widest transition-all group-focus-within:text-zinc-900">Objective*</label>
+                  </div>
+                  <div className="relative group">
+                    <Input className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-9 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-zinc-900 px-3 shadow-inner pt-3.5 transition-all" placeholder=" " value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
+                    <label className="absolute left-3 top-1 text-[7px] font-black uppercase text-zinc-400 tracking-widest transition-all group-focus-within:text-zinc-900">Email Address</label>
+                  </div>
+                  <div className="relative group">
+                    <Input className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-9 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-zinc-900 px-3 shadow-inner pt-3.5 transition-all" placeholder=" " value={formData.contactNumber} onChange={e => setFormData({...formData, contactNumber: e.target.value})} />
+                    <label className="absolute left-3 top-1 text-[7px] font-black uppercase text-zinc-400 tracking-widest transition-all group-focus-within:text-zinc-900">Contact Number</label>
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest ml-1">Client Name*</label>
-                  <Input className="rounded-xl border-zinc-100 text-xs font-black uppercase h-11 bg-zinc-50/50 focus:bg-white focus:ring-1 focus:ring-zinc-900 transition-all px-4" placeholder="Who are you visiting?..." value={formData.client} onChange={e => setFormData({...formData, client: e.target.value})} />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest ml-1">What needs to be done?</label>
-                  <Input className="rounded-xl border-zinc-100 text-xs font-black uppercase h-11 bg-zinc-50/50 focus:bg-white focus:ring-1 focus:ring-zinc-900 transition-all px-4" placeholder="Brief purpose of visit..." value={formData.agenda} onChange={e => setFormData({...formData, agenda: e.target.value})} />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest ml-1">Additional Notes</label>
-                  <Textarea className="rounded-xl border-zinc-100 text-xs font-black uppercase min-h-[100px] bg-zinc-50/50 focus:bg-white focus:ring-1 focus:ring-zinc-900 transition-all p-4 resize-none" placeholder="Any extra instructions or details..." value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
+                <div className="relative group">
+                  <Textarea className="rounded-xl border-zinc-100 text-[11px] font-black uppercase min-h-[50px] lg:min-h-[60px] lg:max-h-[80px] bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-zinc-900 p-3 pt-4.5 resize-none leading-relaxed shadow-inner transition-all" placeholder=" " value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
+                  <label className="absolute left-3 top-1 text-[7px] font-black uppercase text-zinc-400 tracking-widest transition-all group-focus-within:text-zinc-900">Additional Visit Notes & Strategic Context</label>
                 </div>
               </div>
 
-              <div className="p-5 bg-white border border-zinc-200/60 rounded-[28px] shadow-sm space-y-5">
-                <div className="flex items-center gap-3 border-b border-zinc-50 pb-4">
-                  <div className="size-8 bg-amber-50 rounded-lg flex items-center justify-center text-amber-600">
-                    <MapPin size={16} />
+              {/* LOCATION INFO SECTION */}
+              <div className="p-3 md:p-4 space-y-2 flex-1 flex flex-col min-h-0 overflow-hidden">
+                <div className="flex items-center justify-between border-b border-zinc-50 pb-1.5 shrink-0">
+                  <div className="flex items-center gap-2">
+                    <div className="size-5 bg-amber-50 rounded-lg flex items-center justify-center text-amber-600 shadow-sm border border-amber-100">
+                      <MapPin size={12} />
+                    </div>
+                    <div>
+                      <span className="text-[11px] font-black uppercase tracking-tight text-zinc-900 leading-none block">Deployment Location</span>
+                      <p className="text-[6px] font-bold text-zinc-400 uppercase tracking-widest mt-0.5 leading-none">Site Geographic Metadata</p>
+                    </div>
                   </div>
-                  <span className="text-[11px] font-black uppercase tracking-tight text-zinc-900">Location Info</span>
+                  <button onClick={handleVerifyMap} className="h-7 px-2.5 text-[8px] font-black uppercase flex items-center gap-1.5 hover:bg-zinc-100 transition-all bg-zinc-50 rounded-lg border border-zinc-100 text-zinc-600 shadow-sm active:scale-95">
+                    {isGeocoding ? <Loader2 className="size-3 animate-spin" /> : <Navigation className="size-3" />} 
+                    Verify Site
+                  </button>
                 </div>
                 
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest ml-1">Site Location*</label>
-                    <button onClick={handleVerifyMap} className="text-[9px] font-black uppercase flex items-center gap-2 hover:text-blue-600 transition-all bg-zinc-50 px-2 py-1 rounded-lg border border-zinc-100">
-                      {isGeocoding ? <Loader2 className="size-3 animate-spin" /> : <Navigation className="size-3" />} 
-                      Verify Map
-                    </button>
-                  </div>
-                  
-                  {/* REGION & PROVINCE */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Region</span>
+                <div className="space-y-2.5 overflow-y-auto pr-0.5 scrollbar-hide flex-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                    <div className="relative group">
                       <select 
-                        className="w-full h-11 px-4 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-1 focus:ring-zinc-900 transition-all appearance-none"
+                        className="w-full h-9 px-3 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-2 focus:ring-zinc-900 transition-all appearance-none shadow-inner pt-3.5"
                         value={formData.region}
                         onChange={(e) => setFormData({ ...formData, region: e.target.value, province: "", city: "", barangay: "" })}
                       >
-                        <option value="">Select Region...</option>
+                        <option value=""></option>
                         {regions.map(r => <option key={r.code} value={r.code}>{r.name}</option>)}
                       </select>
+                      <label className="absolute left-3 top-1 text-[7px] font-black uppercase text-zinc-400 tracking-widest group-focus-within:text-zinc-900">Region</label>
+                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 size-3 text-zinc-400 pointer-events-none mt-1" />
                     </div>
-                    <div className="space-y-1.5">
-                      <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Province</span>
+                    <div className="relative group">
                       <select 
-                        className="w-full h-11 px-4 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-1 focus:ring-zinc-900 transition-all appearance-none disabled:opacity-50"
+                        className="w-full h-9 px-3 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-2 focus:ring-zinc-900 transition-all appearance-none disabled:opacity-50 shadow-inner pt-3.5"
                         value={formData.province}
                         disabled={!formData.region || formData.region === "130000000"}
                         onChange={(e) => setFormData({ ...formData, province: e.target.value, city: "", barangay: "" })}
                       >
-                        <option value="">{formData.region === "130000000" ? "NOT APPLICABLE (NCR)" : "Select Province..."}</option>
+                        <option value="">{formData.region === "130000000" ? "NCR" : ""}</option>
                         {provinces.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}
                       </select>
+                      <label className="absolute left-3 top-1 text-[7px] font-black uppercase text-zinc-400 tracking-widest group-focus-within:text-zinc-900">Province</label>
+                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 size-3 text-zinc-400 pointer-events-none mt-1" />
                     </div>
-                  </div>
-
-                  {/* CITY & BARANGAY */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest ml-1">City / Municipality</span>
+                    <div className="relative group">
                       <select 
-                        className="w-full h-11 px-4 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-1 focus:ring-zinc-900 transition-all appearance-none disabled:opacity-50"
+                        className="w-full h-9 px-3 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-2 focus:ring-zinc-900 transition-all appearance-none disabled:opacity-50 shadow-inner pt-3.5"
                         value={formData.city}
                         disabled={!formData.province && formData.region !== "130000000"}
                         onChange={(e) => setFormData({ ...formData, city: e.target.value, barangay: "" })}
                       >
-                        <option value="">Select City...</option>
+                        <option value=""></option>
                         {cities.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
                       </select>
+                      <label className="absolute left-3 top-1 text-[7px] font-black uppercase text-zinc-400 tracking-widest group-focus-within:text-zinc-900">City</label>
+                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 size-3 text-zinc-400 pointer-events-none mt-1" />
                     </div>
-                    <div className="space-y-1.5">
-                      <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Barangay</span>
+                    <div className="relative group">
                       <select 
-                        className="w-full h-11 px-4 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-1 focus:ring-zinc-900 transition-all appearance-none disabled:opacity-50"
+                        className="w-full h-9 px-3 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-2 focus:ring-zinc-900 transition-all appearance-none disabled:opacity-50 shadow-inner pt-3.5"
                         value={formData.barangay}
                         disabled={!formData.city}
                         onChange={(e) => setFormData({ ...formData, barangay: e.target.value })}
                       >
-                        <option value="">Select Barangay...</option>
+                        <option value=""></option>
                         {barangays.map(b => <option key={b.code} value={b.code}>{b.name}</option>)}
                       </select>
+                      <label className="absolute left-3 top-1 text-[7px] font-black uppercase text-zinc-400 tracking-widest group-focus-within:text-zinc-900">Barangay</label>
+                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 size-3 text-zinc-400 pointer-events-none mt-1" />
                     </div>
                   </div>
 
-                  {/* STREET & PREVIOUS ADDRESSES */}
-                  <div className="space-y-1.5">
-                    <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Street / Building / House #</span>
-                    <Input 
-                      className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-11 bg-zinc-50/50 focus:bg-white focus:ring-1 focus:ring-zinc-900 transition-all px-4" 
-                      placeholder="e.g. 123 Main St, Tower 1..." 
-                      value={formData.street} 
-                      onChange={e => setFormData({ ...formData, street: e.target.value })} 
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div className="relative group">
+                      <Input className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-9 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-zinc-900 px-3 shadow-inner pt-3.5 transition-all" placeholder=" " value={formData.street} onChange={e => setFormData({...formData, street: e.target.value})} />
+                      <label className="absolute left-3 top-1 text-[7px] font-black uppercase text-zinc-400 tracking-widest transition-all group-focus-within:text-zinc-900">Street / House No. / Unit</label>
+                    </div>
+                    <div className="relative group">
+                      <Input className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-9 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-zinc-900 px-3 shadow-inner pt-3.5 transition-all" placeholder=" " value={formData.landmark} onChange={e => setFormData({...formData, landmark: e.target.value})} />
+                      <label className="absolute left-3 top-1 text-[7px] font-black uppercase text-zinc-400 tracking-widest transition-all group-focus-within:text-zinc-900">Landmark / Building Name</label>
+                    </div>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Full Generated Address</span>
-                    <Textarea 
-                      className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-20 bg-zinc-100/50 p-4 resize-none" 
-                      placeholder="Combined address will appear here..." 
-                      value={formData.address} 
-                      readOnly
-                    />
-                    <div className="flex justify-end">
+                  <div className="space-y-1.5 pt-0.5 shrink-0">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[8px] font-black uppercase text-zinc-400 tracking-widest ml-1 flex items-center gap-1.5">
+                        <Globe size={10} /> Generated Address Output
+                      </span>
                       <Popover open={openAddress} onOpenChange={setOpenAddress}>
                         <PopoverTrigger asChild>
-                          <Button variant="ghost" size="sm" className="text-[9px] font-black uppercase text-zinc-400 hover:text-zinc-900 gap-2">
-                            <RefreshCw size={10} /> Use Recent Location
-                          </Button>
+                          <button className="text-[6px] font-black uppercase text-blue-600 hover:underline flex items-center gap-1 transition-all active:scale-95">
+                            <RefreshCw size={8} /> Search History
+                          </button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-[300px] p-0 rounded-2xl shadow-2xl border-zinc-100" align="end">
-                          <Command className="rounded-2xl">
-                            <CommandInput placeholder="Search history..." className="h-11 text-xs font-bold uppercase tracking-tight" />
-                            <CommandList className="max-h-[200px]">
-                              <CommandEmpty className="py-4 text-[10px] font-bold text-zinc-400 uppercase tracking-widest text-center">No history found</CommandEmpty>
-                              <CommandGroup heading="Recent Addresses" className="p-2">
+                        <PopoverContent className="w-[280px] p-0 rounded-xl shadow-2xl border-none" align="end">
+                          <Command className="rounded-xl">
+                            <CommandInput placeholder="Search records..." className="h-9 text-[11px] font-black uppercase" />
+                            <CommandList className="max-h-[140px] scrollbar-hide">
+                              <CommandEmpty className="py-3 text-[9px] font-black text-zinc-400 uppercase text-center tracking-widest">No records found</CommandEmpty>
+                              <CommandGroup heading="Historical Sites" className="p-1">
                                 {addressOptions.map((addr) => (
-                                  <CommandItem
-                                    key={addr}
-                                    value={addr}
-                                    onSelect={() => {
-                                      setFormData({ ...formData, address: addr });
-                                      setOpenAddress(false);
-                                    }}
-                                    className="rounded-xl text-[10px] font-bold uppercase tracking-tight py-3 px-4 aria-selected:bg-zinc-100"
-                                  >
-                                    <Check className={cn("mr-2 h-3 w-3", formData.address === addr ? "opacity-100" : "opacity-0")} />
+                                  <CommandItem key={addr} value={addr} onSelect={() => { setFormData({ ...formData, address: addr }); setOpenAddress(false); }} className="rounded-lg text-[9px] font-black uppercase py-1.5 px-2.5 mb-1 hover:bg-zinc-50 cursor-pointer transition-all">
+                                    <Check className={cn("mr-2 h-2.5 w-2.5 text-blue-600", formData.address === addr ? "opacity-100" : "opacity-0")} />
                                     <span className="truncate">{addr}</span>
                                   </CommandItem>
                                 ))}
@@ -832,64 +861,66 @@ export default function SchedulePage() {
                         </PopoverContent>
                       </Popover>
                     </div>
-                  </div>
-                </div>
-
-                <div className="w-full h-24 bg-zinc-50 border border-zinc-100 rounded-2xl flex flex-col items-center justify-center gap-2 overflow-hidden relative group">
-                  <Globe className="size-8 text-zinc-100 group-hover:text-blue-500/10 transition-colors" />
-                  <span className="text-[9px] font-black text-zinc-300 uppercase tracking-widest">Map Pin Status</span>
-                  {coords && (
-                    <div className="absolute inset-0 bg-emerald-50/50 flex items-center justify-center animate-in zoom-in duration-300">
-                      <CheckCircle2 className="size-6 text-emerald-500" />
-                      <span className="ml-2 text-[10px] font-black text-emerald-600 uppercase">Pinned</span>
+                    <div className="relative group">
+                      <Input className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-10 bg-zinc-100/50 p-2.5 shadow-inner truncate pr-20 transition-all" value={formData.address || "ADDRESS WILL AUTO-GENERATE..."} readOnly />
+                      <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                        {coords ? (
+                          <div className="flex items-center gap-1 px-1.5 py-0.5 bg-emerald-500 text-white rounded-md text-[6px] font-black uppercase shadow-lg shadow-emerald-500/20">
+                            <CheckCircle2 size={8} /> Site Pinned
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1 px-1.5 py-0.5 bg-zinc-200 text-zinc-400 rounded-md text-[6px] font-black uppercase">
+                            <MapPin size={8} /> Unverified
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[9px] font-black uppercase text-zinc-400 tracking-widest ml-1">Site Landmark</label>
-                  <Input className="rounded-xl border-zinc-100 text-xs font-black uppercase h-11 bg-zinc-50/50 focus:bg-white focus:ring-1 focus:ring-zinc-900 transition-all px-4" placeholder="Near school, mall, etc..." value={formData.landmark} onChange={e => setFormData({...formData, landmark: e.target.value})} />
+                  </div>
                 </div>
               </div>
+            </div>
 
-              <div className="p-6 border-2 border-dashed border-zinc-200 rounded-[28px] bg-white/40 text-center hover:bg-white hover:border-zinc-300 transition-all shadow-sm group">
-                {attachedFile ? (
-                  <div className="flex items-center justify-between bg-zinc-900 p-3 rounded-xl shadow-lg animate-in zoom-in duration-300">
-                    <div className="flex items-center gap-3">
-                      <Paperclip className="size-4 text-zinc-400" />
-                      <span className="text-[10px] font-black text-white uppercase truncate max-w-[150px]">{attachedFile.name}</span>
+            {/* ACTION BAR (3/4 WIDTH ALIGNED) */}
+            <div className="flex flex-col sm:flex-row items-center gap-3 bg-white border border-zinc-200/60 p-3 rounded-[24px] shadow-sm shrink-0">
+               <div className="flex-1 flex items-center gap-4 w-full sm:w-auto">
+                  <div className="flex items-center gap-2">
+                    <div className="size-8 rounded-xl bg-zinc-900 flex items-center justify-center text-white shrink-0 shadow-lg shadow-zinc-900/10">
+                      <User2 size={16} />
                     </div>
-                    <button onClick={() => setAttachedFile(null)} className="text-zinc-500 hover:text-white transition-colors"><X className="size-4" /></button>
+                    <div className="min-w-0">
+                      <p className="text-[7px] font-black text-zinc-400 uppercase tracking-widest leading-none mb-1">Status</p>
+                      <p className="text-[11px] font-black uppercase tracking-tight leading-none truncate text-zinc-900">TBD (Engi Assign)</p>
+                    </div>
                   </div>
-                ) : (
-                  <label className="cursor-pointer flex flex-col items-center gap-2 py-4 group">
-                    <div className="size-10 bg-zinc-50 rounded-xl flex items-center justify-center text-zinc-300 group-hover:bg-zinc-900 group-hover:text-white transition-all">
-                      <Paperclip size={20} />
+                  <div className="h-8 w-px bg-zinc-100 hidden sm:block" />
+                  <div className="flex items-center gap-2">
+                    <div className="size-8 rounded-xl bg-blue-500 flex items-center justify-center text-white shrink-0 shadow-lg shadow-blue-500/10">
+                      <CalendarSearch size={16} />
                     </div>
-                    <span className="text-[10px] font-black uppercase text-zinc-400 tracking-widest mt-2">Attach Files (Optional)</span>
-                    <input type="file" className="hidden" onChange={(e) => setAttachedFile(e.target.files?.[0] || null)} />
-                  </label>
+                    <div className="min-w-0">
+                      <p className="text-[7px] font-black text-blue-400 uppercase tracking-widest leading-none mb-1">Target Date</p>
+                      <p className="text-[11px] font-black uppercase tracking-tight leading-none text-blue-600 truncate">
+                        {selectedDate ? format(new Date(viewDate.getFullYear(), viewDate.getMonth(), selectedDate), "MMM dd, yyyy") : "NOT SELECTED"}
+                      </p>
+                    </div>
+                  </div>
+               </div>
+               <Button 
+                onClick={handleSubmitProtocol} 
+                disabled={!isComplete || isSubmitting} 
+                className={cn(
+                  "h-11 w-full sm:w-auto px-8 rounded-xl font-black uppercase text-[11px] tracking-[0.15em] flex items-center justify-center gap-2 shadow-xl transition-all active:scale-[0.95] shrink-0", 
+                  isComplete 
+                    ? "bg-zinc-900 text-white hover:bg-zinc-800 shadow-zinc-200" 
+                    : "bg-zinc-200 text-zinc-400 cursor-not-allowed shadow-none"
                 )}
-              </div>
-            </section>
+              >
+                {isSubmitting ? "Syncing..." : "Schedule Deployment"}
+                {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+              </Button>
+            </div>
           </div>
         </main>
-
-        <div className="fixed bottom-6 right-4 left-4 md:left-auto md:bottom-8 md:right-8 z-[60]">
-          <Button 
-            onClick={handleSubmitProtocol} 
-            disabled={!isComplete || isSubmitting} 
-            className={cn(
-              "w-full md:w-auto h-16 px-10 rounded-full font-black uppercase text-[11px] tracking-[0.2em] flex items-center justify-center gap-4 shadow-2xl transition-all active:scale-[0.95]", 
-              isComplete 
-                ? "bg-zinc-900 text-white hover:bg-zinc-800 hover:scale-105" 
-                : "bg-zinc-200 text-zinc-400 cursor-not-allowed shadow-none"
-            )}
-          >
-            {isSubmitting ? "Finalizing..." : "Submit Visit Request"}
-            {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-          </Button>
-        </div>
       </SidebarInset>
     </>
   );
