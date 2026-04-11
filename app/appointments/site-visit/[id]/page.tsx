@@ -42,6 +42,7 @@ export default function AppointmentDetailsPage() {
 
     const [loading, setLoading] = React.useState(true)
     const [data, setData] = React.useState<any>(null)
+    const [submitterName, setSubmitterName] = React.useState("")
     const [userContext, setUserContext] = React.useState({ role: "", id: "", name: "", profilePicture: "" })
     const [actionLoading, setActionLoading] = React.useState(false)
     const [confNotes, setConfNotes] = React.useState("")
@@ -51,21 +52,25 @@ export default function AppointmentDetailsPage() {
     const [isDetailsCollapsed, setIsDetailsCollapsed] = React.useState(false)
     const [timeElapsed, setTimeElapsed] = React.useState("0h 0m")
     const [availablePics, setAvailablePics] = React.useState<any[]>([])
+    const [protocolLabels, setProtocolLabels] = React.useState<string[]>([])
     const [selectedAssignees, setSelectedAssignees] = React.useState<string[]>([])
 
     const status = data?.status?.toUpperCase() || "PENDING"
 
-    // FETCH AVAILABLE PICS BASED ON PROTOCOLS
+    // FETCH PROTOCOL LABELS AND AVAILABLE PICS
     React.useEffect(() => {
         if (!data?.protocols || data.protocols.length === 0) return;
 
-        const fetchPics = async () => {
+        const fetchProtocols = async () => {
             try {
                 const q = query(collection(db, "protocols"), where("isActive", "==", true));
                 const unsubscribe = onSnapshot(q, (snapshot: any) => {
                     const dbProtocols = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() })) as any[];
                     const matched = dbProtocols.filter((proto: any) => data.protocols.includes(proto.id));
                     
+                    // Update Labels for display
+                    setProtocolLabels(matched.map(p => p.label || p.id));
+
                     // LOGIC: IF "INSTALLATION SERVICES" IS SELECTED, ONLY SHOW ITS PICS
                     const installationProtocol = matched.find(p => p.label?.toLowerCase().includes("installation"));
                     
@@ -79,9 +84,9 @@ export default function AppointmentDetailsPage() {
                     setAvailablePics(finalPics);
                 });
                 return () => unsubscribe();
-            } catch (err) { console.error("PIC_FETCH_ERROR", err); }
+            } catch (err) { console.error("PROTOCOL_SYNC_ERROR", err); }
         };
-        fetchPics();
+        fetchProtocols();
     }, [data?.protocols]);
 
     // PRE-FILL SELECTED ASSIGNEES IF ALREADY ASSIGNED
@@ -148,11 +153,22 @@ export default function AppointmentDetailsPage() {
                 })
 
                 const docRef = doc(db, "appointments", id)
-                unsubscribe = onSnapshot(docRef, (docSnap) => {
+                unsubscribe = onSnapshot(docRef, async (docSnap) => {
                     if (docSnap.exists()) {
                         const appointmentData = docSnap.data()
                         setData(appointmentData)
                         setConfNotes((prev) => prev || appointmentData.confirmationNotes || "")
+
+                        // FETCH SUBMITTER NAME IF ID EXISTS
+                        if (appointmentData.submittedBy && appointmentData.submittedBy !== "SYSTEM") {
+                            try {
+                                const subRes = await fetch(`/api/user?id=${encodeURIComponent(appointmentData.submittedBy)}`)
+                                const subUser = await subRes.json()
+                                if (subUser?.Firstname) {
+                                    setSubmitterName(`${subUser.Firstname} ${subUser.Lastname}`)
+                                }
+                            } catch (e) { console.error("SUBMITTER_FETCH_ERROR", e) }
+                        }
                     }
                     setLoading(false)
                 })
@@ -216,9 +232,9 @@ export default function AppointmentDetailsPage() {
     const isConfirmed = status === "CONFIRMED"
     const isCompleted = status === "COMPLETED"
 
-    const protocolDisplay = Array.isArray(data?.protocols)
-        ? data.protocols.join(" + ").toUpperCase()
-        : (data?.protocols?.toUpperCase() || "NOT_DEFINED")
+    const protocolDisplay = protocolLabels.length > 0 
+        ? protocolLabels.join(" + ").toUpperCase() 
+        : (Array.isArray(data?.protocols) ? data.protocols.join(" + ").toUpperCase() : (data?.protocols?.toUpperCase() || "NOT_DEFINED"))
 
     const formatBookingDate = (ts: any) => {
         if (!ts) return "UNSCHEDULED"
@@ -338,8 +354,8 @@ export default function AppointmentDetailsPage() {
                     <section className="grid grid-cols-2 lg:grid-cols-5 gap-1.5">
                         <CompactStat label="SERVICE" value={protocolDisplay} icon={ShieldAlert} />
                         <CompactStat label="CLIENT" value={data?.client} icon={Building2} />
-                        <CompactStat label="REQUESTOR" value={data?.requestorName || userContext.name} icon={Fingerprint} />
-                        <CompactStat label="ENGINEER" value={data?.pic || "UNASSIGNED"} icon={User} color={!data?.pic ? "text-slate-400" : "text-blue-600"} />
+                        <CompactStat label="REQUESTOR" value={submitterName || data?.requestorName || "UNSPECIFIED"} icon={Fingerprint} />
+                        <CompactStat label="ENGINEER" value={data?.pic || "UNASSIGNED"} icon={User} color={!data?.pic || data?.pic === "UNASSIGNED" ? "text-slate-400" : "text-blue-600"} />
                         <CompactStat label="REF ID" value={id.slice(-8).toUpperCase()} icon={Terminal} />
                     </section>
 
