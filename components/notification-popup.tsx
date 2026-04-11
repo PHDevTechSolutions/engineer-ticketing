@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { 
   Bell, X, Clock, CheckCircle2, AlertCircle, 
@@ -312,29 +312,112 @@ export function NotificationPopup({
   );
 }
 
-// Queue-based notification manager
+// Queue-based notification manager with deduplication
 interface QueuedNotification extends NotificationData {
   createdAt: number;
+  fingerprint: string;
+}
+
+// Create a fingerprint for deduplication (title + body + 5-minute window)
+function createFingerprint(title: string, body: string): string {
+  const timeWindow = Math.floor(Date.now() / (1000 * 60 * 5)); // 5-minute window
+  return `${title}|${body}|${timeWindow}`;
+}
+
+// Check if notification was recently shown (sessionStorage + memory cache)
+function isDuplicate(fingerprint: string): boolean {
+  if (typeof window === "undefined") return false;
+  
+  const key = `notif-seen-${fingerprint}`;
+  const seen = sessionStorage.getItem(key);
+  
+  if (seen) return true;
+  
+  // Mark as seen for 10 minutes
+  sessionStorage.setItem(key, Date.now().toString());
+  return false;
+}
+
+// Cleanup old entries periodically
+function cleanupSeenNotifications() {
+  if (typeof window === "undefined") return;
+  
+  const now = Date.now();
+  const expiry = 1000 * 60 * 10; // 10 minutes
+  
+  Object.keys(sessionStorage).forEach(key => {
+    if (key.startsWith("notif-seen-")) {
+      const timestamp = parseInt(sessionStorage.getItem(key) || "0");
+      if (now - timestamp > expiry) {
+        sessionStorage.removeItem(key);
+      }
+    }
+  });
 }
 
 export function useNotificationQueue() {
   const [queue, setQueue] = useState<QueuedNotification[]>([]);
   const [current, setCurrent] = useState<QueuedNotification | null>(null);
+  const broadcastRef = useRef<BroadcastChannel | null>(null);
+  const recentNotificationsRef = useRef<Set<string>>(new Set());
 
-  const addNotification = (notification: NotificationData) => {
+  // Setup BroadcastChannel for cross-tab coordination
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    
+    // Cleanup old entries on mount
+    cleanupSeenNotifications();
+    
+    // Create broadcast channel for cross-tab communication
+    const channel = new BroadcastChannel("notifications");
+    broadcastRef.current = channel;
+    
+    channel.onmessage = (event) => {
+      if (event.data.type === "NOTIFICATION_SHOWN") {
+        // Another tab is showing this notification, mark as seen
+        recentNotificationsRef.current.add(event.data.fingerprint);
+      }
+    };
+    
+    return () => {
+      channel.close();
+      broadcastRef.current = null;
+    };
+  }, []);
+
+  const addNotification = useCallback((notification: NotificationData) => {
+    const fingerprint = createFingerprint(
+      notification.title || "",
+      notification.body || ""
+    );
+    
+    // Check for duplicates (memory + sessionStorage + cross-tab)
+    if (recentNotificationsRef.current.has(fingerprint) || isDuplicate(fingerprint)) {
+      console.log("[Notification] Duplicate suppressed:", fingerprint);
+      return;
+    }
+    
+    // Add to memory cache
+    recentNotificationsRef.current.add(fingerprint);
+    
+    // Notify other tabs
+    broadcastRef.current?.postMessage({
+      type: "NOTIFICATION_SHOWN",
+      fingerprint,
+    });
+    
     const queued: QueuedNotification = {
       ...notification,
       id: notification.id || `notif-${Date.now()}`,
       createdAt: Date.now(),
+      fingerprint,
     };
 
     setQueue(prev => [...prev, queued]);
     
     // If no current notification, show this one
-    if (!current) {
-      setCurrent(queued);
-    }
-  };
+    setCurrent(current => current || queued);
+  }, []);
 
   const closeCurrent = () => {
     setCurrent(null);

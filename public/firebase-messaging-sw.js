@@ -15,6 +15,36 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
+// In-memory cache for deduplication (service worker scope)
+const recentNotifications = new Map();
+const NOTIFICATION_TTL = 10 * 60 * 1000; // 10 minutes
+
+// Create a fingerprint for deduplication (title + body + 5-minute window)
+function createFingerprint(title, body) {
+  const timeWindow = Math.floor(Date.now() / (1000 * 60 * 5)); // 5-minute window
+  return `${title}|${body}|${timeWindow}`;
+}
+
+// Check and mark notification as seen
+function isDuplicate(fingerprint) {
+  const now = Date.now();
+  
+  // Cleanup old entries
+  for (const [key, timestamp] of recentNotifications) {
+    if (now - timestamp > NOTIFICATION_TTL) {
+      recentNotifications.delete(key);
+    }
+  }
+  
+  if (recentNotifications.has(fingerprint)) {
+    console.log('[SW] Duplicate notification suppressed:', fingerprint);
+    return true;
+  }
+  
+  recentNotifications.set(fingerprint, now);
+  return false;
+}
+
 // Handle background messages via FCM
 messaging.onBackgroundMessage((payload) => {
   return showNotification(payload);
@@ -31,20 +61,31 @@ self.addEventListener('push', (event) => {
   }
 });
 
-function showNotification(payload) {
+async function showNotification(payload) {
   const notification = payload.notification || {};
   const data         = payload.data || {};
 
   const title = notification.title || data.title || "DSI Connect";
+  const body = notification.body || data.body || "You have a new update.";
+  
+  // Create unique tag based on content for deduplication
+  const fingerprint = createFingerprint(title, body);
+  const messageId = payload.messageId || payload.fcmMessageId || fingerprint;
+  
+  // Check for duplicates
+  if (isDuplicate(fingerprint)) {
+    return;
+  }
+  
   const options = {
-    body:               notification.body || data.body || "You have a new update.",
+    body:               body,
     icon:               '/icons/disruptive.png',
     badge:              '/icons/disruptive.png',
-    tag:                'dsi-alert',  // groups notifications — updated from 'engi-alert'
-    renotify:           true,         // vibrate/sound even if same tag
+    tag:                messageId,  // Unique tag per notification content
     requireInteraction: true,
     data: {
-      url: data.url || '/dashboard'
+      url: data.url || '/dashboard',
+      fingerprint: fingerprint
     }
   };
 

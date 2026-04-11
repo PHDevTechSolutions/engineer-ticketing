@@ -97,9 +97,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     getMessagingInstance().then(messaging => {
       if (!messaging) return;
       onMessage(messaging, payload => {
+        // Use FCM messageId for deduplication if available
+        const messageId = payload.messageId || `fcm-${Date.now()}`;
+        
         // Show rich popup notification instead of toast
         const notification: NotificationData = {
-          id: `fcm-${Date.now()}`,
+          id: messageId,
           title: payload.notification?.title || "New Update",
           body: payload.notification?.body || "",
           type: "info",
