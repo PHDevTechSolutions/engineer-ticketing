@@ -12,19 +12,9 @@ const nextConfig = {
     ],
   },
 
-  // 3. Security Headers (Fixes the Embedding/Iframe Issue)
+  // 3. Security Headers (Managed via Middleware for Dynamic IT Control)
   async headers() {
-    return [
-      {
-        source: '/dashboard',
-        headers: [
-          {
-            key: 'Content-Security-Policy',
-            value: "frame-ancestors 'self' http://localhost:3000 http://localhost:3001 https://taskflow-project-five-gamma.vercel.app https://taskflow-demo-v2.vercel.app/ https://taskflow-crm.vercel.app/ https://taskflow.devtech-erp-solutions.cloud/",
-          },
-        ],
-      },
-    ];
+    return [];
   },
 };
 

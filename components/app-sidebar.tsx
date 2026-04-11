@@ -274,7 +274,7 @@ export function AppSidebar({ userId, ...props }: AppSidebarProps) {
     ]
 
     const secondary: NavItem[] = [
-      ...(nv.systemSettings ? [{ title: "System Settings", url: appendId("/settings"), icon: Settings2 }] : []),
+      ...(nv.systemSettings ? [{ title: "System Settings", url: appendId("/admin/system-settings"), icon: Settings2 }] : []),
       ...(nv.helpCenter     ? [{ title: "Help Center",     url: appendId("/docs"),     icon: BookOpen  }] : []),
     ]
 
