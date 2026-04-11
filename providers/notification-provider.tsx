@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { usePathname } from "next/navigation";
 import { db, getMessagingInstance } from "@/lib/firebase";
-import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp, getDoc, collection, getDocs, writeBatch } from "firebase/firestore";
 import { getToken, onMessage } from "firebase/messaging";
 import { toast } from "sonner";
 import { X, BellRing, BellOff, CheckCircle2, RefreshCw, Wifi, Settings, Volume2 } from "lucide-react";
@@ -93,6 +93,48 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     // Preload notification sounds
     preloadSounds();
 
+    // One-time cleanup of duplicate device registrations
+    const cleanupDuplicateDevices = async () => {
+      const uid = localStorage.getItem("userId");
+      if (!uid) return;
+      
+      try {
+        const devicesCol = collection(db, "users", uid, "devices");
+        const devicesSnap = await getDocs(devicesCol);
+        
+        // Group by deviceId and keep only the most recent
+        const deviceMap = new Map();
+        devicesSnap.forEach((d) => {
+          const data = d.data();
+          const existing = deviceMap.get(data.deviceId);
+          if (!existing || (data.lastPushSync?.seconds > existing.data.lastPushSync?.seconds)) {
+            deviceMap.set(data.deviceId, { id: d.id, data, ref: d.ref });
+          }
+        });
+        
+        // Delete duplicates
+        const batch = writeBatch(db);
+        let deleted = 0;
+        devicesSnap.forEach((d) => {
+          const data = d.data();
+          const keeper = deviceMap.get(data.deviceId);
+          if (keeper && keeper.id !== d.id) {
+            batch.delete(d.ref);
+            deleted++;
+          }
+        });
+        
+        if (deleted > 0) {
+          await batch.commit();
+          console.log(`[Push] Cleaned up ${deleted} duplicate device registration(s)`);
+        }
+      } catch (err) {
+        console.error("[Push] Cleanup error:", err);
+      }
+    };
+    
+    cleanupDuplicateDevices();
+
     // Listen for foreground messages
     getMessagingInstance().then(messaging => {
       if (!messaging) return;
@@ -143,6 +185,31 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       // Get Web Push subscription
       const fullSubscription = await subscribeUserToPush();
       const deviceId = getDeviceId(); // same key as login form
+
+      // Clean up old duplicate devices with same FCM token or same deviceId
+      try {
+        const devicesCol = collection(db, "users", uid, "devices");
+        const devicesSnap = await getDocs(devicesCol);
+        const batch = writeBatch(db);
+        let deletedCount = 0;
+        
+        devicesSnap.forEach((d) => {
+          const data = d.data();
+          // Delete if: same FCM token (different device) OR same deviceId (old entry)
+          if ((data.fcmToken === fcmToken && d.id !== deviceId) || 
+              (data.deviceId === deviceId && d.id !== deviceId)) {
+            batch.delete(d.ref);
+            deletedCount++;
+          }
+        });
+        
+        if (deletedCount > 0) {
+          await batch.commit();
+          console.log(`[Push] Cleaned up ${deletedCount} duplicate device(s)`);
+        }
+      } catch (cleanupErr) {
+        console.error("[Push] Cleanup error (non-fatal):", cleanupErr);
+      }
 
       // Save to Firestore under users/{uid}/devices/{deviceId}
       const deviceRef = doc(db, "users", uid, "devices", deviceId);

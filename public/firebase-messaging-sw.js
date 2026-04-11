@@ -15,34 +15,72 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
-// In-memory cache for deduplication (service worker scope)
-const recentNotifications = new Map();
+const DB_NAME = 'notification-dedup';
+const STORE_NAME = 'seen';
 const NOTIFICATION_TTL = 10 * 60 * 1000; // 10 minutes
 
-// Create a fingerprint for deduplication (title + body + 5-minute window)
+// Create a fingerprint for deduplication (title + body only - no time window for exact match)
 function createFingerprint(title, body) {
-  const timeWindow = Math.floor(Date.now() / (1000 * 60 * 5)); // 5-minute window
-  return `${title}|${body}|${timeWindow}`;
+  return `${title}|${body}`;
 }
 
-// Check and mark notification as seen
-function isDuplicate(fingerprint) {
-  const now = Date.now();
-  
-  // Cleanup old entries
-  for (const [key, timestamp] of recentNotifications) {
-    if (now - timestamp > NOTIFICATION_TTL) {
-      recentNotifications.delete(key);
+// Open IndexedDB
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+    request.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'fingerprint' });
+      }
+    };
+  });
+}
+
+// Check if notification is duplicate
+async function isDuplicate(fingerprint) {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    
+    const existing = await new Promise((resolve) => {
+      const req = store.get(fingerprint);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    });
+    
+    const now = Date.now();
+    
+    // Cleanup old entries
+    const all = await new Promise((resolve) => {
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve([]);
+    });
+    
+    for (const item of all) {
+      if (now - item.timestamp > NOTIFICATION_TTL) {
+        store.delete(item.fingerprint);
+      }
     }
+    
+    if (existing) {
+      console.log('[SW] Duplicate suppressed:', fingerprint.substring(0, 50));
+      db.close();
+      return true;
+    }
+    
+    // Mark as seen
+    store.put({ fingerprint, timestamp: now });
+    db.close();
+    return false;
+  } catch (e) {
+    console.error('[SW] Deduplication error:', e);
+    return false; // Fail open - show notification
   }
-  
-  if (recentNotifications.has(fingerprint)) {
-    console.log('[SW] Duplicate notification suppressed:', fingerprint);
-    return true;
-  }
-  
-  recentNotifications.set(fingerprint, now);
-  return false;
 }
 
 // Handle background messages via FCM
@@ -72,8 +110,10 @@ async function showNotification(payload) {
   const fingerprint = createFingerprint(title, body);
   const messageId = payload.messageId || payload.fcmMessageId || fingerprint;
   
-  // Check for duplicates
-  if (isDuplicate(fingerprint)) {
+  // Check for duplicates (must await the async function)
+  const duplicate = await isDuplicate(fingerprint);
+  if (duplicate) {
+    console.log('[SW] Notification suppressed (duplicate):', title);
     return;
   }
   

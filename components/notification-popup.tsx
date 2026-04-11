@@ -318,10 +318,9 @@ interface QueuedNotification extends NotificationData {
   fingerprint: string;
 }
 
-// Create a fingerprint for deduplication (title + body + 5-minute window)
+// Create a fingerprint for deduplication (title + body only)
 function createFingerprint(title: string, body: string): string {
-  const timeWindow = Math.floor(Date.now() / (1000 * 60 * 5)); // 5-minute window
-  return `${title}|${body}|${timeWindow}`;
+  return `${title}|${body}`;
 }
 
 // Check if notification was recently shown (sessionStorage + memory cache)
