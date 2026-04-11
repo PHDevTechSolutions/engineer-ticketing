@@ -108,12 +108,18 @@ async function showNotification(payload) {
   
   // Create unique tag based on content for deduplication
   const fingerprint = createFingerprint(title, body);
-  const messageId = payload.messageId || payload.fcmMessageId || fingerprint;
   
-  // Check for duplicates (must await the async function)
+  // Check for duplicates in this origin's IndexedDB
   const duplicate = await isDuplicate(fingerprint);
   if (duplicate) {
     console.log('[SW] Notification suppressed (duplicate):', title);
+    return;
+  }
+  
+  // Also check for existing notifications with the same tag
+  const existingNotifications = await self.registration.getNotifications({ tag: fingerprint });
+  if (existingNotifications.length > 0) {
+    console.log('[SW] Notification already visible, skipping:', title);
     return;
   }
   
@@ -121,7 +127,8 @@ async function showNotification(payload) {
     body:               body,
     icon:               '/icons/disruptive.png',
     badge:              '/icons/disruptive.png',
-    tag:                messageId,  // Unique tag per notification content
+    tag:                fingerprint,  // Use fingerprint as tag for OS-level dedup
+    renotify:           false,      // Don't vibrate/play sound if replacing
     requireInteraction: true,
     data: {
       url: data.url || '/dashboard',

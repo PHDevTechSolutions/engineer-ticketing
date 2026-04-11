@@ -170,7 +170,21 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       const messaging = await getMessagingInstance();
       if (!messaging) throw new Error("Push notifications not supported on this browser.");
 
-      // Register service worker
+      // First, unregister any existing push subscription to prevent duplicates
+      try {
+        const existingReg = await navigator.serviceWorker.getRegistration();
+        if (existingReg?.pushManager) {
+          const existingSub = await existingReg.pushManager.getSubscription();
+          if (existingSub) {
+            await existingSub.unsubscribe();
+            console.log("[Push] Unsubscribed from previous push subscription");
+          }
+        }
+      } catch (unsubErr) {
+        console.error("[Push] Unsubscribe error (non-fatal):", unsubErr);
+      }
+
+      // Register service worker fresh
       await navigator.serviceWorker.register("/firebase-messaging-sw.js");
 
       // Request permission
