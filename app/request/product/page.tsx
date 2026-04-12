@@ -334,7 +334,10 @@ export default function ProcurementListPage() {
     setIsLoading(true)
     try {
       const department = dept ?? userDepartment
-      const isIT = (department || "").toUpperCase() === "IT"
+      const deptUpper = (department || "").toUpperCase()
+      const isIT = deptUpper === "IT"
+      const isProcurement = deptUpper === "PROCUREMENT"
+      const hasFullAccess = isIT || isProcurement
 
       let query = supabase
         .from("spf_creation")
@@ -346,9 +349,9 @@ export default function ProcurementListPage() {
         `)
         .order("date_created", { ascending: false })
 
-      // IF IT: Show all records
-      // IF NOT IT: Show only Pending and Approved for Procurement (Members now see all)
-      if (!isIT) {
+      // IF IT or PROCUREMENT: Show all records
+      // IF Others: Show only Pending and Approved for Procurement
+      if (!hasFullAccess) {
         query = query.or("status.eq.Pending For Procurement,status.eq.Approved By Procurement")
       }
 
@@ -498,6 +501,8 @@ export default function ProcurementListPage() {
 
   /* ── DERIVED ── */
   const isIT = (userDepartment || "").toUpperCase() === "IT"
+  const isProcurement = (userDepartment || "").toUpperCase() === "PROCUREMENT"
+  const hasFullAccess = isIT || isProcurement
 
   const filtered = React.useMemo(() => {
     let list = requests.filter(r => {
@@ -638,12 +643,12 @@ export default function ProcurementListPage() {
 
           <main className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-4">
 
-            {/* ── IT BANNER ── */}
-            {!isLoading && isIT && (
+            {/* ── FULL ACCESS BANNER (IT or PROCUREMENT) ── */}
+            {!isLoading && hasFullAccess && (
               <div className="flex items-center gap-2 md:gap-3 bg-blue-50 border border-blue-200 rounded-xl md:rounded-2xl px-3 md:px-4 py-2 md:py-3">
                 <ShieldCheck className="size-3.5 md:size-4 text-blue-500 flex-shrink-0" />
                 <p className="text-[10px] md:text-[11px] font-black text-blue-700">
-                  IT Access — viewing all records across all statuses.
+                  {isIT ? "IT Access" : "Procurement Access"} — viewing all records across all statuses.
                 </p>
               </div>
             )}

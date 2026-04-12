@@ -1245,7 +1245,7 @@ export default function EngiconnectDashboard() {
         <ProtectedPageWrapper>
             <SidebarProvider defaultOpen={false}>
                 <AppSidebar userId={userId} />
-                <SidebarInset className="bg-[#F2F4F7] relative min-h-screen font-sans">
+                <SidebarInset className="bg-[#F2F4F7] min-h-screen font-sans">
 
                     {/* ══════════════════════
                         DESKTOP HEADER
@@ -1345,7 +1345,7 @@ export default function EngiconnectDashboard() {
                     <header className="md:hidden bg-[#E33636] pt-14 pb-20 px-6 rounded-b-[40px] shadow-lg relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-24 -mt-24 pointer-events-none" />
 
-                        <div className="max-w-7xl mx-auto relative z-10">
+                        <div className="max-w-7xl mx-auto">
                             {/* Top row: avatar + name + actions */}
                             <div className="flex justify-between items-start mb-6">
                                 <div className="flex items-center gap-3">
@@ -1422,7 +1422,7 @@ export default function EngiconnectDashboard() {
                     {/* ══════════════════════
                         MAIN CONTENT
                     ══════════════════════ */}
-                    <main className="px-4 -mt-8 space-y-6 pb-32 relative z-20 md:mt-0 md:px-6 lg:px-10 md:py-6 max-w-7xl mx-auto animate-in fade-in duration-500">
+                    <main className="px-4 -mt-8 space-y-6 pb-32 md:mt-0 md:px-6 lg:px-10 md:py-6 max-w-7xl mx-auto animate-in fade-in duration-500">
 
                         {/* ── SERVICES ── */}
                         <section className="bg-white rounded-[24px] p-5 shadow-sm border border-gray-100">
