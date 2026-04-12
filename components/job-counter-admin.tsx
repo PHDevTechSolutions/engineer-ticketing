@@ -12,10 +12,12 @@ interface CounterStatus {
     currentNumber: number;
     lastUsed: string | null;
     startingNumber: number;
+    year: number;
   };
   test: {
     currentNumber: number;
     lastUsed: string | null;
+    year: number;
   };
 }
 
@@ -55,12 +57,12 @@ export function JobCounterAdmin() {
     fetchStatus();
   }, []);
 
-  // Keyboard shortcut: Ctrl+Shift+T (or Cmd+Shift+T on Mac) to toggle test mode
+  // Keyboard shortcut: Ctrl+Shift+M (or Cmd+Shift+M on Mac) to toggle test mode
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Check for Ctrl+Shift+T or Cmd+Shift+T
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "T") {
-        e.preventDefault(); // Prevent browser's "Reopen closed tab" action
+      // Check for Ctrl+Shift+M or Cmd+Shift+M (M for "mode")
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "m") {
+        e.preventDefault();
         toggleTestMode();
       }
     };
@@ -151,8 +153,8 @@ export function JobCounterAdmin() {
     localStorage.setItem("testMode", newMode.toString());
     toast.info(
       newMode 
-        ? "🔧 Test mode enabled - numbers will have TEST- prefix\n(Ctrl+Shift+T to toggle)" 
-        : "✅ Test mode disabled - using production numbers\n(Ctrl+Shift+T to toggle)",
+        ? "🔧 Test mode enabled - numbers will have TEST- prefix\n(Ctrl+Shift+M to toggle)" 
+        : "✅ Test mode disabled - using production numbers\n(Ctrl+Shift+M to toggle)",
       { duration: 3000 }
     );
   };
@@ -185,12 +187,15 @@ export function JobCounterAdmin() {
                 Test
               </span>
             )}
+            <span className="text-[10px] font-normal text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+              Ctrl+Shift+M
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-2">
           {status && (
             <span className="text-[10px] font-medium text-slate-400">
-              Next: {status.production.lastUsed?.replace(/\d+$/, String((status.production.currentNumber || 42) + 1).padStart(4, "0")) || "JR26-0043"}
+              Next: JR-{new Date().getFullYear()}-{String((status.production.currentNumber || 42) + 1).padStart(4, "0")}
             </span>
           )}
           <ChevronDown 
@@ -217,7 +222,7 @@ export function JobCounterAdmin() {
                     Production
                   </div>
                   <div className="text-sm font-black text-emerald-800">
-                    {status.production.lastUsed || "JR26-0042"}
+                    {status.production.lastUsed || `JR-${new Date().getFullYear()}-0042`}
                   </div>
                 </div>
 
@@ -228,7 +233,7 @@ export function JobCounterAdmin() {
                     Test
                   </div>
                   <div className="text-sm font-black text-amber-800">
-                    {status.test.lastUsed || "—"}
+                    {status.test.lastUsed || `TEST-JR-${new Date().getFullYear()}-0001`}
                   </div>
                 </div>
               </div>
@@ -279,7 +284,7 @@ export function JobCounterAdmin() {
             </div>
             <p className="text-[9px] text-slate-400 mt-2 flex items-center gap-1">
               <Keyboard size={10} />
-              Shortcut: <kbd className="px-1 bg-slate-100 rounded text-slate-600 font-mono">Ctrl</kbd>+<kbd className="px-1 bg-slate-100 rounded text-slate-600 font-mono">Shift</kbd>+<kbd className="px-1 bg-slate-100 rounded text-slate-600 font-mono">T</kbd>
+              Shortcut: <kbd className="px-1 bg-slate-100 rounded text-slate-600 font-mono">Ctrl</kbd>+<kbd className="px-1 bg-slate-100 rounded text-slate-600 font-mono">Shift</kbd>+<kbd className="px-1 bg-slate-100 rounded text-slate-600 font-mono">M</kbd>
             </p>
           </div>
 
@@ -310,7 +315,7 @@ export function JobCounterAdmin() {
             </div>
 
             <p className="text-[9px] text-slate-400 mt-2 leading-relaxed">
-              Format: JR20YY-0### • Next = current + 1
+              Format: JR-YYYY-#### • Year resets counter to 0001
             </p>
           </div>
         </div>

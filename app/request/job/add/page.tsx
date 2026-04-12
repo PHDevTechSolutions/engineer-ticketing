@@ -238,10 +238,10 @@ export default function JobRequestWizard() {
     );
   };
 
-  // Keyboard shortcut: Ctrl+Shift+T to toggle test mode
+  // Keyboard shortcut: Ctrl+Shift+M to toggle test mode (M for "mode")
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "T") {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "m") {
         e.preventDefault();
         toggleTestMode();
       }
@@ -462,7 +462,7 @@ export default function JobRequestWizard() {
                       ? "bg-amber-500 hover:bg-amber-600 text-white border-amber-500" 
                       : "border-slate-200 text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                   )}
-                  title="Toggle test mode (Ctrl+Shift+T)"
+                  title="Toggle test mode (Ctrl+Shift+M)"
                 >
                   <FlaskConical className="size-3.5" />
                   <span className="hidden sm:inline">{isTestMode ? "Test Mode" : "Test"}</span>

@@ -85,7 +85,8 @@ async function isNumberReserved(number: string): Promise<boolean> {
 
 /**
  * Generate the next sequential job request number with high-concurrency protection
- * Format: JR20YY-0### (e.g., JR2026-0042)
+ * Format: JR-YYYY-#### (e.g., JR-2026-0042)
+ * Resets to 0001 when new year starts
  *
  * @param isTest - If true, generates a test number (prefixes with TEST- and uses separate counter)
  * @returns The formatted job request number
@@ -93,9 +94,8 @@ async function isNumberReserved(number: string): Promise<boolean> {
 export async function getNextJobRequestNumber(
   isTest: boolean = false
 ): Promise<string> {
-  const year = new Date().getFullYear();
-  const yearSuffix = year.toString().slice(-2);
-  const prefix = isTest ? `TEST-JR${yearSuffix}-` : `JR${yearSuffix}-`;
+  const currentYear = new Date().getFullYear();
+  const prefix = isTest ? `TEST-JR-${currentYear}-` : `JR-${currentYear}-`;
   
   let lastError: Error | null = null;
 
@@ -108,19 +108,26 @@ export async function getNextJobRequestNumber(
       const nextNum = await runTransaction(db, async (transaction) => {
         const counterSnap = await transaction.get(counterRef);
         
+        const counterYear = counterSnap.exists() ? counterSnap.data().year : null;
+        
         let current: number;
-        if (isTest) {
-          current = counterSnap.exists() ? counterSnap.data().currentNumber || 0 : 0;
+        let next: number;
+        
+        // Check if year has changed - reset counter if new year
+        if (counterSnap.exists() && counterYear === currentYear) {
+          // Same year, continue from current
+          if (isTest) {
+            current = counterSnap.data().currentNumber || 0;
+          } else {
+            current = counterSnap.data().currentNumber || STARTING_NUMBER - 1;
+          }
+          next = current + 1;
         } else {
-          current = counterSnap.exists()
-            ? counterSnap.data().currentNumber || STARTING_NUMBER - 1
-            : STARTING_NUMBER - 1;
+          // New year or first time - start from beginning
+          next = isTest ? 1 : STARTING_NUMBER;
         }
         
-        const next = current + 1;
-
         // Double-check this number isn't already used in job_requests
-        // This handles edge cases where counter was manually adjusted
         const checkRef = collection(db, "job_requests");
         const checkQuery = query(
           checkRef, 
@@ -131,41 +138,28 @@ export async function getNextJobRequestNumber(
         
         if (!checkSnap.empty) {
           // Number already exists, skip ahead
-          console.warn(`Counter collision detected at ${next}, skipping...`);
+          console.warn(`Counter collision detected at ${next} for year ${currentYear}, skipping...`);
           const skipTo = next + 1;
           
-          if (!counterSnap.exists()) {
-            transaction.set(counterRef, {
-              currentNumber: skipTo,
-              lastUpdated: serverTimestamp(),
-              startingNumber: isTest ? 0 : STARTING_NUMBER,
-              type: isTest ? "test" : "production",
-              lastCollision: serverTimestamp(),
-            });
-          } else {
-            transaction.update(counterRef, {
-              currentNumber: skipTo,
-              lastUpdated: serverTimestamp(),
-              lastCollision: serverTimestamp(),
-            });
-          }
-          return skipTo;
-        }
-
-        // Update counter
-        if (!counterSnap.exists()) {
           transaction.set(counterRef, {
-            currentNumber: next,
+            currentNumber: skipTo,
+            year: currentYear,
             lastUpdated: serverTimestamp(),
             startingNumber: isTest ? 0 : STARTING_NUMBER,
             type: isTest ? "test" : "production",
+            lastCollision: serverTimestamp(),
           });
-        } else {
-          transaction.update(counterRef, {
-            currentNumber: next,
-            lastUpdated: serverTimestamp(),
-          });
+          return skipTo;
         }
+
+        // Update counter with current year
+        transaction.set(counterRef, {
+          currentNumber: next,
+          year: currentYear,
+          lastUpdated: serverTimestamp(),
+          startingNumber: isTest ? 0 : STARTING_NUMBER,
+          type: isTest ? "test" : "production",
+        });
 
         return next;
       });
@@ -215,6 +209,7 @@ export async function getNextJobRequestNumber(
   );
 }
 
+
 /**
  * Check if a job request number already exists in the database
  */
@@ -238,10 +233,12 @@ export async function getCounterStatus(): Promise<{
     currentNumber: number;
     lastUsed: string | null;
     startingNumber: number;
+    year: number;
   };
   test: {
     currentNumber: number;
     lastUsed: string | null;
+    year: number;
   };
 }> {
   const [prodSnap, testSnap] = await Promise.all([
@@ -249,7 +246,9 @@ export async function getCounterStatus(): Promise<{
     getDoc(doc(db, "counters", "job_requests_test")),
   ]);
 
-  const year = new Date().getFullYear().toString().slice(-2);
+  const currentYear = new Date().getFullYear();
+  const prodYear = prodSnap.exists() ? (prodSnap.data().year || currentYear) : currentYear;
+  const testYear = testSnap.exists() ? (testSnap.data().year || currentYear) : currentYear;
 
   return {
     production: {
@@ -257,19 +256,21 @@ export async function getCounterStatus(): Promise<{
         ? prodSnap.data().currentNumber || STARTING_NUMBER
         : STARTING_NUMBER,
       lastUsed: prodSnap.exists()
-        ? `JR${year}-${String(prodSnap.data().currentNumber || STARTING_NUMBER).padStart(4, "0")}`
+        ? `JR-${prodYear}-${String(prodSnap.data().currentNumber || STARTING_NUMBER).padStart(4, "0")}`
         : null,
       startingNumber: prodSnap.exists()
         ? prodSnap.data().startingNumber || STARTING_NUMBER
         : STARTING_NUMBER,
+      year: prodYear,
     },
     test: {
       currentNumber: testSnap.exists()
         ? testSnap.data().currentNumber || 0
         : 0,
       lastUsed: testSnap.exists()
-        ? `TEST-JR${year}-${String(testSnap.data().currentNumber || 0).padStart(4, "0")}`
+        ? `TEST-JR-${testYear}-${String(testSnap.data().currentNumber || 0).padStart(4, "0")}`
         : null,
+      year: testYear,
     },
   };
 }

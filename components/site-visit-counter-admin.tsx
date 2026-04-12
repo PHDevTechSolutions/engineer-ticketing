@@ -12,10 +12,12 @@ interface CounterStatus {
     currentNumber: number;
     lastUsed: string | null;
     startingNumber: number;
+    year: number;
   };
   test: {
     currentNumber: number;
     lastUsed: string | null;
+    year: number;
   };
 }
 
@@ -55,12 +57,12 @@ export function SiteVisitCounterAdmin() {
     fetchStatus();
   }, []);
 
-  // Keyboard shortcut: Ctrl+Shift+T (or Cmd+Shift+T on Mac) to toggle test mode
+  // Keyboard shortcut: Ctrl+Shift+M (or Cmd+Shift+M on Mac) to toggle test mode
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Check for Ctrl+Shift+T or Cmd+Shift+T
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "T") {
-        e.preventDefault(); // Prevent browser's "Reopen closed tab" action
+      // Check for Ctrl+Shift+M or Cmd+Shift+M (M for "mode")
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "m") {
+        e.preventDefault();
         toggleTestMode();
       }
     };
@@ -151,8 +153,8 @@ export function SiteVisitCounterAdmin() {
     localStorage.setItem("testMode", newMode.toString());
     toast.info(
       newMode 
-        ? "🔧 Test mode enabled - numbers will have TEST- prefix\n(Ctrl+Shift+T to toggle)" 
-        : "✅ Test mode disabled - using production numbers\n(Ctrl+Shift+T to toggle)",
+        ? "🔧 Test mode enabled - numbers will have TEST- prefix\n(Ctrl+Shift+M to toggle)" 
+        : "✅ Test mode disabled - using production numbers\n(Ctrl+Shift+M to toggle)",
       { duration: 3000 }
     );
   };
@@ -190,7 +192,7 @@ export function SiteVisitCounterAdmin() {
         <div className="flex items-center gap-2">
           {status && (
             <span className="text-[10px] font-medium text-slate-400">
-              Next: {status.production.lastUsed?.replace(/\d+$/, String((status.production.currentNumber || 36) + 1).padStart(3, "0")) || "PS-2026-037"}
+              Next: PS-{new Date().getFullYear()}-{String((status.production.currentNumber || 36) + 1).padStart(3, "0")}
             </span>
           )}
           <ChevronDown 
@@ -217,7 +219,7 @@ export function SiteVisitCounterAdmin() {
                     Production
                   </div>
                   <div className="text-sm font-black text-emerald-800">
-                    {status.production.lastUsed || "PS-2026-036"}
+                    {status.production.lastUsed || `PS-${new Date().getFullYear()}-036`}
                   </div>
                 </div>
 
@@ -228,7 +230,7 @@ export function SiteVisitCounterAdmin() {
                     Test
                   </div>
                   <div className="text-sm font-black text-amber-800">
-                    {status.test.lastUsed || "—"}
+                    {status.test.lastUsed || `TEST-PS-${new Date().getFullYear()}-001`}
                   </div>
                 </div>
               </div>
@@ -279,7 +281,7 @@ export function SiteVisitCounterAdmin() {
             </div>
             <p className="text-[9px] text-slate-400 mt-2 flex items-center gap-1">
               <Keyboard size={10} />
-              Shortcut: <kbd className="px-1 bg-slate-100 rounded text-slate-600 font-mono">Ctrl</kbd>+<kbd className="px-1 bg-slate-100 rounded text-slate-600 font-mono">Shift</kbd>+<kbd className="px-1 bg-slate-100 rounded text-slate-600 font-mono">T</kbd>
+              Shortcut: <kbd className="px-1 bg-slate-100 rounded text-slate-600 font-mono">Ctrl</kbd>+<kbd className="px-1 bg-slate-100 rounded text-slate-600 font-mono">Shift</kbd>+<kbd className="px-1 bg-slate-100 rounded text-slate-600 font-mono">M</kbd>
             </p>
           </div>
 
@@ -310,7 +312,7 @@ export function SiteVisitCounterAdmin() {
             </div>
 
             <p className="text-[9px] text-slate-400 mt-2 leading-relaxed">
-              Format: PS-20YY-0### • Next = current + 1
+              Format: PS-YYYY-### • Year resets counter to 001
             </p>
           </div>
         </div>
