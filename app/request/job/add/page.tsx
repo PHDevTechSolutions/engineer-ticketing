@@ -56,8 +56,17 @@ export default function JobRequestWizard() {
   const [workingDays, setWorkingDays] = useState<string[]>([]);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
 
+  // Save to draft only if user is logged in
   useEffect(() => {
-    setUserId(localStorage.getItem("userId"));
+    const storedId = localStorage.getItem("userId");
+    const storedName = localStorage.getItem("userName");
+    const storedRole = localStorage.getItem("userRole");
+    
+    if (storedId) {
+      setUserId(storedId);
+      // We'll also store name and role in local state if needed, 
+      // but for now, we'll just pull them during submit.
+    }
     
     // Load from localStorage if exists
     const saved = localStorage.getItem("job_request_draft");
@@ -182,6 +191,9 @@ export default function JobRequestWizard() {
       }
 
       // 2. Save to Firestore
+      const userName = localStorage.getItem("userName") || "Unknown User";
+      const userRole = localStorage.getItem("userRole") || "MEMBER";
+
       await addDoc(collection(db, "job_requests"), {
         ...formData,
         siteInstallation,
@@ -191,6 +203,9 @@ export default function JobRequestWizard() {
         attachments: uploadedUrls, // Storing the list of links
         status: "PENDING",
         createdBy: userId,
+        submittedBy: userId,
+        submittedByName: userName,
+        submittedByRole: userRole,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -199,7 +214,6 @@ export default function JobRequestWizard() {
       clearDraft(); // Clear draft after successful submission
 
       // Send push notification
-      const userName = localStorage.getItem("userName") || "A user";
       const notifResult = await sendPushNotification(
         NotificationTemplates.jobRequest.created(userName, formData.projectName)
       );

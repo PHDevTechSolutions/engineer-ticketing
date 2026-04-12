@@ -228,9 +228,65 @@ export default function AppointmentDetailsPage() {
 
     const isEngineering = userContext.role === "it" || userContext.role === "engineering"
     const isSales = userContext.role === "sales"
+    const isRequestor = userContext.id === data?.submittedBy
+    const isStaff = isEngineering || userContext.role === "admin"
     const isPending = status === "PENDING"
     const isConfirmed = status === "CONFIRMED"
     const isCompleted = status === "COMPLETED"
+
+    const getStatusInsight = () => {
+        if (isCompleted) return {
+            responsibility: "VISIT FINISHED",
+            tip: isRequestor ? "The visit report is finalized. Thank you!" : "Record archived. No further action needed.",
+            color: "text-emerald-500",
+            bg: "bg-emerald-50",
+            border: "border-emerald-100",
+            iconBg: "bg-emerald-500",
+            label: "System Status"
+        };
+        
+        if (isOverdue) return {
+            responsibility: isStaff ? "YOUR ACTION" : "ENGINEERING MGMT",
+            tip: isStaff ? "URGENT: This appointment is past its SLA limit!" : "We're sorry for the delay. We are expediting your visit.",
+            color: "text-red-500",
+            bg: "bg-red-50",
+            border: "border-red-100",
+            iconBg: "bg-red-500",
+            label: isStaff ? "SLA Breach" : "Delay Alert"
+        };
+
+        if (isPending) return {
+            responsibility: isStaff ? "YOUR ACTION" : "ENGINEERING TEAM",
+            tip: isStaff ? "Awaiting personnel assignment or site visit report." : "We're preparing the team for your site visit.",
+            color: "text-blue-500",
+            bg: "bg-blue-50",
+            border: "border-blue-100",
+            iconBg: "bg-blue-500",
+            label: isStaff ? "Next Step" : "Current Phase"
+        };
+
+        if (isConfirmed) return {
+            responsibility: isSales ? "YOUR ACTION" : "SALES MGMT",
+            tip: isSales ? "Engineer has reported. Please review and finalize." : "Awaiting final manager approval of the report.",
+            color: "text-blue-600",
+            bg: "bg-blue-50",
+            border: "border-blue-100",
+            iconBg: "bg-blue-600",
+            label: isSales ? "Final Review" : "Approval Phase"
+        };
+
+        return {
+            responsibility: "SYSTEM",
+            tip: "Synchronizing appointment data...",
+            color: "text-slate-400",
+            bg: "bg-slate-50",
+            border: "border-slate-100",
+            iconBg: "bg-slate-400",
+            label: "Status"
+        };
+    };
+
+    const insight = getStatusInsight();
 
     const protocolDisplay = protocolLabels.length > 0 
         ? protocolLabels.join(" + ").toUpperCase() 
@@ -338,6 +394,24 @@ export default function AppointmentDetailsPage() {
                             </div>
                         </div>
 
+                        {/* Ball in Court Section (Personalized) */}
+                        <div className="hidden lg:flex items-center gap-2 px-3 border-l border-slate-100 shrink-0">
+                          <div className="flex flex-col items-end">
+                            <span className="text-[6px] font-black uppercase text-slate-400 tracking-widest leading-none mb-0.5">{insight.label}</span>
+                            <span className={cn("text-[9px] font-black leading-none uppercase", insight.color)}>{insight.responsibility}</span>
+                          </div>
+                          <div className={cn("size-7 rounded-lg flex items-center justify-center", insight.bg)}>
+                            <User size={12} className={insight.color} />
+                          </div>
+                        </div>
+
+                        {/* Action Tip Section (Personalized) */}
+                        <div className="hidden xl:flex items-center gap-2 px-3 border-l border-slate-100 shrink-0 max-w-[180px]">
+                          <p className="text-[8px] font-bold text-slate-500 italic leading-tight uppercase">
+                            Tip: {insight.tip}
+                          </p>
+                        </div>
+
                         {/* Quick Metrics */}
                         <div className="flex items-center gap-2 pl-3 md:border-l border-slate-100 shrink-0">
                             <div className="flex flex-col items-end">
@@ -348,6 +422,24 @@ export default function AppointmentDetailsPage() {
                                 <History size={12} />
                             </div>
                         </div>
+                    </div>
+
+                    {/* Smart Status Insight (Mobile Personalized Card) */}
+                    <div className={cn("lg:hidden rounded-xl p-3 border shadow-sm shrink-0 flex items-center justify-between gap-3", insight.bg, insight.border)}>
+                      <div className="flex items-center gap-2.5">
+                        <div className={cn("size-8 rounded-lg flex items-center justify-center text-white", insight.iconBg)}>
+                          <User size={16} />
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-[7px] font-black uppercase tracking-widest text-slate-400 leading-none mb-1">{insight.label}</span>
+                          <span className={cn("text-[11px] font-black leading-none uppercase", insight.color)}>{insight.responsibility}</span>
+                        </div>
+                      </div>
+                      <div className="flex-1 max-w-[160px] text-right">
+                        <p className={cn("text-[8px] font-bold italic uppercase leading-tight", insight.color)}>
+                          {insight.tip}
+                        </p>
+                      </div>
                     </div>
 
                     {/* --- COMPACT HUD PASS 2 --- */}

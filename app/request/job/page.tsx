@@ -416,6 +416,19 @@ export default function JobRequestManagementPage() {
         const q = query(collection(db, "job_requests"), orderBy("createdAt", "desc"))
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
+            const userDept = user.dept.toUpperCase();
+            const userRole = user.role.toUpperCase();
+            
+            /**
+             * VISIBILITY PROTOCOL:
+             * - IT, SUPER ADMIN, MANAGER, LEADER: Global visibility
+             * - TSM (SALES): Can see their own + all TSA requests
+             * - TSA (SALES): Restricted to personal records (submittedBy matches userId)
+             * - OTHERS (MEMBER): Restricted to personal records (submittedBy matches userId)
+             */
+            const hasGlobalAccess = userDept === "IT" || ["SUPER ADMIN", "MANAGER", "LEADER"].includes(userRole);
+            const isTSM = userRole === "TSM";
+
             let liveData = snapshot.docs.map(doc => {
                 const data = doc.data()
                 return {
@@ -423,8 +436,25 @@ export default function JobRequestManagementPage() {
                     fullId: doc.id,
                     ...data,
                     status: data.status?.toUpperCase() || "PENDING",
+                    submittedBy: data.submittedBy || data.createdBy, // Support both legacy and new naming
+                    submittedByRole: data.submittedByRole,
                 }
             })
+
+            // Client-side filtering for non-admin users
+            if (!hasGlobalAccess) {
+                if (isTSM) {
+                    // TSM can see their own AND all TSA requests
+                    liveData = liveData.filter(r => 
+                        r.submittedBy === user.id || 
+                        r.submittedByRole === "TSA"
+                    );
+                } else {
+                    // TSA and other Members ONLY see their own requests
+                    liveData = liveData.filter(r => r.submittedBy === user.id);
+                }
+            }
+
             setRequests(liveData)
             setIsDataLoading(false)
         }, (error) => {
@@ -710,14 +740,7 @@ export default function JobRequestManagementPage() {
                                                     <div className="flex items-center gap-2 mt-1.5">
                                                         <div className="flex items-center gap-1.5 text-zinc-400">
                                                             <User2 size={10} className="text-zinc-300" />
-                                                            <span className="text-[9px] font-black uppercase tracking-widest">{r.clientName || "GENERAL CLIENT"}</span>
-                                                        </div>
-                                                        <span className="size-1 bg-zinc-200 rounded-full" />
-                                                        <div className="flex items-center gap-1.5 text-zinc-400">
-                                                            <MapPin size={10} className="text-zinc-300" />
-                                                            <span className="text-[9px] font-black uppercase tracking-widest truncate max-w-[120px]">
-                                                                {r.location || "BRANCH LOCATION"}
-                                                            </span>
+                                                            <span className="text-[9px] font-black uppercase tracking-widest">{r.submittedByName || "UNKNOWN REQUESTOR"}</span>
                                                         </div>
                                                     </div>
                                                 </div>

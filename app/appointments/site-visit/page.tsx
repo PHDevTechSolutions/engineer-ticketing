@@ -514,9 +514,12 @@ export default function SiteVisitListPage() {
     /**
      * VISIBILITY PROTOCOL:
      * - IT, SUPER ADMIN, MANAGER, LEADER: Global visibility
-     * - OTHERS (MEMBER): Restricted to personal records (pic matches userRefId or submittedBy matches userId)
+     * - TSM (SALES): Can see their own + all TSA requests
+     * - TSA (SALES): Restricted to personal records (submittedBy matches userId)
+     * - OTHERS (MEMBER): Restricted to personal records (submittedBy matches userId)
      */
     const hasGlobalAccess = userDept === "IT" || ["SUPER ADMIN", "MANAGER", "LEADER"].includes(userRole);
+    const isTSM = userRole === "TSM";
 
     if (hasGlobalAccess) {
       q = query(baseCollection, orderBy("createdAt", "desc"));
@@ -539,16 +542,23 @@ export default function SiteVisitListPage() {
           tech: data.pic || "UNASSIGNED",
           type: Array.isArray(data.protocols) ? data.protocols.join(" + ") : (data.protocols || "Standard Engagement"),
           submittedBy: data.submittedBy,
+          submittedByRole: data.submittedByRole,
           pic: data.pic
         }
       })
 
-      // Client-side filtering for MEMBERS who don't have global access
+      // Client-side filtering for non-admin users
       if (!hasGlobalAccess) {
-        liveData = liveData.filter(v => 
-          v.submittedBy === user.id || 
-          (user.refId && v.pic === user.refId)
-        )
+        if (isTSM) {
+            // TSM can see their own AND all TSA visits
+            liveData = liveData.filter(v => 
+                v.submittedBy === user.id || 
+                v.submittedByRole === "TSA"
+            );
+        } else {
+            // TSA and other Members ONLY see their own visits
+            liveData = liveData.filter(v => v.submittedBy === user.id);
+        }
       }
       
       setVisits(liveData)
