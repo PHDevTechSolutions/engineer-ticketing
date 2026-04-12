@@ -16,7 +16,7 @@ import {
   User, Building2, MapPin, ClipboardList, Info, Sparkles,
   ChevronLeft, ChevronDown, ListFilter, CalendarDays,
   Target, TrendingUp, AlertCircle, CheckCircle, BarChart3,
-  HelpCircle, Lightbulb, Bell, ListChecks
+  HelpCircle, Lightbulb, Bell, ListChecks, Users
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -51,6 +51,7 @@ import { collection, onSnapshot, query, orderBy, where, getDoc, doc } from "fire
 
 // CUSTOM COMPONENTS
 import { PageHeader } from "@/components/page-header"
+import { SiteVisitCounterAdmin } from "@/components/site-visit-counter-admin"
 
 /* ─────────────────────────────────────────────
    CONSTANTS
@@ -331,10 +332,12 @@ function CalendarView({ visits, currentMonth, onMonthChange, router, staffNames 
 /* ─────────────────────────────────────────────
    INSIGHTS COMPONENTS
 ───────────────────────────────────────────── */
-function RoleInsights({ user, visits, staffNames, setShowGuide }: any) {
-  const isManager = ["SUPER ADMIN", "MANAGER", "LEADER"].includes(user.role)
+function RoleInsights({ user, visits, staffNames, setShowGuide, subordinateIds }: any) {
+  const isManager = user.role === "MANAGER"
+  const isTSM = user.role === "TSM"
   const isIT = user.dept === "IT"
   const isSales = user.dept === "SALES"
+  const hasSubordinates = subordinateIds && subordinateIds.length > 0
 
   const next48Hours = visits.filter((v: any) => {
     const d = new Date(v.date)
@@ -342,6 +345,7 @@ function RoleInsights({ user, visits, staffNames, setShowGuide }: any) {
   })
 
   const myPending = visits.filter((v: any) => v.status === "PENDING" && v.submittedBy === user.id)
+  const teamPending = visits.filter((v: any) => v.status === "PENDING" && subordinateIds?.includes(v.submittedBy))
 
   const completionRate = visits.length > 0 
     ? (visits.filter((v: any) => v.status === "COMPLETED").length / visits.length) * 100 
@@ -349,7 +353,7 @@ function RoleInsights({ user, visits, staffNames, setShowGuide }: any) {
 
   return (
     <section className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-      {/* Dynamic Widget 1: Personal Agenda - Compact */}
+      {/* Dynamic Widget 1: Personal Agenda / Team Pipeline */}
       <div className="bg-white rounded-2xl p-4 border border-zinc-200/60 shadow-sm flex items-center justify-between group overflow-hidden relative">
         <div className="flex items-center gap-3">
           <div className="size-9 bg-zinc-900 rounded-xl flex items-center justify-center text-white shadow-lg shadow-zinc-200 flex-shrink-0">
@@ -357,18 +361,18 @@ function RoleInsights({ user, visits, staffNames, setShowGuide }: any) {
           </div>
           <div>
             <h4 className="text-[11px] font-black text-zinc-900 uppercase tracking-tight leading-none">
-              {isSales ? "Sales Pipeline" : "Work Agenda"}
+              {hasSubordinates ? "Team Pipeline" : (isSales ? "Sales Pipeline" : "Work Agenda")}
             </h4>
             <div className="flex items-baseline gap-1.5 mt-1">
               <span className="text-lg font-black text-zinc-900 leading-none">
-                {isSales ? myPending.length : next48Hours.length}
+                {hasSubordinates ? teamPending.length + myPending.length : (isSales ? myPending.length : next48Hours.length)}
               </span>
               <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest">Active</span>
             </div>
           </div>
         </div>
         <p className="text-[8px] font-bold text-zinc-400 uppercase tracking-tighter text-right leading-tight max-w-[80px]">
-          {isSales ? "Pending feedback" : "Next 48h schedule"}
+          {hasSubordinates ? "Total team pending" : (isSales ? "Pending feedback" : "Next 48h schedule")}
         </p>
       </div>
 
@@ -379,7 +383,9 @@ function RoleInsights({ user, visits, staffNames, setShowGuide }: any) {
             <CheckCircle size={18} />
           </div>
           <div className="flex-1 pr-4">
-            <h4 className="text-[11px] font-black text-zinc-900 uppercase tracking-tight leading-none">Closure Rate</h4>
+            <h4 className="text-[11px] font-black text-zinc-900 uppercase tracking-tight leading-none">
+              {hasSubordinates ? "Team Closure" : "Closure Rate"}
+            </h4>
             <div className="flex items-center gap-2 mt-2">
               <div className="flex-1 h-1.5 bg-zinc-50 rounded-full overflow-hidden">
                 <div className="h-full bg-emerald-500 rounded-full transition-all duration-1000" style={{ width: `${completionRate}%` }} />
@@ -391,17 +397,23 @@ function RoleInsights({ user, visits, staffNames, setShowGuide }: any) {
       </div>
 
       {/* Dynamic Widget 3: Personnel Load or Quick Tips */}
-      {(isManager || isIT) ? (
+      {(isManager || isTSM || isIT) ? (
         <div className="bg-zinc-900 rounded-2xl p-4 border border-zinc-800 shadow-sm flex items-center justify-between text-white">
           <div className="flex items-center gap-3">
             <div className="size-9 bg-white/10 rounded-xl flex items-center justify-center text-white flex-shrink-0">
-              <BarChart3 size={18} />
+              {hasSubordinates ? <Users size={18} /> : <BarChart3 size={18} />}
             </div>
             <div>
-              <h4 className="text-[11px] font-black uppercase tracking-tight leading-none">Active Load</h4>
+              <h4 className="text-[11px] font-black uppercase tracking-tight leading-none">
+                {hasSubordinates ? "Team Capacity" : "Active Load"}
+              </h4>
               <div className="flex items-center gap-2 mt-1">
-                <span className="text-lg font-black leading-none">{Object.keys(staffNames).length}</span>
-                <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Tracked PICs</span>
+                <span className="text-lg font-black leading-none">
+                  {hasSubordinates ? subordinateIds.length : Object.keys(staffNames).length}
+                </span>
+                <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">
+                  {hasSubordinates ? "Subordinates" : "Tracked PICs"}
+                </span>
               </div>
             </div>
           </div>
@@ -443,9 +455,12 @@ function RoleInsights({ user, visits, staffNames, setShowGuide }: any) {
  */
 export default function SiteVisitListPage() {
   const router = useRouter()
-  const [user, setUser] = React.useState<{ id: string | null; dept: string; role: string; refId: string }>({ id: null, dept: "", role: "", refId: "" })
+  const [user, setUser] = React.useState<{ id: string | null; dept: string; role: string; refId: string; name: string }>({ id: null, dept: "", role: "", refId: "", name: "" })
   const [isUserLoading, setIsUserLoading] = React.useState(true)
   const [visits, setVisits] = React.useState<any[]>([])
+  const [subordinateIds, setSubordinateIds] = React.useState<string[]>([])
+  const [subordinateDetails, setSubordinateDetails] = React.useState<{id: string, name: string}[]>([])
+  const [selectedMemberId, setSelectedMemberId] = React.useState<string | null>(null)
   const [isDataLoading, setIsDataLoading] = React.useState(true)
   const [selectedStatus, setSelectedStatus] = React.useState<string | null>(null)
   const [searchQuery, setSearchQuery] = React.useState("")
@@ -470,14 +485,59 @@ export default function SiteVisitListPage() {
         
         // Get role from firestore for accuracy
         const userDoc = await getDoc(doc(db, "users", storedId))
-        const firestoreRole = userDoc.exists() ? (userDoc.data().Role || userDoc.data().role || "MEMBER") : "MEMBER"
+        const firestoreRole = (userDoc.exists() ? (userDoc.data().Role || userDoc.data().role || "MEMBER") : "MEMBER").toUpperCase()
+
+        const name = `${data.Firstname || ""} ${data.Lastname || ""}`.trim()
+        const referenceId = (data.ReferenceID || "").toUpperCase()
+        
+        // Robust Role Detection
+        const isTSM = firestoreRole === "TSM" || firestoreRole === "TERRITORY SALES MANAGER" || (data.Position || "").toUpperCase().includes("TSM") || (data.Position || "").toUpperCase().includes("TERRITORY SALES MANAGER")
+        const isManager = firestoreRole === "MANAGER" || firestoreRole === "SALES HEAD" || (data.Position || "").toUpperCase().includes("MANAGER") || (data.Position || "").toUpperCase().includes("SALES HEAD")
+        const finalRole = isManager ? "MANAGER" : (isTSM ? "TSM" : firestoreRole)
 
         setUser({ 
           id: storedId, 
           dept: data.Department?.toUpperCase() || "SALES",
-          role: firestoreRole.toUpperCase(),
-          refId: data.ReferenceID || ""
+          role: finalRole,
+          refId: referenceId,
+          name
         })
+
+        // Fetch subordinates if role is TSM or MANAGER
+        if (isTSM || isManager) {
+          const usersRes = await fetch('/api/user')
+          const allUsers: any[] = await usersRes.json()
+          let subs: any[] = []
+          
+          const clean = (n: string) => (n || "").replace(/,/g, "").replace(/\s+/g, " ").trim().toUpperCase()
+          const myCleanName = clean(name)
+
+          if (isTSM) {
+            // TSM sees all TSAs where TSM field matches their name OR ReferenceID
+            subs = allUsers.filter(u => {
+              const uTSM = clean(u.TSM)
+              const uTSMName = clean(u.TSMName)
+              const uTSM_low = clean(u.tsm)
+              const uTSMName_low = clean(u.tsmName)
+              return uTSM === myCleanName || uTSM === referenceId || 
+                     uTSMName === myCleanName || uTSM_low === myCleanName ||
+                     uTSM_low === referenceId || uTSMName_low === myCleanName
+            })
+          } else if (isManager) {
+            // Manager sees all TSMs and TSAs where Manager field matches their name OR ReferenceID
+            subs = allUsers.filter(u => {
+              const uMan = clean(u.Manager)
+              const uManName = clean(u.ManagerName)
+              const uMan_low = clean(u.manager)
+              const uManName_low = clean(u.managerName)
+              return uMan === myCleanName || uMan === referenceId || 
+                     uManName === myCleanName || uMan_low === myCleanName ||
+                     uMan_low === referenceId || uManName_low === myCleanName
+            })
+          }
+          setSubordinateIds(subs.map(u => u._id))
+          setSubordinateDetails(subs.map(u => ({ id: u._id, name: `${u.Firstname || ""} ${u.Lastname || ""}`.trim() })))
+        }
       } catch (error) { 
         console.error("Profile Retrieval Error:", error) 
       } finally { 
@@ -514,12 +574,13 @@ export default function SiteVisitListPage() {
     /**
      * VISIBILITY PROTOCOL:
      * - IT, SUPER ADMIN, MANAGER, LEADER: Global visibility
-     * - TSM (SALES): Can see their own + all TSA requests
+     * - TSM (SALES): Can see their own AND all TSA visits
      * - TSA (SALES): Restricted to personal records (submittedBy matches userId)
      * - OTHERS (MEMBER): Restricted to personal records (submittedBy matches userId)
      */
-    const hasGlobalAccess = userDept === "IT" || ["SUPER ADMIN", "MANAGER", "LEADER"].includes(userRole);
+    const hasGlobalAccess = userDept === "IT" || ["SUPER ADMIN", "LEADER"].includes(userRole);
     const isTSM = userRole === "TSM";
+    const isManager = userRole === "MANAGER";
 
     if (hasGlobalAccess) {
       q = query(baseCollection, orderBy("createdAt", "desc"));
@@ -549,11 +610,11 @@ export default function SiteVisitListPage() {
 
       // Client-side filtering for non-admin users
       if (!hasGlobalAccess) {
-        if (isTSM) {
-            // TSM can see their own AND all TSA visits
+        if (isTSM || isManager) {
+            // TSM and MANAGER can see their own AND all their subordinate visits
             liveData = liveData.filter(v => 
                 v.submittedBy === user.id || 
-                v.submittedByRole === "TSA"
+                subordinateIds.includes(v.submittedBy)
             );
         } else {
             // TSA and other Members ONLY see their own visits
@@ -569,16 +630,17 @@ export default function SiteVisitListPage() {
     })
 
     return () => unsubscribe()
-  }, [user, isUserLoading])
+  }, [user, isUserLoading, subordinateIds])
 
   const filteredVisits = React.useMemo(() => {
     return visits.filter(v => {
-      const s = `${v.site} ${v.id} ${v.tech} ${v.type}`.toLowerCase()
+      const s = `${v.site} ${v.id} ${v.tech} ${v.type} ${v.siteVisitNo || ""}`.toLowerCase()
       const matchesSearch = s.includes(searchQuery.toLowerCase())
       const matchesStatus = selectedStatus ? v.status === selectedStatus : true
-      return matchesSearch && matchesStatus
+      const matchesMember = selectedMemberId ? v.submittedBy === selectedMemberId : true
+      return matchesSearch && matchesStatus && matchesMember
     })
-  }, [visits, searchQuery, selectedStatus])
+  }, [visits, searchQuery, selectedStatus, selectedMemberId])
 
   // Pagination Logic
   const totalPages = Math.max(1, Math.ceil(filteredVisits.length / PAGE_SIZE))
@@ -587,7 +649,7 @@ export default function SiteVisitListPage() {
   }, [filteredVisits, currentPage])
 
   const handleAddNew = () => router.push('/appointments/site-visit/add')
-  const handleReset = () => { setSelectedStatus(null); setSearchQuery(""); setCurrentPage(1); }
+  const handleReset = () => { setSelectedStatus(null); setSelectedMemberId(null); setSearchQuery(""); setCurrentPage(1); }
 
   const counts = {
     all: visits.length,
@@ -635,16 +697,20 @@ export default function SiteVisitListPage() {
             
             {/* ── ROLE-SPECIFIC INSIGHTS ── */}
             {!isUserLoading && (
-              <RoleInsights user={user} visits={visits} staffNames={staffNames} setShowGuide={setShowGuide} />
+              <RoleInsights user={user} visits={visits} staffNames={staffNames} setShowGuide={setShowGuide} subordinateIds={subordinateIds} />
             )}
 
-            {/* ── IT/ADMIN BANNER ── */}
+            {/* ── IT/ADMIN BANNER & COUNTER ADMIN ── */}
             {!isUserLoading && (user.dept === "IT" || ["SUPER ADMIN", "MANAGER", "LEADER"].includes(user.role)) && (
-              <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3">
-                <ShieldCheck className="size-4 text-blue-500 flex-shrink-0" />
-                <p className="text-[11px] font-black text-blue-700">
-                  Administrative Access — viewing all records for {user.dept} and related personnel.
-                </p>
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3">
+                  <ShieldCheck className="size-4 text-blue-500 flex-shrink-0" />
+                  <p className="text-[11px] font-black text-blue-700">
+                    Administrative Access — viewing all records for {user.dept} and related personnel.
+                  </p>
+                </div>
+                {/* Site Visit Counter Admin for IT/Engineering */}
+                <SiteVisitCounterAdmin />
               </div>
             )}
 
@@ -733,6 +799,27 @@ export default function SiteVisitListPage() {
                     </button>
                   ))}
                 </div>
+
+                {/* Team Member Filter - For TSM/Managers */}
+                {subordinateDetails.length > 0 && (
+                  <>
+                    <div className="h-6 w-px bg-zinc-200 hidden xl:block" />
+                    <div className="relative group">
+                      <select 
+                        value={selectedMemberId || ""}
+                        onChange={(e) => { setSelectedMemberId(e.target.value || null); setCurrentPage(1); }}
+                        className="appearance-none bg-zinc-100 border-none text-[9px] font-black uppercase tracking-widest px-8 py-1.5 rounded-lg outline-none focus:ring-1 focus:ring-zinc-900 transition-all text-zinc-600 cursor-pointer"
+                      >
+                        <option value="">All Team Members</option>
+                        {subordinateDetails.map(sub => (
+                          <option key={sub.id} value={sub.id}>{sub.name}</option>
+                        ))}
+                      </select>
+                      <User2 size={10} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+                      <ChevronDown size={10} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="flex items-center gap-2 flex-1 max-w-[320px]">
@@ -799,10 +886,13 @@ export default function SiteVisitListPage() {
                             onClick={() => router.push(`/appointments/site-visit/${item.fullId}`)}
                             className="group grid grid-cols-1 md:grid-cols-[1fr_2fr_1fr_1.5fr_1fr_44px] gap-4 md:gap-6 px-6 py-4 items-center hover:bg-zinc-50/80 cursor-pointer transition-all"
                           >
+                            {/* SITE VISIT NUMBER - Display sequential number if available */}
                             <div className="flex flex-col">
-                           <span className="text-[12px] font-mono font-black text-zinc-900 leading-none">#{item.id}</span>
-                           <span className="text-[8px] font-black text-zinc-400 uppercase tracking-widest mt-1 truncate max-w-[120px]">{item.type}</span>
-                         </div>
+                              <span className="text-[11px] font-black text-emerald-600 tracking-tight uppercase">
+                                {item.siteVisitNo || `#${item.id}`}
+                              </span>
+                              <span className="text-[8px] font-black text-zinc-400 uppercase tracking-widest mt-1 truncate max-w-[120px]">{item.type}</span>
+                            </div>
 
                          <div className="min-w-0">
                            <p className="text-[12px] font-black text-zinc-900 uppercase tracking-tight truncate leading-none">{item.site}</p>

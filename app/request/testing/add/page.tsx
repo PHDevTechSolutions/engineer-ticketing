@@ -12,7 +12,7 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
-import { sendPushNotification, NotificationTemplates } from "@/lib/notification-service"
+import { sendNotificationToHierarchy, NotificationTemplates } from "@/lib/notification-service"
 
 // DATABASE
 import { db } from "@/lib/firebase"
@@ -66,12 +66,16 @@ export default function AddTestingEntryPage() {
 
             toast.success("Testing entry created successfully!")
 
-            // Send push notification
-            const notifResult = await sendPushNotification(
-                NotificationTemplates.testing.created(formData.productName, formData.targetDate || "scheduled date")
-            );
-            if (notifResult.success && notifResult.successCount! > 0) {
-                console.log(`Push sent to ${notifResult.successCount} devices`);
+            // Send push notification to hierarchy (user's TSM/Manager + admins)
+            if (userId) {
+                const notifResult = await sendNotificationToHierarchy(
+                    NotificationTemplates.testing.created(formData.productName, formData.targetDate || "scheduled date"),
+                    userId,
+                    { triggeredBy: userId }
+                );
+                if (notifResult.success) {
+                    console.log(`Push notification: ${notifResult.message}`);
+                }
             }
 
             router.push("/request/testing") // Go back to the list

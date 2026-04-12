@@ -38,6 +38,7 @@ import { collection, onSnapshot, query, orderBy, doc, updateDoc, getDoc } from "
 
 // CUSTOM COMPONENTS
 import { PageHeader } from "@/components/page-header"
+import { JobCounterAdmin } from "@/components/job-counter-admin"
 
 /* ─────────────────────────────────────────────
    CONSTANTS
@@ -416,19 +417,6 @@ export default function JobRequestManagementPage() {
         const q = query(collection(db, "job_requests"), orderBy("createdAt", "desc"))
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const userDept = user.dept.toUpperCase();
-            const userRole = user.role.toUpperCase();
-            
-            /**
-             * VISIBILITY PROTOCOL:
-             * - IT, SUPER ADMIN, MANAGER, LEADER: Global visibility
-             * - TSM (SALES): Can see their own + all TSA requests
-             * - TSA (SALES): Restricted to personal records (submittedBy matches userId)
-             * - OTHERS (MEMBER): Restricted to personal records (submittedBy matches userId)
-             */
-            const hasGlobalAccess = userDept === "IT" || ["SUPER ADMIN", "MANAGER", "LEADER"].includes(userRole);
-            const isTSM = userRole === "TSM";
-
             let liveData = snapshot.docs.map(doc => {
                 const data = doc.data()
                 return {
@@ -436,25 +424,8 @@ export default function JobRequestManagementPage() {
                     fullId: doc.id,
                     ...data,
                     status: data.status?.toUpperCase() || "PENDING",
-                    submittedBy: data.submittedBy || data.createdBy, // Support both legacy and new naming
-                    submittedByRole: data.submittedByRole,
                 }
             })
-
-            // Client-side filtering for non-admin users
-            if (!hasGlobalAccess) {
-                if (isTSM) {
-                    // TSM can see their own AND all TSA requests
-                    liveData = liveData.filter(r => 
-                        r.submittedBy === user.id || 
-                        r.submittedByRole === "TSA"
-                    );
-                } else {
-                    // TSA and other Members ONLY see their own requests
-                    liveData = liveData.filter(r => r.submittedBy === user.id);
-                }
-            }
-
             setRequests(liveData)
             setIsDataLoading(false)
         }, (error) => {
@@ -467,7 +438,7 @@ export default function JobRequestManagementPage() {
 
     const filteredRequests = React.useMemo(() => {
         return requests.filter(r => {
-            const s = `${r.projectName} ${r.id} ${r.clientName}`.toLowerCase()
+            const s = `${r.projectName} ${r.id} ${r.clientName} ${r.jobRequestNo || ""}`.toLowerCase()
             const matchesSearch = s.includes(searchQuery.toLowerCase())
             const matchesStatus = selectedStatus ? r.status === selectedStatus : true
             return matchesSearch && matchesStatus
@@ -550,13 +521,17 @@ export default function JobRequestManagementPage() {
                             <RoleInsights user={user} requests={requests} setShowGuide={setShowGuide} />
                         )}
 
-                        {/* ── ADMIN ACCESS BANNER ── */}
+                        {/* ── ADMIN ACCESS BANNER & COUNTER ADMIN ── */}
                         {!isUserLoading && (user.dept === "IT" || ["SUPER ADMIN", "MANAGER", "LEADER"].includes(user.role)) && (
-                            <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3">
-                                <ShieldCheck className="size-4 text-blue-500 flex-shrink-0" />
-                                <p className="text-[11px] font-black text-blue-700">
-                                    Administrative Access — viewing all job requests for {user.dept} and related personnel.
-                                </p>
+                            <div className="flex flex-col gap-4">
+                                <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3">
+                                    <ShieldCheck className="size-4 text-blue-500 flex-shrink-0" />
+                                    <p className="text-[11px] font-black text-blue-700">
+                                        Administrative Access — viewing all job requests for {user.dept} and related personnel.
+                                    </p>
+                                </div>
+                                {/* Job Counter Admin for IT/Engineering */}
+                                <JobCounterAdmin />
                             </div>
                         )}
 
@@ -726,10 +701,14 @@ export default function JobRequestManagementPage() {
                                                 className="grid grid-cols-1 md:grid-cols-[120px_1fr_120px_120px_120px_44px] gap-6 p-4 px-6 items-center hover:bg-zinc-50/60 transition-all cursor-pointer group"
                                                 onClick={() => router.push(`/request/job/${r.fullId}`)}
                                             >
-                                                {/* REF_ID - Basis Style */}
+                                                {/* JOB REQUEST NUMBER - Display sequential number if available */}
                                                 <div className="flex flex-col">
-                                                    <span className="text-[11px] font-black text-zinc-900 tracking-tight uppercase">#{r.id}</span>
-                                                    <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest truncate max-w-[100px]">{r.fullId.substring(0, 15)}...</span>
+                                                    <span className="text-[11px] font-black text-blue-600 tracking-tight uppercase">
+                                                        {r.jobRequestNo || `#${r.id}`}
+                                                    </span>
+                                                    {!r.jobRequestNo && (
+                                                        <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest truncate max-w-[100px]">{r.fullId.substring(0, 15)}...</span>
+                                                    )}
                                                 </div>
 
                                                 {/* PROJECT / CLIENT - Basis Style Bold */}
@@ -740,7 +719,14 @@ export default function JobRequestManagementPage() {
                                                     <div className="flex items-center gap-2 mt-1.5">
                                                         <div className="flex items-center gap-1.5 text-zinc-400">
                                                             <User2 size={10} className="text-zinc-300" />
-                                                            <span className="text-[9px] font-black uppercase tracking-widest">{r.submittedByName || "UNKNOWN REQUESTOR"}</span>
+                                                            <span className="text-[9px] font-black uppercase tracking-widest">{r.clientName || "GENERAL CLIENT"}</span>
+                                                        </div>
+                                                        <span className="size-1 bg-zinc-200 rounded-full" />
+                                                        <div className="flex items-center gap-1.5 text-zinc-400">
+                                                            <MapPin size={10} className="text-zinc-300" />
+                                                            <span className="text-[9px] font-black uppercase tracking-widest truncate max-w-[120px]">
+                                                                {r.location || "BRANCH LOCATION"}
+                                                            </span>
                                                         </div>
                                                     </div>
                                                 </div>

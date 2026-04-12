@@ -7,7 +7,7 @@ import {
   Image as ImageIcon, MessageSquare, Save, Terminal 
 } from "lucide-react";
 import { toast } from "sonner";
-import { sendPushNotification, NotificationTemplates } from "@/lib/notification-service";
+import { sendNotificationToHierarchy, NotificationTemplates } from "@/lib/notification-service";
 
 // UI Components
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -124,12 +124,16 @@ export default function AddOtherRequestPage() {
       });
       addLog("Firestore: Document saved");
 
-      // 4. Send push notification using new service
+      // 4. Send push notification to hierarchy (user's TSM/Manager + admins)
       addLog("FCM: Sending notification via service...");
-      const notifResult = await sendPushNotification(
-        NotificationTemplates.otherRequest.created(formData.title, userName)
-      );
-      addLog(`FCM: ${notifResult.message}`);
+      if (userId) {
+        const notifResult = await sendNotificationToHierarchy(
+          NotificationTemplates.otherRequest.created(formData.title, userName),
+          userId,
+          { triggeredBy: userId }
+        );
+        addLog(`FCM: ${notifResult.message}`);
+      }
 
       toast.success("Request synced successfully.", { id: toastId });
       setTimeout(() => router.push("/request/other"), 2000); 

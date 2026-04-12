@@ -18,11 +18,11 @@ import {
     ArrowUpRight, Clock, CheckCircle2, AlertTriangle, Layers, MessageSquare, ChevronRight,
     LucideProps, LucideIcon, Package, TrendingUp, LayoutDashboard,
     Wrench, BarChart3, Zap,
-    ChevronLeft,
+    ChevronLeft, Users, MapPin, ShieldCheck
 } from "lucide-react";
 
 import { db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot, limit, orderBy, doc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, limit, orderBy, doc, getDoc } from "firebase/firestore";
 import { cn } from "@/lib/utils";
 import { 
     isAfter, 
@@ -99,6 +99,105 @@ function ActivitySkeleton() {
 /* ─────────────────────────────────────────────
    SUB-COMPONENTS
 ───────────────────────────────────────────── */
+
+function RecentCustomersWidget({ customers, loading, router }: { customers: any[], loading: boolean, router: any }) {
+    if (loading && customers.length === 0) {
+        return (
+            <div className="bg-white rounded-[24px] p-5 border border-gray-100 shadow-sm animate-pulse space-y-4">
+                <div className="h-4 w-32 bg-gray-100 rounded-full" />
+                <div className="space-y-3">
+                    {[...Array(3)].map((_, i) => (
+                        <div key={i} className="flex items-center gap-3">
+                            <div className="size-10 rounded-xl bg-gray-50" />
+                            <div className="space-y-1.5 flex-1">
+                                <div className="h-3 w-1/2 bg-gray-50 rounded-full" />
+                                <div className="h-2 w-1/3 bg-gray-50 rounded-full" />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )
+    }
+
+    if (customers.length === 0 && !loading) return null
+
+    return (
+        <div className="bg-white rounded-[24px] p-5 border border-gray-100 shadow-sm hover:shadow-md transition-all h-full">
+            <div className="flex items-center justify-between mb-4">
+                <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                    <Users size={12} className="text-indigo-500" />
+                    Recent Customers
+                </h3>
+                <button 
+                    onClick={() => router.push("/appointments/site-visit/add/schedule")}
+                    className="text-[9px] font-black text-indigo-600 uppercase tracking-widest hover:underline"
+                >
+                    View All
+                </button>
+            </div>
+            <div className="space-y-3">
+                {customers.map((customer: any) => (
+                    <div 
+                        key={customer.id} 
+                        className="flex items-center gap-3 group cursor-pointer active:scale-[0.98] transition-all"
+                        onClick={() => router.push("/appointments/site-visit/add/schedule")}
+                    >
+                        <div className="size-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 font-black text-[10px] border border-indigo-100 group-hover:bg-indigo-600 group-hover:text-white transition-all uppercase">
+                            {customer.company_name?.substring(0, 2)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-[11px] font-black text-gray-900 uppercase truncate leading-none mb-1">{customer.company_name}</p>
+                            <p className="text-[9px] font-bold text-gray-400 uppercase truncate leading-none">
+                                {Array.isArray(customer.contact_person) ? customer.contact_person[0] : customer.contact_person || "No Contact"}
+                            </p>
+                        </div>
+                        <ChevronRight size={12} className="text-gray-300 group-hover:text-indigo-500 transition-all" />
+                    </div>
+                ))}
+            </div>
+        </div>
+    )
+}
+
+function QuickActionHub({ role, dept, router }: { role: string, dept: string, router: any }) {
+    const isSales = dept === "SALES"
+    const isManager = role === "MANAGER" || role === "TSM" || role === "SUPER ADMIN" || dept === "IT"
+
+    const actions = [
+        { label: "Site Visit", path: "/appointments/site-visit/add/schedule", icon: MapPin, color: "bg-rose-50 text-rose-600 border-rose-100", show: isSales },
+        { label: "Job Request", path: "/request/job/add", icon: Wrench, color: "bg-amber-50 text-amber-600 border-amber-100", show: isSales },
+        { label: "Team Report", path: "/appointments/site-visit", icon: BarChart3, color: "bg-indigo-50 text-indigo-600 border-indigo-100", show: isManager },
+        { label: "User Matrix", path: "/admin/assignment-matrix", icon: ShieldCheck, color: "bg-emerald-50 text-emerald-600 border-emerald-100", show: role === "SUPER ADMIN" || dept === "IT" },
+    ].filter(a => a.show)
+
+    if (actions.length === 0) return null
+
+    return (
+        <div className="bg-white rounded-[24px] p-5 border border-gray-100 shadow-sm h-full">
+            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                <Zap size={12} className="text-amber-500" />
+                Quick Actions
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+                {actions.map((action, i) => (
+                    <button 
+                        key={i} 
+                        onClick={() => router.push(action.path)}
+                        className={cn(
+                            "flex flex-col items-center justify-center p-3 rounded-2xl border transition-all active:scale-95 hover:shadow-sm",
+                            action.color
+                        )}
+                    >
+                        <action.icon size={18} className="mb-1.5" />
+                        <span className="text-[9px] font-black uppercase tracking-tighter text-center leading-none">{action.label}</span>
+                    </button>
+                ))}
+            </div>
+        </div>
+    )
+}
+
 function StatCard({ label, value, icon: Icon, color, loading, onClick }: {
     label: string; value: any; icon: any; color: string; loading: boolean; onClick?: () => void
 }) {
@@ -366,7 +465,9 @@ function RecentActivityFeed({ activities, router }: { activities: any[]; router:
                                     )}>
                                         {act.status || "Status Update"}
                                     </span>
-                                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter truncate">Changed by System</p>
+                                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter truncate">
+                                    {act.updatedByName || act.submittedByName || act.createdByName || act.submittedByRole || "System Update"}
+                                </p>
                                 </div>
                             </div>
                         </div>
@@ -509,6 +610,7 @@ export default function EngiconnectDashboard() {
     const router = useRouter()
     const [userId, setUserId] = useState<string | null>(null)
     const [userRole, setUserRole] = useState<string | null>(null)
+    const [subordinateIds, setSubordinateIds] = useState<string[]>([])
     const [isDataLoading, setIsDataLoading] = useState<boolean>(true)
     const [currentTime, setCurrentTime] = useState(new Date())
     const [weather, setWeather] = useState({ temp: "--", condition: "Syncing...", code: 0 })
@@ -532,6 +634,9 @@ export default function EngiconnectDashboard() {
         productRequest: 0
     })
     const [recentActivity, setRecentActivity] = useState<any[]>([])
+    const [customerCount, setCustomerCount] = useState<number>(0)
+    const [recentCustomers, setRecentCustomers] = useState<any[]>([])
+    const [loadingCustomerCount, setLoadingCustomerCount] = useState<boolean>(false)
     const [scheduleData, setScheduleData] = useState<{ today: any[], upcoming: any[], next: any | null }>({
         today: [], upcoming: [], next: null
     })
@@ -548,8 +653,19 @@ export default function EngiconnectDashboard() {
 
         fetch(`/api/user?id=${encodeURIComponent(storedUserId)}`)
             .then(res => res.json())
-            .then(mongoData => {
+            .then(async mongoData => {
                 const dept = mongoData.Department || mongoData.department || ""
+                const position = (mongoData.Position || "").toUpperCase()
+                
+                // Get role from firestore for accuracy
+                const userDoc = await getDoc(doc(db, "users", storedUserId))
+                const firestoreRole = (userDoc.exists() ? (userDoc.data().Role || userDoc.data().role || "MEMBER") : "MEMBER").toUpperCase()
+                
+                // Robust Role Detection
+                const isTSM = firestoreRole === "TSM" || firestoreRole === "TERRITORY SALES MANAGER" || position.includes("TSM") || position.includes("TERRITORY SALES MANAGER")
+                const isManager = firestoreRole === "MANAGER" || firestoreRole === "SALES HEAD" || position.includes("MANAGER") || position.includes("SALES HEAD")
+                const finalRole = isManager ? "MANAGER" : (isTSM ? "TSM" : firestoreRole)
+
                 setUserDetails({
                     Firstname: mongoData.Firstname || "User",
                     Position: mongoData.Position || "Member",
@@ -557,22 +673,65 @@ export default function EngiconnectDashboard() {
                     profilePicture: mongoData.profilePicture || ""
                 })
                 setUserDept(dept)
+                setUserRole(finalRole)
                 localStorage.setItem("userDepartment", dept)
+                localStorage.setItem("userRole", finalRole)
                 localStorage.setItem("userName", mongoData.Firstname || "User")
+
+                // Fetch subordinates if role is TSM or MANAGER
+                if (isTSM || isManager) {
+                    const usersRes = await fetch('/api/user')
+                    const allUsers: any[] = await usersRes.json()
+                    let subs: any[] = []
+                    
+                    const name = `${mongoData.Firstname || ""} ${mongoData.Lastname || ""}`.trim()
+                    const referenceId = (mongoData.ReferenceID || "").toUpperCase()
+                    const clean = (n: string) => (n || "").replace(/,/g, "").replace(/\s+/g, " ").trim().toUpperCase()
+                    const myCleanName = clean(name)
+
+                    if (isTSM) {
+                        subs = allUsers.filter(u => {
+                            const uTSM = clean(u.TSM)
+                            const uTSMName = clean(u.TSMName)
+                            const uTSM_low = clean(u.tsm)
+                            const uTSMName_low = clean(u.tsmName)
+                            return uTSM === myCleanName || uTSM === referenceId || 
+                                   uTSMName === myCleanName || uTSM_low === myCleanName ||
+                                   uTSM_low === referenceId || uTSMName_low === myCleanName
+                        })
+                    } else if (isManager) {
+                        subs = allUsers.filter(u => {
+                            const uMan = clean(u.Manager)
+                            const uManName = clean(u.ManagerName)
+                            const uMan_low = clean(u.manager)
+                            const uManName_low = clean(u.managerName)
+                            return uMan === myCleanName || uMan === referenceId || 
+                                   uManName === myCleanName || uMan_low === myCleanName ||
+                                   uMan_low === referenceId || uManName_low === myCleanName
+                        })
+                    }
+                    setSubordinateIds(subs.map(u => u._id))
+                }
+
+                // Fetch customer count
+                setLoadingCustomerCount(true)
+                const params = new URLSearchParams({
+                    referenceid: mongoData.ReferenceID || "",
+                    role: finalRole,
+                    name: `${mongoData.Firstname || ""} ${mongoData.Lastname || ""}`.trim(),
+                    department: dept,
+                    limit: "1" // We only need the total count
+                })
+                fetch(`/api/com-fetch-cluster-account?${params.toString()}`)
+                    .then(res => res.json())
+                    .then(result => {
+                        setCustomerCount(result.total || 0)
+                        setRecentCustomers(result.data?.slice(0, 5) || [])
+                    })
+                    .catch(err => console.error("Error fetching customer count:", err))
+                    .finally(() => setLoadingCustomerCount(false))
             })
             .catch(err => console.error("Error fetching user details:", err))
-
-        const userDocRef = doc(db, "users", storedUserId)
-        const unsubUser = onSnapshot(userDocRef, (docSnap) => {
-            if (docSnap.exists()) {
-                const data = docSnap.data()
-                const role = data.Role || data.role || "MEMBER"
-                setUserRole(role)
-                localStorage.setItem("userRole", role)
-            } else {
-                setUserRole("MEMBER")
-            }
-        })
 
         const permissionsRef = collection(db, "role_permissions")
         const unsubPermissions = onSnapshot(permissionsRef, (snap) => {
@@ -590,7 +749,7 @@ export default function EngiconnectDashboard() {
             setIsDataLoading(false)
         })
 
-        return () => { unsubUser(); unsubPermissions() }
+        return () => { unsubPermissions() }
     }, [])
 
     /* ── CLOCK ── */
@@ -634,10 +793,26 @@ export default function EngiconnectDashboard() {
     useEffect(() => {
         if (!db || !userId) return
 
+        const userRole = localStorage.getItem("userRole")?.toUpperCase() || "MEMBER"
+        const userDept = localStorage.getItem("userDepartment")?.toUpperCase() || ""
+        const hasGlobalAccess = userDept === "IT" || ["SUPER ADMIN", "LEADER", "MANAGER"].includes(userRole)
+        const isTSM = userRole === "TSM"
+
         // 1. General System Notifications (for Stat Cards & Dropdown)
         const unsubSite = onSnapshot(collection(db, "appointments"), snap => {
-            const pending = snap.docs.filter(d => d.data().status === "PENDING").length
-            const unread = calculateUnread(snap)
+            let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+            
+            // Filter by subordinates for TSM/Managers if not Global
+            if (!hasGlobalAccess) {
+                if (userRole === "TSM" || userRole === "MANAGER") {
+                    docs = docs.filter((d: any) => d.submittedBy === userId || subordinateIds.includes(d.submittedBy))
+                } else {
+                    docs = docs.filter((d: any) => d.submittedBy === userId)
+                }
+            }
+
+            const pending = docs.filter((d: any) => d.status === "PENDING").length
+            const unread = calculateUnread(docs, userId)
             setNotifications(prev => ({ 
                 ...prev, 
                 siteVisit: pending,
@@ -646,15 +821,20 @@ export default function EngiconnectDashboard() {
             // Also update My Tasks for Site Visits
             setMyTasks(prev => ({
                 ...prev,
-                siteVisits: snap.docs
-                    .filter(d => d.data().pic === userId && d.data().status !== "COMPLETED")
-                    .map(doc => ({ id: doc.id, ...doc.data() }))
+                siteVisits: docs
+                    .filter((d: any) => d.pic === userId && d.status !== "COMPLETED")
             }))
         })
 
         const unsubShop = onSnapshot(collection(db, "shop_drawing_requests"), snap => {
-            const pending = snap.docs.filter(d => d.data().department === "ENGINEERING" && d.data().status === "PEND_REVIEW").length
-            const unread = calculateUnread(snap)
+            let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+            
+            if (!hasGlobalAccess) {
+                docs = docs.filter((d: any) => d.submittedBy === userId || subordinateIds.includes(d.submittedBy))
+            }
+
+            const pending = docs.filter((d: any) => d.department === "ENGINEERING" && d.status === "PEND_REVIEW").length
+            const unread = calculateUnread(docs, userId)
             setNotifications(prev => ({ 
                 ...prev, 
                 shopDrawing: pending,
@@ -663,8 +843,14 @@ export default function EngiconnectDashboard() {
         })
 
         const unsubJob = onSnapshot(collection(db, "job_requests"), snap => {
-            const pending = snap.docs.filter(d => d.data().status === "PENDING").length
-            const unread = calculateUnread(snap)
+            let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+            
+            if (!hasGlobalAccess) {
+                docs = docs.filter((d: any) => (d.submittedBy || d.createdBy) === userId || subordinateIds.includes(d.submittedBy || d.createdBy))
+            }
+
+            const pending = docs.filter((d: any) => d.status === "PENDING").length
+            const unread = calculateUnread(docs, userId)
             setNotifications(prev => ({ 
                 ...prev, 
                 jobRequest: pending,
@@ -673,19 +859,27 @@ export default function EngiconnectDashboard() {
             // Also update My Tasks for Job Requests
             setMyTasks(prev => ({
                 ...prev,
-                jobRequests: snap.docs
-                    .filter(d => d.data().assignedTo === userId && d.data().status !== "COMPLETED")
-                    .map(doc => ({ id: doc.id, ...doc.data() }))
+                jobRequests: docs
+                    .filter((d: any) => d.assignedTo === userId && d.status !== "COMPLETED")
             }))
         })
 
-        const unsubOther = onSnapshot(query(collection(db, "other_requests"), where("status", "==", "PENDING")),
-            snap => setNotifications(prev => ({ ...prev, otherRequest: snap.size })))
+        const unsubOther = onSnapshot(collection(db, "other_requests"), snap => {
+            let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+            if (!hasGlobalAccess) {
+                docs = docs.filter((d: any) => d.submittedBy === userId || subordinateIds.includes(d.submittedBy))
+            }
+            setNotifications(prev => ({ ...prev, otherRequest: docs.filter((d: any) => d.status === "PENDING").length }))
+        })
 
         const unsubDialux = onSnapshot(collection(db, "dialux_requests"), snap => {
-            const pending = snap.docs.filter(d => d.data().status === "PENDING").length
-            const completed = snap.docs.filter(d => d.data().status === "COMPLETED").length
-            const unread = calculateUnread(snap)
+            let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+            if (!hasGlobalAccess) {
+                docs = docs.filter((d: any) => d.submittedBy === userId || subordinateIds.includes(d.submittedBy))
+            }
+            const pending = docs.filter((d: any) => d.status === "PENDING").length
+            const completed = docs.filter((d: any) => d.status === "COMPLETED").length
+            const unread = calculateUnread(docs, userId)
             setNotifications(prev => ({ 
                 ...prev, 
                 dialuxRequest: pending, 
@@ -695,19 +889,22 @@ export default function EngiconnectDashboard() {
         })
 
         const unsubTesting = onSnapshot(collection(db, "testing_tracker"), snap => {
+            let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+            if (!hasGlobalAccess) {
+                docs = docs.filter((d: any) => d.submittedBy === userId || subordinateIds.includes(d.submittedBy))
+            }
             let active = 0; let overdue = 0
             const today = new Date()
             const myItems: any[] = []
 
-            snap.docs.forEach(doc => {
-                const d = doc.data()
+            docs.forEach((d: any) => {
                 if (!d.releaseDate) {
                     const target = d.targetDate?.toDate()
                     if (target && isAfter(today, target)) overdue++
                     else if (d.arrivalDate) active++
                 }
                 if (d.assignedTo === userId && d.status !== "RELEASED") {
-                    myItems.push({ id: doc.id, ...d })
+                    myItems.push(d)
                 }
             })
             setNotifications(prev => ({ ...prev, testingActive: active, testingOverdue: overdue }))
@@ -732,26 +929,25 @@ export default function EngiconnectDashboard() {
             .on("postgres_changes", { event: "*", schema: "public", table: "spf_creation" }, fetchProductRequests)
             .subscribe()
 
-        const calculateUnread = (snap: any) => {
-            let total = 0
-            snap.docs.forEach((doc: any) => {
-                const data = doc.data()
-                if (data.messages && Array.isArray(data.messages)) {
-                    const lastSeen = data.lastSeenBy?.[userId]
-                    const lastSeenTime = lastSeen ? new Date(lastSeen).getTime() : 0
-                    total += data.messages.filter((m: any) =>
-                        m.senderId !== userId && new Date(m.time).getTime() > lastSeenTime
-                    ).length
-                }
-            })
-            return total
-        }
-
         return () => {
             unsubSite(); unsubShop(); unsubTesting(); unsubJob(); unsubOther(); unsubDialux();
             supabase.removeChannel(ch);
         }
-    }, [userId])
+    }, [userId, subordinateIds])
+
+    const calculateUnread = (docs: any[], currentUserId: string) => {
+        let total = 0
+        docs.forEach((data: any) => {
+            if (data.messages && Array.isArray(data.messages)) {
+                const lastSeen = data.lastSeenBy?.[currentUserId]
+                const lastSeenTime = lastSeen ? new Date(lastSeen).getTime() : 0
+                total += data.messages.filter((m: any) =>
+                    m.senderId !== currentUserId && new Date(m.time).getTime() > lastSeenTime
+                ).length
+            }
+        })
+        return total
+    }
 
     /* ── UNREAD TOTAL ── */
     useEffect(() => {
@@ -761,16 +957,51 @@ export default function EngiconnectDashboard() {
 
     /* ── RECENT ACTIVITY ── */
     useEffect(() => {
-        if (!db) return
-        const qDialux = query(collection(db, "dialux_requests"), orderBy("createdAt", "desc"), limit(2))
-        const qJob = query(collection(db, "job_requests"), orderBy("createdAt", "desc"), limit(2))
-        const qShop = query(collection(db, "shop_drawing_requests"), orderBy("createdAt", "desc"), limit(2))
+        if (!db || !userId) return
+
+        const userDeptUpper = (userDept || "").toUpperCase()
+        const userRoleUpper = (userRole || "").toUpperCase()
+
+        /**
+         * VISIBILITY PROTOCOL:
+         * - IT, SUPER ADMIN, LEADER, MANAGER: Global visibility (all activities)
+         * - TSM: Own activities + subordinate activities only
+         * - TSA/MEMBERS: Own activities only
+         */
+        const hasGlobalAccess = userDeptUpper === "IT" || ["SUPER ADMIN", "LEADER", "MANAGER"].includes(userRoleUpper)
+        const isTSM = userRoleUpper === "TSM"
+
+        const qDialux = query(collection(db, "dialux_requests"), orderBy("createdAt", "desc"), limit(10))
+        const qJob = query(collection(db, "job_requests"), orderBy("createdAt", "desc"), limit(10))
+        const qShop = query(collection(db, "shop_drawing_requests"), orderBy("createdAt", "desc"), limit(10))
         const activitiesMap = new Map()
 
         function updateActivity(type: string, docs: any[]) {
-            docs.forEach(doc => activitiesMap.set(doc.id, { id: doc.id, type, ...doc.data() }))
+            // Filter docs based on user role before adding to activities
+            let filteredDocs = docs
+            if (!hasGlobalAccess) {
+                if (isTSM) {
+                    // TSM sees own + subordinate activities
+                    filteredDocs = docs.filter(d => {
+                        const submittedBy = d.data().submittedBy || d.data().createdBy
+                        return submittedBy === userId || subordinateIds.includes(submittedBy)
+                    })
+                } else {
+                    // TSA/Members see only their own activities
+                    filteredDocs = docs.filter(d => {
+                        const submittedBy = d.data().submittedBy || d.data().createdBy
+                        return submittedBy === userId
+                    })
+                }
+            }
+
+            filteredDocs.forEach(doc => {
+                const data = doc.data()
+                activitiesMap.set(doc.id, { id: doc.id, type, ...data })
+            })
+
             const sorted = Array.from(activitiesMap.values())
-                .sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0))
+                .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0))
                 .slice(0, 5)
             setRecentActivity(sorted)
         }
@@ -779,11 +1010,23 @@ export default function EngiconnectDashboard() {
         const unsubJob = onSnapshot(qJob, snap => updateActivity("Job", snap.docs))
         const unsubShop = onSnapshot(qShop, snap => updateActivity("Shop", snap.docs))
         return () => { unsubDialux(); unsubJob(); unsubShop() }
-    }, [])
+    }, [userId, userRole, userDept, subordinateIds])
 
     /* ── SCHEDULE & TASKS ── */
     useEffect(() => {
-        if (!db) return
+        if (!db || !userId) return
+
+        const userRoleUpper = (userRole || "").toUpperCase()
+        const userDeptUpper = (userDept || "").toUpperCase()
+
+        /**
+         * SCHEDULE VISIBILITY PROTOCOL:
+         * - IT, SUPER ADMIN, LEADER, MANAGER: Global visibility
+         * - TSM: Own + subordinate schedule items
+         * - TSA/MEMBERS: Own schedule items only
+         */
+        const hasGlobalAccess = userDeptUpper === "IT" || ["SUPER ADMIN", "LEADER", "MANAGER"].includes(userRoleUpper)
+        const isTSM = userRoleUpper === "TSM"
         
         const qApps = query(collection(db, "appointments"), orderBy("appointmentDate", "asc"))
         const qTesting = query(collection(db, "testing_tracker"), orderBy("targetDate", "asc"))
@@ -795,10 +1038,19 @@ export default function EngiconnectDashboard() {
             const tomorrow = new Date(today)
             tomorrow.setDate(tomorrow.getDate() + 1)
 
-            const apps = snap.docs.map(doc => {
+            let apps = snap.docs.map(doc => {
                 const data = doc.data()
                 return { id: doc.id, type: "Site Visit", date: data.appointmentDate?.toDate(), title: data.client || "Untitled Visit", ...data }
             }).filter(a => a.date)
+
+            // Apply security filtering
+            if (!hasGlobalAccess) {
+                if (isTSM) {
+                    apps = apps.filter((a: any) => a.submittedBy === userId || subordinateIds.includes(a.submittedBy))
+                } else {
+                    apps = apps.filter((a: any) => a.submittedBy === userId)
+                }
+            }
 
             setScheduleData(prev => {
                 const combined = [...apps, ...prev.upcoming.filter(i => i.type === "Testing")].sort((a, b) => a.date.getTime() - b.date.getTime())
@@ -817,7 +1069,7 @@ export default function EngiconnectDashboard() {
             const tomorrow = new Date(today)
             tomorrow.setDate(tomorrow.getDate() + 1)
 
-            const items = snap.docs.map(doc => {
+            let items = snap.docs.map(doc => {
                 const data = doc.data()
                 return { 
                     id: doc.id, 
@@ -828,6 +1080,15 @@ export default function EngiconnectDashboard() {
                     ...data 
                 }
             }).filter(a => a.date && !a.releaseDate)
+
+            // Apply security filtering
+            if (!hasGlobalAccess) {
+                if (isTSM) {
+                    items = items.filter((i: any) => i.submittedBy === userId || subordinateIds.includes(i.submittedBy))
+                } else {
+                    items = items.filter((i: any) => i.submittedBy === userId)
+                }
+            }
 
             setScheduleData(prev => {
                 const combined = [...items, ...prev.today.filter(i => i.type === "Site Visit"), ...prev.upcoming.filter(i => i.type === "Site Visit")].sort((a, b) => a.date.getTime() - b.date.getTime())
@@ -840,7 +1101,7 @@ export default function EngiconnectDashboard() {
         })
 
         return () => { unsubApps(); unsubTesting() }
-    }, [])
+    }, [userId, userRole, userDept, subordinateIds])
 
     /* ── DERIVED ── */
     const tabs = useMemo(() => {
@@ -1266,8 +1527,22 @@ export default function EngiconnectDashboard() {
                                 <RecentActivityFeed activities={recentActivity} router={router} />
                             </div>
 
-                            {/* Department Health */}
-                            <DepartmentPulse userDept={userDept} myTasks={myTasks} />
+                            <div className="space-y-6">
+                                {/* Quick Actions */}
+                                <QuickActionHub role={userRole || ""} dept={userDept || ""} router={router} />
+                                
+                                {/* Recent Customers */}
+                                {(userRole === "TSM" || userRole === "MANAGER" || userRole === "SUPER ADMIN" || userDept === "IT" || userDept === "SALES") && (
+                                    <RecentCustomersWidget 
+                                        customers={recentCustomers} 
+                                        loading={loadingCustomerCount} 
+                                        router={router} 
+                                    />
+                                )}
+
+                                {/* Department Health */}
+                                <DepartmentPulse userDept={userDept} myTasks={myTasks} />
+                            </div>
                         </div>
 
                         {/* ── WORKLOAD OVERVIEW (Admin Only) ── */}
@@ -1282,70 +1557,23 @@ export default function EngiconnectDashboard() {
                                 <StatCard label="Messages" value={isDataLoading ? "--" : notifications.unreadMessages} icon={MessageSquare} color={notifications.unreadMessages > 0 ? "text-blue-600" : "text-gray-400"} loading={isDataLoading} onClick={() => router.push("/messages")} />
                                 <StatCard label="Next Task" value={isDataLoading ? "--" : (scheduleData.next ? format(scheduleData.next.date, "HH:mm") : "None")} icon={Clock} color="text-violet-600" loading={isDataLoading} />
                                 <StatCard label="Success" value={isDataLoading ? "--" : notifications.dialuxCompleted} icon={CheckCircle2} color="text-emerald-600" loading={isDataLoading} />
+                                {(userRole === "TSM" || userRole === "MANAGER" || userRole === "SUPER ADMIN" || userDept === "IT") && (
+                                    <StatCard 
+                                        label="Customers" 
+                                        value={loadingCustomerCount ? "--" : customerCount} 
+                                        icon={Users} 
+                                        color="text-indigo-600" 
+                                        loading={loadingCustomerCount} 
+                                        onClick={() => router.push("/appointments/site-visit/add/schedule")}
+                                    />
+                                )}
                             </section>
                         )}
 
-                        {/* ── BOTTOM: Activity + Overview (desktop side by side) ── */}
+                        {/* ── BOTTOM: Overview Section ── */}
                         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-
-                            {/* Recent Activity */}
-                            {perms?.dashboard?.showRecentActivity !== false && (
-                                <section className="lg:col-span-3 space-y-3">
-                                    <div className="flex items-center justify-between">
-                                        <h2 className="text-lg font-bold text-gray-900 tracking-tight">Recent Activity</h2>
-                                        <button onClick={() => router.push("/notifications")} className="text-[10px] font-bold text-[#E33636] uppercase tracking-wider flex items-center gap-1 hover:gap-1.5 transition-all">
-                                            View All <ArrowUpRight size={12} />
-                                        </button>
-                                    </div>
-                                    <div className="space-y-2.5">
-                                        {isDataLoading ? (
-                                            [...Array(3)].map((_, i) => <ActivitySkeleton key={i} />)
-                                        ) : recentActivity.length > 0 ? (
-                                            recentActivity.map(item => {
-                                                const cfg = activityTypeConfig[item.type] || activityTypeConfig.DIAlux
-                                                const Icon = cfg.icon
-                                                const paths: Record<string, string> = {
-                                                    DIAlux: `/request/dialux/${item.id}`,
-                                                    Job: `/request/job/${item.id}`,
-                                                    Shop: `/request/shop-drawing/${item.id}`,
-                                                }
-                                                return (
-                                                    <div
-                                                        key={item.id}
-                                                        className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between group active:scale-[0.98] transition-all cursor-pointer hover:shadow-md hover:border-gray-200"
-                                                        onClick={() => router.push(paths[item.type] || "#")}
-                                                    >
-                                                        <div className="flex items-center gap-3 min-w-0">
-                                                            <div className={cn("size-10 rounded-xl flex items-center justify-center flex-shrink-0", cfg.bg, cfg.text)}>
-                                                                <Icon size={17} />
-                                                            </div>
-                                                            <div className="min-w-0">
-                                                                <div className="flex items-center gap-2 mb-0.5">
-                                                                    <span className="text-[8px] font-black px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded uppercase tracking-widest flex-shrink-0">{item.type}</span>
-                                                                    <p className="text-xs font-bold text-gray-900 truncate">{item.projectTitle || item.requestTitle || "New Activity"}</p>
-                                                                </div>
-                                                                <p className="text-[10px] font-medium text-gray-400">
-                                                                    {item.company || "General"}
-                                                                    {item.createdAt && <span className="text-gray-300 ml-1">· {relativeTime(item.createdAt.toDate())}</span>}
-                                                                </p>
-                                                            </div>
-                                                        </div>
-                                                        <ChevronRight size={13} className="text-gray-300 group-hover:translate-x-0.5 transition-transform flex-shrink-0 ml-2" />
-                                                    </div>
-                                                )
-                                            })
-                                        ) : (
-                                            <div className="py-10 flex flex-col items-center justify-center bg-white/60 rounded-2xl border border-dashed border-gray-200">
-                                                <Activity size={22} className="text-gray-200 mb-2" />
-                                                <p className="text-[10px] font-bold text-gray-400 uppercase">System Idle</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                </section>
-                            )}
-
                             {/* Overview */}
-                            <section className={cn("space-y-3", perms?.dashboard?.showRecentActivity === false ? "lg:col-span-5" : "lg:col-span-2")}>
+                            <section className="lg:col-span-5 space-y-3">
                                 {perms?.dashboard?.showOverviewTabs !== false && (
                                     <>
                                         <h2 className="text-lg font-bold text-gray-900 tracking-tight">Overview</h2>
@@ -1569,65 +1797,8 @@ export default function EngiconnectDashboard() {
                                     </div>
                                 )}
                             </section>
-
-                            {/* My Tasks Section */}
-                            {perms?.dashboard?.showMyTasks !== false && (
-                                <div className="space-y-3 mt-6">
-                                    <h2 className="text-lg font-bold text-gray-900 tracking-tight">My Tasks</h2>
-                                    {(myTasks.siteVisits.length > 0 || myTasks.jobRequests.length > 0 || myTasks.testingItems.length > 0) ? (
-                                        <div className="space-y-2">
-                                            {myTasks.siteVisits.map(task => (
-                                                <div key={task.id} className="bg-white p-3 rounded-2xl border border-gray-100 flex items-center justify-between group hover:shadow-sm transition-all">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="size-8 rounded-xl flex items-center justify-center bg-blue-50 text-blue-600">
-                                                            <CalendarCheck size={14} />
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-[11px] font-black text-gray-900 uppercase truncate max-w-[120px]">{task.client || "Site Visit"}</p>
-                                                            <p className="text-[9px] text-gray-400 font-bold">{format(task.appointmentDate.toDate(), "MMM dd, HH:mm")} · Site Visit</p>
-                                                        </div>
-                                                    </div>
-                                                    <ChevronRight size={12} className="text-gray-300 group-hover:translate-x-0.5 transition-transform" />
-                                                </div>
-                                            ))}
-                                            {myTasks.jobRequests.map(task => (
-                                                <div key={task.id} className="bg-white p-3 rounded-2xl border border-gray-100 flex items-center justify-between group hover:shadow-sm transition-all">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="size-8 rounded-xl flex items-center justify-center bg-orange-50 text-orange-600">
-                                                            <FileText size={14} />
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-[11px] font-black text-gray-900 uppercase truncate max-w-[120px]">{task.projectName || "Job Request"}</p>
-                                                            <p className="text-[9px] text-gray-400 font-bold">{format(task.createdAt.toDate(), "MMM dd, HH:mm")} · Job Request</p>
-                                                        </div>
-                                                    </div>
-                                                    <ChevronRight size={12} className="text-gray-300 group-hover:translate-x-0.5 transition-transform" />
-                                                </div>
-                                            ))}
-                                            {myTasks.testingItems.map(task => (
-                                                <div key={task.id} className="bg-white p-3 rounded-2xl border border-gray-100 flex items-center justify-between group hover:shadow-sm transition-all">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="size-8 rounded-xl flex items-center justify-center bg-violet-50 text-violet-600">
-                                                            <ClipboardCheck size={14} />
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-[11px] font-black text-gray-900 uppercase truncate max-w-[120px]">{task.productName || "Testing Item"}</p>
-                                                            <p className="text-[9px] text-gray-400 font-bold">{format(task.targetDate.toDate(), "MMM dd, HH:mm")} · Testing</p>
-                                                        </div>
-                                                    </div>
-                                                    <ChevronRight size={12} className="text-gray-300 group-hover:translate-x-0.5 transition-transform" />
-                                                </div>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <div className="py-10 flex flex-col items-center justify-center bg-white/60 rounded-2xl border border-dashed border-gray-200">
-                                            <Activity size={22} className="text-gray-200 mb-2" />
-                                            <p className="text-[10px] font-bold text-gray-400 uppercase">No tasks assigned</p>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
                         </div>
+
                     </main>
 
                     {/* ── FLOATING ACTION BUTTON (New) ── */}

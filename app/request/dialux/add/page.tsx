@@ -15,7 +15,7 @@ import {
 import { PageHeader } from "@/components/page-header";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { sendPushNotification, NotificationTemplates } from "@/lib/notification-service";
+import { sendNotificationToHierarchy, NotificationTemplates } from "@/lib/notification-service";
 
 // Database
 import { db } from "@/lib/firebase";
@@ -182,13 +182,17 @@ export default function DialuxRequestWizard() {
 
       toast.success("Request submitted successfully!", { id: toastId });
 
-      // Send push notification
-      const userName = localStorage.getItem("userName") || "A client";
-      const notifResult = await sendPushNotification(
-        NotificationTemplates.dialux.created(userName, formData.projectName)
-      );
-      if (notifResult.success && notifResult.successCount! > 0) {
-        console.log(`Push sent to ${notifResult.successCount} devices`);
+      // Send push notification to hierarchy (user's TSM/Manager + admins)
+      if (userId) {
+        const userName = localStorage.getItem("userName") || "A client";
+        const notifResult = await sendNotificationToHierarchy(
+          NotificationTemplates.dialux.created(userName, formData.projectName),
+          userId,
+          { triggeredBy: userId }
+        );
+        if (notifResult.success) {
+          console.log(`Push notification: ${notifResult.message}`);
+        }
       }
 
       router.push("/request/dialux");

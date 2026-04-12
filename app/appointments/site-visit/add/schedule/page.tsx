@@ -15,10 +15,12 @@ import {
   ShieldAlert, Fingerprint, ClipboardList, MapPin, 
   Activity, Info, CheckCircle2, Globe, CalendarSearch,
   User2, Sparkles, Search, Check, ChevronDown,
-  HardHat, ClipboardCheck
+  HardHat, ClipboardCheck, FlaskConical
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
+import { Skeleton } from "@/components/ui/skeleton"
+import { useDebounce } from "@/hooks/use-debounce"
 
 // FIREBASE IMPORTS
 import { db } from "@/lib/firebase"
@@ -26,7 +28,8 @@ import { collection, addDoc, onSnapshot, query, where, serverTimestamp, Timestam
 
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { sendPushNotification, NotificationTemplates } from "@/lib/notification-service"
+import { sendNotificationToHierarchy, NotificationTemplates } from "@/lib/notification-service"
+import { getNextSiteVisitNumber, releaseReservedNumber } from "@/lib/site-visit-counter"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { PageHeader } from "@/components/page-header"
@@ -50,9 +53,132 @@ export default function SchedulePage() {
   const router = useRouter();
   const [userId, setUserId] = React.useState<string>("");
 
+  // CUSTOMER DATABASE STATES
+  const [userDetails, setUserDetails] = React.useState<any>(null);
+  const [accounts, setAccounts] = React.useState<any[]>([]);
+  const [totalAccounts, setTotalAccounts] = React.useState(0);
+  const [loadingAccounts, setLoadingAccounts] = React.useState(false);
+  const [loadingMore, setLoadingMore] = React.useState(false);
+  const [hasMore, setHasMore] = React.useState(true);
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [loadingUser, setLoadingUser] = React.useState(true);
+  const [openCustomer, setOpenCustomer] = React.useState(false);
+  const [isCustomerSelected, setIsCustomerSelected] = React.useState(false);
+  const [isTestMode, setIsTestMode] = React.useState(false);
+
+  // Pre-calculate memoized accounts for better responsiveness
+  const memoizedAccounts = React.useMemo(() => accounts, [accounts]);
+
+  const isInitialLoading = loadingUser;
+
+  // Use debounce for search to prevent too many API calls
+  const debouncedSearch = useDebounce(searchQuery, 500);
+
   React.useEffect(() => {
     setUserId(localStorage.getItem("userId") || "");
+    setIsTestMode(localStorage.getItem("testMode") === "true");
   }, []);
+
+  // Keyboard shortcut: Ctrl+Shift+T to toggle test mode
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "T") {
+        e.preventDefault();
+        toggleTestMode();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isTestMode]);
+
+  const toggleTestMode = () => {
+    const newMode = !isTestMode;
+    setIsTestMode(newMode);
+    localStorage.setItem("testMode", newMode.toString());
+    toast.info(
+      newMode 
+        ? "🔧 Test mode enabled - Site visit number will have TEST- prefix" 
+        : "✅ Test mode disabled - Using production site visit number",
+      { duration: 3000 }
+    );
+  };
+
+  // FETCH USER DETAILS
+  React.useEffect(() => {
+    if (!userId) return;
+
+    const fetchUserData = async () => {
+      setLoadingUser(true);
+      try {
+        const response = await fetch(`/api/user?id=${encodeURIComponent(userId)}`);
+        if (!response.ok) throw new Error("Failed to fetch user data");
+        const data = await response.json();
+        
+        setUserDetails({
+          referenceid: data.ReferenceID || "",
+          tsm: data.TSM || "",
+          manager: data.Manager || "",
+          department: data.Department || data.department || "",
+          role: data.Role || data.role || "MEMBER",
+          name: `${data.Firstname || ""} ${data.Lastname || ""}`.trim()
+        });
+      } catch (err) {
+        console.error("USER_FETCH_ERROR", err);
+      } finally {
+        setLoadingUser(false);
+      }
+    };
+
+    fetchUserData();
+  }, [userId]);
+
+  // FETCH ACCOUNTS WITH PAGINATION & SEARCH
+  const fetchAccounts = React.useCallback(async (offset = 0, search = "") => {
+    if (!userDetails?.referenceid && userDetails?.department !== "IT") return;
+    
+    if (offset === 0) setLoadingAccounts(true);
+    else setLoadingMore(true);
+
+    try {
+      const params = new URLSearchParams({
+        referenceid: userDetails.referenceid,
+        role: userDetails.role,
+        name: userDetails.name,
+        department: userDetails.department,
+        search: search,
+        offset: offset.toString(),
+        limit: "50"
+      });
+      
+      const response = await fetch(`/api/com-fetch-cluster-account?${params.toString()}`);
+      if (!response.ok) throw new Error("Failed to fetch accounts");
+      const result = await response.json();
+      
+      if (offset === 0) {
+        setAccounts(result.data || []);
+      } else {
+        setAccounts(prev => [...prev, ...(result.data || [])]);
+      }
+      
+      setTotalAccounts(result.total || 0);
+      setHasMore(result.hasMore);
+    } catch (err) {
+      console.error("ACCOUNTS_FETCH_ERROR", err);
+    } finally {
+      setLoadingAccounts(false);
+      setLoadingMore(false);
+    }
+  }, [userDetails]);
+
+  React.useEffect(() => {
+    fetchAccounts(0, debouncedSearch);
+  }, [fetchAccounts, debouncedSearch]);
+
+  const loadMoreAccounts = () => {
+    if (!loadingMore && hasMore) {
+      fetchAccounts(accounts.length, debouncedSearch);
+    }
+  };
   
   // 1. EXTRACT HYDRATION & PERSISTED DATA
   const { 
@@ -97,6 +223,7 @@ export default function SchedulePage() {
 
   const [formData, setFormData] = React.useState({ 
     client: "", 
+    contactPerson: "",
     email: "",
     contactNumber: "",
     address: "", 
@@ -378,13 +505,61 @@ export default function SchedulePage() {
     }
   }, [protocolMetadata, assignedPics, isHydrated]);
 
-  if (!isHydrated) {
+  if (!isHydrated || isInitialLoading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-[#F9FAFA]">
-        <Loader2 className="size-8 animate-spin text-[#121212]/10 mb-4" />
-        <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-[#121212]/40 italic">
-          Initializing_Systems...
-        </p>
+      <div className="flex flex-col items-center justify-center min-h-screen bg-[#F9FAFA] p-8 space-y-8">
+        <div className="w-full max-w-6xl space-y-8 animate-pulse">
+          {/* Header Skeleton */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-2">
+              <Skeleton className="h-8 w-64 bg-zinc-200 rounded-lg" />
+              <Skeleton className="h-4 w-48 bg-zinc-100 rounded-lg" />
+            </div>
+            <Skeleton className="h-10 w-32 bg-zinc-200 rounded-xl" />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Sidebar Skeleton */}
+            <div className="lg:col-span-3 space-y-4">
+              <Skeleton className="h-[400px] w-full bg-zinc-100 rounded-[24px]" />
+              <Skeleton className="h-20 w-full bg-zinc-100 rounded-[24px]" />
+            </div>
+
+            {/* Main Content Skeleton */}
+            <div className="lg:col-span-9 space-y-6">
+              <div className="bg-white border border-zinc-200/60 rounded-[24px] p-6 space-y-8">
+                <div className="space-y-4">
+                  <Skeleton className="h-6 w-48 bg-zinc-200 rounded-lg" />
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <Skeleton className="h-12 w-full bg-zinc-50 rounded-xl" />
+                    <Skeleton className="h-12 w-full bg-zinc-50 rounded-xl" />
+                    <Skeleton className="h-12 w-full bg-zinc-50 rounded-xl" />
+                  </div>
+                </div>
+
+                <div className="space-y-4 pt-4 border-t border-zinc-50">
+                  <Skeleton className="h-6 w-48 bg-zinc-200 rounded-lg" />
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <Skeleton className="h-12 w-full bg-zinc-50 rounded-xl" />
+                    <Skeleton className="h-12 w-full bg-zinc-50 rounded-xl" />
+                    <Skeleton className="h-12 w-full bg-zinc-50 rounded-xl" />
+                    <Skeleton className="h-12 w-full bg-zinc-50 rounded-xl" />
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-zinc-50">
+                  <Skeleton className="h-32 w-full bg-zinc-50 rounded-xl" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-col items-center">
+          <Loader2 className="size-6 animate-spin text-zinc-300 mb-2" />
+          <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400 italic">
+            {isInitialLoading ? "Syncing_Database..." : "Initializing_Systems..."}
+          </p>
+        </div>
       </div>
     );
   }
@@ -466,10 +641,15 @@ export default function SchedulePage() {
         if (!fileUrl) throw new Error("Upload failed");
       }
       
+      // Generate unique site visit number
+      const isTestMode = localStorage.getItem("testMode") === "true";
+      const siteVisitNo = await getNextSiteVisitNumber(isTestMode);
+      
       const appointmentDateObj = new Date(viewDate.getFullYear(), viewDate.getMonth(), selectedDate as number);
       
       await addDoc(collection(db, "appointments"), {
         ...formData, 
+        siteVisitNo, // Unique sequential number: PS-2026-036
         pic: "UNASSIGNED", 
         appointmentDate: Timestamp.fromDate(appointmentDateObj),
         protocols: selectedAssistance || [], 
@@ -488,17 +668,22 @@ export default function SchedulePage() {
         submittedBy: currentUserId 
       });
 
+      // Release the number reservation after successful save
+      await releaseReservedNumber(siteVisitNo);
+
       // Reset context state and clear local storage after successful submission
       resetForm();
 
       toast.success("DEPLOYMENT INITIALIZED", { id: toastId });
 
-      // Send push notification
-      const notifResult = await sendPushNotification(
-        NotificationTemplates.siteVisit.created(formData.client, selectedDate ? selectedDate.toString() : "scheduled date")
+      // Send push notification to hierarchy
+      const notifResult = await sendNotificationToHierarchy(
+        NotificationTemplates.siteVisit.created(formData.client, selectedDate ? selectedDate.toString() : "scheduled date"),
+        currentUserId || "",
+        { triggeredBy: currentUserId || "" }
       );
-      if (notifResult.success && notifResult.successCount! > 0) {
-        console.log(`Push sent to ${notifResult.successCount} devices`);
+      if (notifResult.success) {
+        console.log(`Push notification: ${notifResult.message}`);
       }
 
       setTimeout(() => router.push("/appointments/site-visit"), 1500); 
@@ -564,6 +749,22 @@ export default function SchedulePage() {
           trigger={<SidebarTrigger className="mr-2" />}
           actions={
             <div className="flex items-center gap-2">
+              <Button
+                variant={isTestMode ? "default" : "outline"}
+                size="sm"
+                onClick={toggleTestMode}
+                className={cn(
+                  "h-8 px-3 text-[10px] font-bold uppercase tracking-wider gap-1.5 transition-all",
+                  isTestMode 
+                    ? "bg-amber-500 hover:bg-amber-600 text-white border-amber-500" 
+                    : "border-slate-200 text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                )}
+                title="Toggle test mode (Ctrl+Shift+T)"
+              >
+                <FlaskConical className="size-3.5" />
+                <span className="hidden sm:inline">{isTestMode ? "Test Mode" : "Test"}</span>
+                <span className="sm:hidden">{isTestMode ? "ON" : "OFF"}</span>
+              </Button>
               <div className="hidden sm:flex items-center gap-1.5">
                 {protocolMetadata?.slice(0, 1).map((item: any, idx: number) => (
                   <div key={idx} className="px-2.5 py-1 bg-zinc-900 text-white rounded-lg text-[7px] font-black uppercase tracking-[0.15em] border border-zinc-800 shadow-sm">
@@ -724,30 +925,177 @@ export default function SchedulePage() {
             <div className="bg-white border border-zinc-200/60 rounded-[24px] shadow-sm overflow-hidden divide-y divide-zinc-50 flex-1 flex flex-col min-h-0">
               {/* VISIT PURPOSE SECTION */}
               <div className="p-3 md:p-4 space-y-2 shrink-0">
-                <div className="flex items-center gap-2 border-b border-zinc-50 pb-1.5">
-                  <div className="size-5 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 shadow-sm border border-blue-100">
-                    <ClipboardList size={12} />
+                  <div className="flex items-center justify-between border-b border-zinc-50 pb-1.5">
+                    <div className="flex items-center gap-2">
+                      <div className="size-5 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 shadow-sm border border-blue-100">
+                        <ClipboardList size={12} />
+                      </div>
+                      <div>
+                        <h3 className="text-[11px] font-black uppercase tracking-tight text-zinc-900 leading-none">Deployment Details</h3>
+                        <p className="text-[6px] font-bold text-zinc-400 uppercase tracking-widest mt-0.5 leading-none">Primary Engagement Information</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {isCustomerSelected && (
+                        <button 
+                          onClick={() => {
+                            setFormData(prev => ({
+                              ...prev,
+                              client: "",
+                              contactPerson: "",
+                              email: "",
+                              contactNumber: "",
+                              address: "",
+                              region: "",
+                              province: "",
+                              city: "",
+                              barangay: "",
+                              street: ""
+                            }));
+                            setIsCustomerSelected(false);
+                          }}
+                          className="h-6 px-2 text-[7px] font-black uppercase bg-red-50 text-red-600 border border-red-100 rounded-full hover:bg-red-100 transition-all active:scale-95 flex items-center gap-1"
+                        >
+                          <X size={8} />
+                          Clear Selection
+                        </button>
+                      )}
+                      <div className="flex items-center gap-1 px-2 py-0.5 bg-zinc-100 rounded-full border border-zinc-200">
+                        <span className="text-[7px] font-black uppercase text-zinc-400 tracking-widest">Total Customers:</span>
+                        {loadingAccounts ? (
+                          <Loader2 className="size-2 animate-spin text-zinc-400 ml-1" />
+                        ) : (
+                          <span className="text-[8px] font-black text-zinc-900 ml-1">{totalAccounts}</span>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-[11px] font-black uppercase tracking-tight text-zinc-900 leading-none">Deployment Details</h3>
-                    <p className="text-[6px] font-bold text-zinc-400 uppercase tracking-widest mt-0.5 leading-none">Primary Engagement Information</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                   <div className="relative group">
-                    <Input className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-9 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-zinc-900 px-3 shadow-inner pt-3.5 transition-all" placeholder=" " value={formData.client} onChange={e => setFormData({...formData, client: e.target.value})} />
-                    <label className="absolute left-3 top-1 text-[7px] font-black uppercase text-zinc-400 tracking-widest transition-all group-focus-within:text-zinc-900">Client Name*</label>
+                    <Popover open={openCustomer} onOpenChange={setOpenCustomer}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={openCustomer}
+                          className={cn(
+                            "w-full justify-between rounded-xl border-zinc-100 text-[11px] font-black uppercase h-9 bg-zinc-50/50 hover:bg-white focus:bg-white focus:ring-2 focus:ring-zinc-900 px-3 shadow-inner pt-3.5 transition-all",
+                            !formData.client && "text-zinc-400"
+                          )}
+                          disabled={loadingAccounts && accounts.length === 0}
+                        >
+                          <span className="truncate">
+                            {loadingAccounts && accounts.length === 0 ? (
+                              <span className="flex items-center gap-2">
+                                <Loader2 className="size-3 animate-spin" />
+                                Syncing Database...
+                              </span>
+                            ) : (
+                              formData.client || "Select Client..."
+                            )}
+                          </span>
+                          {!loadingAccounts && <ChevronDown className="ml-2 h-3 w-3 shrink-0 opacity-50" />}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[300px] p-0" align="start">
+                        <Command shouldFilter={false}>
+                          <CommandInput 
+                            placeholder="Search client..." 
+                            className="h-8 text-[11px]" 
+                            value={searchQuery}
+                            onValueChange={setSearchQuery}
+                          />
+                          <CommandList className="max-h-[300px] overflow-y-auto" onScroll={(e) => {
+                            const target = e.currentTarget;
+                            if (target.scrollHeight - target.scrollTop <= target.clientHeight + 1) {
+                              loadMoreAccounts();
+                            }
+                          }}>
+                            <CommandEmpty className="py-2 text-[10px] text-center">
+                              {loadingAccounts ? "Searching..." : "No client found."}
+                            </CommandEmpty>
+                            <CommandGroup>
+                              {memoizedAccounts.map((account) => (
+                                <CommandItem
+                                  key={account.id}
+                                  value={account.company_name}
+                                  onSelect={() => {
+                                    const email = Array.isArray(account.email_address) 
+                                      ? account.email_address.join(", ") 
+                                      : account.email_address;
+                                    const contact = Array.isArray(account.contact_number) 
+                                      ? account.contact_number.join(", ") 
+                                      : account.contact_number;
+                                    const person = Array.isArray(account.contact_person)
+                                      ? account.contact_person.join(", ")
+                                      : account.contact_person;
+                                    
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      client: account.company_name,
+                                      contactPerson: person || prev.contactPerson,
+                                      email: email || prev.email,
+                                      contactNumber: contact || prev.contactNumber,
+                                      address: account.address || prev.address
+                                    }));
+                                    setIsCustomerSelected(true);
+                                    setOpenCustomer(false);
+                                  }}
+                                  className="text-[10px] font-bold uppercase"
+                                >
+                                  <Check
+                                    className={cn(
+                                      "mr-2 h-3 w-3",
+                                      formData.client === account.company_name ? "opacity-100" : "opacity-0"
+                                    )}
+                                  />
+                                  {account.company_name}
+                                </CommandItem>
+                              ))}
+                              {loadingMore && (
+                                <div className="flex items-center justify-center py-2">
+                                  <Loader2 className="h-3 w-3 animate-spin text-zinc-500" />
+                                </div>
+                              )}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                    <label className="absolute left-3 top-1 text-[7px] font-black uppercase text-zinc-400 tracking-widest transition-all group-focus-within:text-zinc-900 z-10">Client Name*</label>
+                  </div>
+                  <div className="relative group">
+                    <Input 
+                      className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-9 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-zinc-900 px-3 shadow-inner pt-3.5 transition-all disabled:opacity-70 disabled:cursor-not-allowed" 
+                      placeholder=" " 
+                      value={formData.contactPerson} 
+                      onChange={e => setFormData({...formData, contactPerson: e.target.value})}
+                      disabled={isCustomerSelected}
+                    />
+                    <label className="absolute left-3 top-1 text-[7px] font-black uppercase text-zinc-400 tracking-widest transition-all group-focus-within:text-zinc-900">Contact Person</label>
                   </div>
                   <div className="relative group">
                     <Input className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-9 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-zinc-900 px-3 shadow-inner pt-3.5 transition-all" placeholder=" " value={formData.agenda} onChange={e => setFormData({...formData, agenda: e.target.value})} />
                     <label className="absolute left-3 top-1 text-[7px] font-black uppercase text-zinc-400 tracking-widest transition-all group-focus-within:text-zinc-900">Objective*</label>
                   </div>
                   <div className="relative group">
-                    <Input className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-9 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-zinc-900 px-3 shadow-inner pt-3.5 transition-all" placeholder=" " value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
+                    <Input 
+                      className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-9 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-zinc-900 px-3 shadow-inner pt-3.5 transition-all disabled:opacity-70 disabled:cursor-not-allowed" 
+                      placeholder=" " 
+                      value={formData.email} 
+                      onChange={e => setFormData({...formData, email: e.target.value})}
+                      disabled={isCustomerSelected}
+                    />
                     <label className="absolute left-3 top-1 text-[7px] font-black uppercase text-zinc-400 tracking-widest transition-all group-focus-within:text-zinc-900">Email Address</label>
                   </div>
                   <div className="relative group">
-                    <Input className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-9 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-zinc-900 px-3 shadow-inner pt-3.5 transition-all" placeholder=" " value={formData.contactNumber} onChange={e => setFormData({...formData, contactNumber: e.target.value})} />
+                    <Input 
+                      className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-9 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-zinc-900 px-3 shadow-inner pt-3.5 transition-all disabled:opacity-70 disabled:cursor-not-allowed" 
+                      placeholder=" " 
+                      value={formData.contactNumber} 
+                      onChange={e => setFormData({...formData, contactNumber: e.target.value})}
+                      disabled={isCustomerSelected}
+                    />
                     <label className="absolute left-3 top-1 text-[7px] font-black uppercase text-zinc-400 tracking-widest transition-all group-focus-within:text-zinc-900">Contact Number</label>
                   </div>
                 </div>
@@ -779,9 +1127,10 @@ export default function SchedulePage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                     <div className="relative group">
                       <select 
-                        className="w-full h-9 px-3 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-2 focus:ring-zinc-900 transition-all appearance-none shadow-inner pt-3.5"
+                        className="w-full h-9 px-3 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-2 focus:ring-zinc-900 transition-all appearance-none shadow-inner pt-3.5 disabled:opacity-70 disabled:cursor-not-allowed"
                         value={formData.region}
                         onChange={(e) => setFormData({ ...formData, region: e.target.value, province: "", city: "", barangay: "" })}
+                        disabled={isCustomerSelected}
                       >
                         <option value=""></option>
                         {regions.map(r => <option key={r.code} value={r.code}>{r.name}</option>)}
@@ -791,9 +1140,9 @@ export default function SchedulePage() {
                     </div>
                     <div className="relative group">
                       <select 
-                        className="w-full h-9 px-3 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-2 focus:ring-zinc-900 transition-all appearance-none disabled:opacity-50 shadow-inner pt-3.5"
+                        className="w-full h-9 px-3 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-2 focus:ring-zinc-900 transition-all appearance-none disabled:opacity-50 shadow-inner pt-3.5 disabled:opacity-70 disabled:cursor-not-allowed"
                         value={formData.province}
-                        disabled={!formData.region || formData.region === "130000000"}
+                        disabled={isCustomerSelected || (!formData.region || formData.region === "130000000")}
                         onChange={(e) => setFormData({ ...formData, province: e.target.value, city: "", barangay: "" })}
                       >
                         <option value="">{formData.region === "130000000" ? "NCR" : ""}</option>
@@ -804,9 +1153,9 @@ export default function SchedulePage() {
                     </div>
                     <div className="relative group">
                       <select 
-                        className="w-full h-9 px-3 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-2 focus:ring-zinc-900 transition-all appearance-none disabled:opacity-50 shadow-inner pt-3.5"
+                        className="w-full h-9 px-3 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-2 focus:ring-zinc-900 transition-all appearance-none disabled:opacity-50 shadow-inner pt-3.5 disabled:opacity-70 disabled:cursor-not-allowed"
                         value={formData.city}
-                        disabled={!formData.province && formData.region !== "130000000"}
+                        disabled={isCustomerSelected || (!formData.province && formData.region !== "130000000")}
                         onChange={(e) => setFormData({ ...formData, city: e.target.value, barangay: "" })}
                       >
                         <option value=""></option>
@@ -817,9 +1166,9 @@ export default function SchedulePage() {
                     </div>
                     <div className="relative group">
                       <select 
-                        className="w-full h-9 px-3 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-2 focus:ring-zinc-900 transition-all appearance-none disabled:opacity-50 shadow-inner pt-3.5"
+                        className="w-full h-9 px-3 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-2 focus:ring-zinc-900 transition-all appearance-none disabled:opacity-50 shadow-inner pt-3.5 disabled:opacity-70 disabled:cursor-not-allowed"
                         value={formData.barangay}
-                        disabled={!formData.city}
+                        disabled={isCustomerSelected || !formData.city}
                         onChange={(e) => setFormData({ ...formData, barangay: e.target.value })}
                       >
                         <option value=""></option>
@@ -832,11 +1181,23 @@ export default function SchedulePage() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <div className="relative group">
-                      <Input className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-9 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-zinc-900 px-3 shadow-inner pt-3.5 transition-all" placeholder=" " value={formData.street} onChange={e => setFormData({...formData, street: e.target.value})} />
+                      <Input 
+                        className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-9 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-zinc-900 px-3 shadow-inner pt-3.5 transition-all disabled:opacity-70 disabled:cursor-not-allowed" 
+                        placeholder=" " 
+                        value={formData.street} 
+                        onChange={e => setFormData({...formData, street: e.target.value})}
+                        disabled={isCustomerSelected}
+                      />
                       <label className="absolute left-3 top-1 text-[7px] font-black uppercase text-zinc-400 tracking-widest transition-all group-focus-within:text-zinc-900">Street / House No. / Unit</label>
                     </div>
                     <div className="relative group">
-                      <Input className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-9 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-zinc-900 px-3 shadow-inner pt-3.5 transition-all" placeholder=" " value={formData.landmark} onChange={e => setFormData({...formData, landmark: e.target.value})} />
+                      <Input 
+                        className="rounded-xl border-zinc-100 text-[11px] font-black uppercase h-9 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-zinc-900 px-3 shadow-inner pt-3.5 transition-all disabled:opacity-70 disabled:cursor-not-allowed" 
+                        placeholder=" " 
+                        value={formData.landmark} 
+                        onChange={e => setFormData({...formData, landmark: e.target.value})}
+                        disabled={isCustomerSelected}
+                      />
                       <label className="absolute left-3 top-1 text-[7px] font-black uppercase text-zinc-400 tracking-widest transition-all group-focus-within:text-zinc-900">Landmark / Building Name</label>
                     </div>
                   </div>

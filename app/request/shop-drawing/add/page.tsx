@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { toast } from "sonner";
-import { sendPushNotification, NotificationTemplates } from "@/lib/notification-service";
+import { sendNotificationToHierarchy, NotificationTemplates } from "@/lib/notification-service";
 
 // ZOOM & EXPORT INTEGRATION
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
@@ -196,12 +196,14 @@ export default function CompleteShopDrawingProtocol() {
       // 1. Save to Firestore
       await addDoc(collection(db, "shop_drawing_requests"), payload);
 
-      // 2. Send push notification using new service (to all devices)
-      const notifResult = await sendPushNotification(
-        NotificationTemplates.shopDrawing.created(payload.projectName)
+      // 2. Send push notification to hierarchy (user's TSM/Manager + admins)
+      const notifResult = await sendNotificationToHierarchy(
+        NotificationTemplates.shopDrawing.created(payload.projectName),
+        currentUserId,
+        { triggeredBy: currentUserId }
       );
-      if (notifResult.success && notifResult.successCount! > 0) {
-        console.log(`Push sent to ${notifResult.successCount} devices`);
+      if (notifResult.success) {
+        console.log(`Push notification: ${notifResult.message}`);
       }
 
       toast.success("Protocol saved & Team Notified!", { id: toastId });

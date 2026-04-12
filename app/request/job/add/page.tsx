@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { 
   Plus, Send, Loader2, Wrench, FileText, X, ShieldCheck, Clock, Camera, ClipboardCheck,
-  AlertCircle, CheckCircle2, ChevronRight, Calendar, Info
+  AlertCircle, CheckCircle2, ChevronRight, Calendar, Info, ChevronDown, Check, FlaskConical
 } from "lucide-react";
 import { 
   Tooltip,
@@ -23,7 +23,24 @@ import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/s
 import { AppSidebar } from "@/components/app-sidebar";
 import ProtectedPageWrapper from "@/components/protected-page-wrapper";
 import { toast } from "sonner";
-import { sendPushNotification, NotificationTemplates } from "@/lib/notification-service";
+import { sendNotificationToHierarchy, NotificationTemplates } from "@/lib/notification-service";
+import { getNextJobRequestNumber, releaseReservedNumber } from "@/lib/job-request-counter";
+import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useDebounce } from "@/hooks/use-debounce";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 
 // Database
 import { db } from "@/lib/firebase";
@@ -35,10 +52,14 @@ export default function JobRequestWizard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [files, setFiles] = useState<File[]>([]);
+  const [isTestMode, setIsTestMode] = useState(false);
 
   // FORM STATES
   const [formData, setFormData] = useState({
     projectName: "",
+    contactPerson: "",
+    email: "",
+    contactNumber: "",
     scopeOfWork: "",
     mountingHeight: "",
     workingTime: "",
@@ -56,16 +77,101 @@ export default function JobRequestWizard() {
   const [workingDays, setWorkingDays] = useState<string[]>([]);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
 
+  // CUSTOMER DATABASE STATES
+  const [userDetails, setUserDetails] = useState<any>(null);
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [totalAccounts, setTotalAccounts] = useState(0);
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [loadingUser, setLoadingUser] = useState(true);
+  const [openCustomer, setOpenCustomer] = useState(false);
+  const [isCustomerSelected, setIsCustomerSelected] = useState(false);
+
+  // Pre-calculate memoized accounts for better responsiveness
+  const memoizedAccounts = React.useMemo(() => accounts, [accounts]);
+
+  const isInitialLoading = loadingUser;
+
+  // Use debounce for search
+  const debouncedSearch = useDebounce(searchQuery, 500);
+
+  // FETCH ACCOUNTS WITH PAGINATION & SEARCH
+  const fetchAccounts = React.useCallback(async (offset = 0, search = "") => {
+    if (!userDetails?.referenceid && userDetails?.department !== "IT") return;
+    
+    if (offset === 0) setLoadingAccounts(true);
+    else setLoadingMore(true);
+
+    try {
+      const params = new URLSearchParams({
+        referenceid: userDetails.referenceid,
+        role: userDetails.role,
+        name: userDetails.name,
+        department: userDetails.department,
+        search: search,
+        offset: offset.toString(),
+        limit: "50"
+      });
+      
+      const response = await fetch(`/api/com-fetch-cluster-account?${params.toString()}`);
+      if (!response.ok) throw new Error("Failed to fetch accounts");
+      const result = await response.json();
+      
+      if (offset === 0) {
+        setAccounts(result.data || []);
+      } else {
+        setAccounts(prev => [...prev, ...(result.data || [])]);
+      }
+      
+      setTotalAccounts(result.total || 0);
+      setHasMore(result.hasMore);
+    } catch (err) {
+      console.error("ACCOUNTS_FETCH_ERROR", err);
+    } finally {
+      setLoadingAccounts(false);
+      setLoadingMore(false);
+    }
+  }, [userDetails]);
+
+  React.useEffect(() => {
+    fetchAccounts(0, debouncedSearch);
+  }, [fetchAccounts, debouncedSearch]);
+
+  const loadMoreAccounts = () => {
+    if (!loadingMore && hasMore) {
+      fetchAccounts(accounts.length, debouncedSearch);
+    }
+  };
+
   // Save to draft only if user is logged in
   useEffect(() => {
     const storedId = localStorage.getItem("userId");
-    const storedName = localStorage.getItem("userName");
-    const storedRole = localStorage.getItem("userRole");
-    
     if (storedId) {
       setUserId(storedId);
-      // We'll also store name and role in local state if needed, 
-      // but for now, we'll just pull them during submit.
+    }
+
+    // Load test mode state
+    setIsTestMode(localStorage.getItem("testMode") === "true");
+
+    // Fetch User Details
+    if (storedId) {
+      setLoadingUser(true);
+      fetch(`/api/user?id=${encodeURIComponent(storedId)}`)
+        .then(res => res.json())
+        .then(data => {
+          setUserDetails({
+            referenceid: data.ReferenceID || "",
+            tsm: data.TSM || "",
+            manager: data.Manager || "",
+            department: data.Department || data.department || "",
+            role: data.Role || data.role || "MEMBER",
+            name: `${data.Firstname || ""} ${data.Lastname || ""}`.trim()
+          });
+        })
+        .catch(err => console.error("USER_FETCH_ERROR", err))
+        .finally(() => setLoadingUser(false));
     }
     
     // Load from localStorage if exists
@@ -118,6 +224,31 @@ export default function JobRequestWizard() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [currentStep, formData, isSubmitting]);
+
+  // Test mode toggle function
+  const toggleTestMode = () => {
+    const newMode = !isTestMode;
+    setIsTestMode(newMode);
+    localStorage.setItem("testMode", newMode.toString());
+    toast.info(
+      newMode 
+        ? "🔧 Test mode enabled - Job number will have TEST- prefix" 
+        : "✅ Test mode disabled - Using production job number",
+      { duration: 3000 }
+    );
+  };
+
+  // Keyboard shortcut: Ctrl+Shift+T to toggle test mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "T") {
+        e.preventDefault();
+        toggleTestMode();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isTestMode]);
 
   const clearDraft = () => {
     localStorage.removeItem("job_request_draft");
@@ -190,7 +321,11 @@ export default function JobRequestWizard() {
         }
       }
 
-      // 2. Save to Firestore
+      // 2. Generate unique job request number (with high-concurrency protection)
+      const isTestMode = localStorage.getItem("testMode") === "true";
+      const jobRequestNo = await getNextJobRequestNumber(isTestMode);
+
+      // 3. Save to Firestore
       const userName = localStorage.getItem("userName") || "Unknown User";
       const userRole = localStorage.getItem("userRole") || "MEMBER";
 
@@ -200,7 +335,8 @@ export default function JobRequestWizard() {
         inHouse,
         permits,
         workingDays,
-        attachments: uploadedUrls, // Storing the list of links
+        attachments: uploadedUrls,
+        jobRequestNo, // Unique sequential number: JR2026-0042
         status: "PENDING",
         createdBy: userId,
         submittedBy: userId,
@@ -210,15 +346,20 @@ export default function JobRequestWizard() {
         updatedAt: serverTimestamp(),
       });
 
+      // 4. Release the number reservation after successful save
+      await releaseReservedNumber(jobRequestNo);
+
       toast.success("Job request synced successfully.", { id: toastId });
       clearDraft(); // Clear draft after successful submission
 
-      // Send push notification
-      const notifResult = await sendPushNotification(
-        NotificationTemplates.jobRequest.created(userName, formData.projectName)
+      // Send push notification to hierarchy (user's TSM/Manager + admins)
+      const notifResult = await sendNotificationToHierarchy(
+        NotificationTemplates.jobRequest.created(userName, formData.projectName),
+        userId,
+        { triggeredBy: userId }
       );
-      if (notifResult.success && notifResult.successCount! > 0) {
-        console.log(`Push sent to ${notifResult.successCount} devices`);
+      if (notifResult.success) {
+        console.log(`Push notification: ${notifResult.message}`);
       }
 
       router.push("/request/job");
@@ -230,6 +371,74 @@ export default function JobRequestWizard() {
     }
   };
 
+  if (isInitialLoading) {
+    return (
+      <ProtectedPageWrapper>
+        <SidebarProvider defaultOpen={false}>
+          <AppSidebar userId={userId || ""} />
+          <SidebarInset className="bg-[#F8FAFC] min-h-screen">
+            <div className="p-4 md:p-8 space-y-8 animate-pulse">
+              {/* Header Skeleton */}
+              <div className="flex items-center justify-between">
+                <div className="space-y-2">
+                  <Skeleton className="h-8 w-64 bg-slate-200 rounded-lg" />
+                  <Skeleton className="h-4 w-48 bg-slate-100 rounded-lg" />
+                </div>
+                <Skeleton className="h-10 w-32 bg-slate-200 rounded-xl" />
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Main Content Skeleton */}
+                <div className="lg:col-span-8 space-y-6">
+                  {/* Step Indicator Skeleton */}
+                  <div className="bg-white p-2 rounded-xl border border-slate-200">
+                    <div className="grid grid-cols-3 gap-4">
+                      <Skeleton className="h-10 w-full bg-slate-100 rounded-lg" />
+                      <Skeleton className="h-10 w-full bg-slate-100 rounded-lg" />
+                      <Skeleton className="h-10 w-full bg-slate-100 rounded-lg" />
+                    </div>
+                  </div>
+
+                  {/* Form Content Skeleton */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-8 min-h-[500px]">
+                    <div className="space-y-4">
+                      <Skeleton className="h-6 w-48 bg-slate-200 rounded-lg" />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <Skeleton className="h-12 w-full bg-slate-50 rounded-xl" />
+                        <Skeleton className="h-12 w-full bg-slate-50 rounded-xl" />
+                      </div>
+                    </div>
+                    <div className="space-y-4 pt-4 border-t border-slate-50">
+                      <Skeleton className="h-6 w-48 bg-slate-200 rounded-lg" />
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
+                          <Skeleton key={i} className="h-16 w-full bg-slate-50 rounded-xl" />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sidebar Summary Skeleton */}
+                <div className="lg:col-span-4 space-y-4">
+                  <Skeleton className="h-[300px] w-full bg-slate-100 rounded-2xl" />
+                  <Skeleton className="h-48 w-full bg-slate-100 rounded-2xl" />
+                </div>
+              </div>
+
+              <div className="flex flex-col items-center pt-8">
+                <Loader2 className="size-6 animate-spin text-slate-300 mb-2" />
+                <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-400 italic">
+                  Syncing_Database...
+                </p>
+              </div>
+            </div>
+          </SidebarInset>
+        </SidebarProvider>
+      </ProtectedPageWrapper>
+    );
+  }
+
   return (
     <ProtectedPageWrapper>
       <SidebarProvider defaultOpen={false}>
@@ -240,6 +449,27 @@ export default function JobRequestWizard() {
             version="2.2.1" 
             showBackButton={true}
             trigger={<SidebarTrigger className="mr-2" />}
+            actions={
+              <div className="flex items-center gap-2">
+                {/* Test Mode Toggle Button */}
+                <Button
+                  variant={isTestMode ? "default" : "outline"}
+                  size="sm"
+                  onClick={toggleTestMode}
+                  className={cn(
+                    "h-8 px-3 text-[10px] font-bold uppercase tracking-wider gap-1.5 transition-all",
+                    isTestMode 
+                      ? "bg-amber-500 hover:bg-amber-600 text-white border-amber-500" 
+                      : "border-slate-200 text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                  )}
+                  title="Toggle test mode (Ctrl+Shift+T)"
+                >
+                  <FlaskConical className="size-3.5" />
+                  <span className="hidden sm:inline">{isTestMode ? "Test Mode" : "Test"}</span>
+                  <span className="sm:hidden">{isTestMode ? "ON" : "OFF"}</span>
+                </Button>
+              </div>
+            }
           />
           
           <main className="p-2 md:p-4 max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-4 h-[calc(100vh-140px)] overflow-hidden">
@@ -362,21 +592,181 @@ export default function JobRequestWizard() {
                     <div className="w-full space-y-4 animate-in slide-in-from-right-4 duration-300">
                       <div className="grid md:grid-cols-2 gap-6">
                         <div className="space-y-1.5">
+                          <div className="flex items-center justify-between w-full">
+                            <Label className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-1.5">
+                              Customer / Account
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger>
+                                    <Info size={10} className="text-slate-300" />
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p className="text-[9px] font-bold">Select a customer from your database</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            </Label>
+                            <div className="flex items-center gap-1.5">
+                              {isCustomerSelected && (
+                                <button 
+                                  onClick={() => {
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      projectName: "",
+                                      contactPerson: "",
+                                      email: "",
+                                      contactNumber: ""
+                                    }));
+                                    setIsCustomerSelected(false);
+                                  }}
+                                  className="h-6 px-2 text-[7px] font-black uppercase bg-red-50 text-red-600 border border-red-100 rounded-full hover:bg-red-100 transition-all active:scale-95 flex items-center gap-1"
+                                >
+                                  <X size={8} />
+                                  Clear
+                                </button>
+                              )}
+                              <div className="flex items-center gap-1 px-2 py-0.5 bg-slate-100 rounded-full border border-slate-200">
+                                <span className="text-[7px] font-black uppercase text-slate-400 tracking-widest">Database:</span>
+                                {loadingAccounts ? (
+                                  <Loader2 className="size-2 animate-spin text-slate-400 ml-1" />
+                                ) : (
+                                  <span className="text-[8px] font-black text-slate-900 ml-1">{totalAccounts}</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <Popover open={openCustomer} onOpenChange={setOpenCustomer}>
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="outline"
+                                role="combobox"
+                                aria-expanded={openCustomer}
+                                className={cn(
+                                  "w-full justify-between h-11 rounded-xl font-bold text-[12px] bg-white border-slate-200 hover:bg-slate-50 transition-all",
+                                  !formData.projectName && "text-slate-400"
+                                )}
+                                disabled={loadingAccounts && accounts.length === 0}
+                              >
+                                <span className="truncate">
+                                  {loadingAccounts && accounts.length === 0 ? (
+                                    <span className="flex items-center gap-2">
+                                      <Loader2 className="size-4 animate-spin" />
+                                      Syncing Database...
+                                    </span>
+                                  ) : (
+                                    formData.projectName || "Select Customer..."
+                                  )}
+                                </span>
+                                {!loadingAccounts && <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[300px] p-0" align="start">
+                              <Command shouldFilter={false}>
+                                <CommandInput 
+                                  placeholder="Search customer..." 
+                                  className="h-9 text-[12px]" 
+                                  value={searchQuery}
+                                  onValueChange={setSearchQuery}
+                                />
+                                <CommandList className="max-h-[300px] overflow-y-auto" onScroll={(e) => {
+                                  const target = e.currentTarget;
+                                  if (target.scrollHeight - target.scrollTop <= target.clientHeight + 1) {
+                                    loadMoreAccounts();
+                                  }
+                                }}>
+                                  <CommandEmpty className="py-3 text-[11px] text-center">
+                                    {loadingAccounts ? "Searching..." : "No customer found."}
+                                  </CommandEmpty>
+                                  <CommandGroup>
+                                    {memoizedAccounts.map((account) => (
+                                      <CommandItem
+                                        key={account.id}
+                                        value={account.company_name}
+                                        onSelect={() => {
+                                          setFormData(prev => ({
+                                            ...prev,
+                                            projectName: account.company_name,
+                                            contactPerson: Array.isArray(account.contact_person) ? account.contact_person.join(", ") : account.contact_person || "",
+                                            email: Array.isArray(account.email_address) ? account.email_address.join(", ") : account.email_address || "",
+                                            contactNumber: Array.isArray(account.contact_number) ? account.contact_number.join(", ") : account.contact_number || "",
+                                          }));
+                                          setIsCustomerSelected(true);
+                                          setOpenCustomer(false);
+                                        }}
+                                        className="text-[11px] font-bold uppercase"
+                                      >
+                                        <Check
+                                          className={cn(
+                                            "mr-2 h-4 w-4",
+                                            formData.projectName === account.company_name ? "opacity-100" : "opacity-0"
+                                          )}
+                                        />
+                                        {account.company_name}
+                                      </CommandItem>
+                                    ))}
+                                    {loadingMore && (
+                                      <div className="flex items-center justify-center py-4">
+                                        <Loader2 className="h-4 w-4 animate-spin text-slate-500" />
+                                      </div>
+                                    )}
+                                  </CommandGroup>
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                        <div className="space-y-1.5">
                           <Label className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-1.5">
-                            Project Name <span className="text-red-500 font-black">*</span>
+                            Project / Site Name <span className="text-red-500 font-black">*</span>
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger>
                                   <Info size={10} className="text-slate-300" />
                                 </TooltipTrigger>
                                 <TooltipContent>
-                                  <p className="text-[9px] font-bold">The name of the client or the specific project site</p>
+                                  <p className="text-[9px] font-bold">The specific project site or building name</p>
                                 </TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
                           </Label>
-                          <Input className="h-11 rounded-xl font-bold text-[12px] w-full focus:ring-2 focus:ring-slate-900/10 transition-all" placeholder="Client ABC - Solar Lights" value={formData.projectName} onChange={e => setFormData({...formData, projectName: e.target.value})} />
+                          <Input className="h-11 rounded-xl font-bold text-[12px] w-full focus:ring-2 focus:ring-slate-900/10 transition-all" placeholder="Solar Lights Installation - Building A" value={formData.projectName} onChange={e => setFormData({...formData, projectName: e.target.value})} />
                         </div>
+                      </div>
+
+                      <div className="grid md:grid-cols-3 gap-6">
+                        <div className="space-y-1.5">
+                          <Label className="text-[10px] font-black uppercase text-slate-400">Contact Person</Label>
+                          <Input 
+                            className="h-11 rounded-xl font-bold text-[12px] w-full focus:ring-2 focus:ring-slate-900/10 transition-all disabled:opacity-70 disabled:cursor-not-allowed" 
+                            placeholder="John Doe, Jane Smith" 
+                            value={formData.contactPerson} 
+                            onChange={e => setFormData({...formData, contactPerson: e.target.value})}
+                            disabled={isCustomerSelected}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-[10px] font-black uppercase text-slate-400">Email Address</Label>
+                          <Input 
+                            className="h-11 rounded-xl font-bold text-[12px] w-full focus:ring-2 focus:ring-slate-900/10 transition-all disabled:opacity-70 disabled:cursor-not-allowed" 
+                            placeholder="email@example.com" 
+                            value={formData.email} 
+                            onChange={e => setFormData({...formData, email: e.target.value})}
+                            disabled={isCustomerSelected}
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-[10px] font-black uppercase text-slate-400">Contact Number</Label>
+                          <Input 
+                            className="h-11 rounded-xl font-bold text-[12px] w-full focus:ring-2 focus:ring-slate-900/10 transition-all disabled:opacity-70 disabled:cursor-not-allowed" 
+                            placeholder="0917..., (02)..." 
+                            value={formData.contactNumber} 
+                            onChange={e => setFormData({...formData, contactNumber: e.target.value})}
+                            disabled={isCustomerSelected}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid md:grid-cols-2 gap-6">
                         <div className="space-y-1.5">
                           <Label className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-1.5">
                             Priority <span className="text-red-500 font-black">*</span>
