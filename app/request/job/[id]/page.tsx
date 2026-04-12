@@ -22,7 +22,23 @@ import { Badge } from "@/components/ui/badge";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Separator } from "@/components/ui/separator";
+// CUSTOM COMPONENTS
+import { PageHeader } from "@/components/page-header";
 import { CollaborationHub } from "@/components/collaboration-hub";
+
+function DetailItem({ icon: Icon, label, value }: { icon: any, label: string, value: string }) {
+  return (
+    <div className="flex items-center gap-3 p-3 rounded-2xl bg-zinc-50 border border-zinc-100 hover:border-zinc-200 transition-all group">
+      <div className="size-8 rounded-xl bg-white flex items-center justify-center text-zinc-400 group-hover:bg-zinc-900 group-hover:text-white transition-all shadow-sm">
+        <Icon size={14} />
+      </div>
+      <div>
+        <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest leading-none mb-1">{label}</p>
+        <p className="text-[12px] font-bold text-zinc-900 leading-none">{value}</p>
+      </div>
+    </div>
+  )
+}
 
 export default function JobRequestReviewPage() {
   const params = useParams() as { id: string };
@@ -139,28 +155,25 @@ export default function JobRequestReviewPage() {
       <AppSidebar userId={userContext.id} />
       <SidebarInset className="bg-[#F4F7F7]">
         
-        <header className="flex h-16 items-center justify-between border-b bg-white px-6 sticky top-0 z-50">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" className="text-zinc-400" onClick={() => router.back()}>
-              <ChevronLeft size={20} />
-            </Button>
-            <Separator orientation="vertical" className="h-4" />
-            <div className="truncate">
-              <h1 className="text-sm font-black text-zinc-900 uppercase tracking-tight">
-                {data?.projectName || "Job Request"}
-              </h1>
-              <p className="text-[9px] text-zinc-400 font-bold uppercase tracking-widest">
-                REF: {params.id.slice(-8).toUpperCase()}
-              </p>
+        <PageHeader 
+          title={data?.projectName || "JOB REQUEST"} 
+          version="V3.2" 
+          showBackButton={true}
+          actions={
+            <div className="flex items-center gap-3">
+              <div className="hidden sm:flex items-center gap-2 bg-zinc-50 border border-zinc-200 rounded-lg px-2 py-1">
+                <span className="text-[9px] font-black text-zinc-400 uppercase tracking-wider">Ref:</span>
+                <span className="text-[10px] font-black text-zinc-900 uppercase">#{params.id.slice(-6).toUpperCase()}</span>
+              </div>
+              <Badge className={cn(
+                "font-black text-[10px] uppercase px-4 py-1.5 rounded-xl border-none shadow-sm",
+                status === "COMPLETED" || status === "APPROVED" ? "bg-emerald-500 text-white" : "bg-zinc-900 text-white"
+              )}>
+                {status}
+              </Badge>
             </div>
-          </div>
-          <Badge className={cn(
-            "font-black text-[10px] uppercase px-4 py-1 rounded-full border-none shadow-sm",
-            status === "COMPLETED" || status === "APPROVED" ? "bg-[#00C853] text-white" : "bg-zinc-900 text-white"
-          )}>
-            {status}
-          </Badge>
-        </header>
+          }
+        />
 
         <main className="p-4 md:p-8 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8 pb-32">
           
@@ -221,19 +234,28 @@ export default function JobRequestReviewPage() {
                 )}
               </div>
 
-              <div className="p-8 bg-white border-t grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <h3 className="text-[10px] font-black uppercase text-zinc-400 mb-2 tracking-widest">Job Description</h3>
-                  <p className="text-sm font-medium text-zinc-600 leading-relaxed italic">
-                    "{data?.description || "No specific instructions provided."}"
-                  </p>
+              <div className="p-8 bg-white border-t grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <div className="size-2 bg-blue-500 rounded-full" />
+                    <h3 className="text-[10px] font-black uppercase text-zinc-900 tracking-widest">Scope of Work</h3>
+                  </div>
+                  <div className="p-5 rounded-[20px] bg-zinc-50 border border-zinc-100">
+                    <p className="text-[13px] font-medium text-zinc-600 leading-relaxed italic">
+                      "{data?.scopeOfWork || data?.description || "No specific instructions provided."}"
+                    </p>
+                  </div>
                 </div>
                 <div className="space-y-4">
-                    <h3 className="text-[10px] font-black uppercase text-zinc-400 mb-2 tracking-widest">Details</h3>
-                    <div className="grid grid-cols-1 gap-3">
+                    <div className="flex items-center gap-2">
+                      <div className="size-2 bg-zinc-900 rounded-full" />
+                      <h3 className="text-[10px] font-black uppercase text-zinc-900 tracking-widest">Project Details</h3>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <DetailItem icon={MapPin} label="Location" value={data?.location || "Not Specified"} />
                         <DetailItem icon={User} label="Client" value={data?.clientName || "General Client"} />
                         <DetailItem icon={Briefcase} label="Priority" value={data?.priority || "NORMAL"} />
+                        <DetailItem icon={Timer} label="Working Time" value={data?.workingTime || "Standard"} />
                     </div>
                 </div>
               </div>
@@ -310,20 +332,6 @@ export default function JobRequestReviewPage() {
       </SidebarInset>
     </SidebarProvider>
   );
-}
-
-function DetailItem({ icon: Icon, label, value }: { icon: any, label: string, value: string }) {
-    return (
-        <div className="flex items-start gap-3">
-            <div className="p-2 bg-zinc-50 rounded-lg">
-                <Icon size={14} className="text-zinc-400" />
-            </div>
-            <div>
-                <p className="text-[9px] font-black text-zinc-400 uppercase tracking-tighter">{label}</p>
-                <p className="text-xs font-bold text-zinc-900">{value}</p>
-            </div>
-        </div>
-    )
 }
 
 function TimelineStep({ title, date, status }: { title: string; date?: any; status: 'completed' | 'active' | 'pending' }) {

@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import {
   Bell, Volume2, VolumeX, Play, Check, ArrowLeft,
   Settings, Smartphone, Mail, Clock, Music, AlertCircle,
-  Save, RotateCcw, Sparkles, Shield, HardDrive
+  Save, RotateCcw, Sparkles, Shield, HardDrive, Trash2,
+  RefreshCw, Laptop, Tablet, Monitor,
+  BellOff
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -17,6 +19,8 @@ import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { db } from "@/lib/firebase";
+import { collection, getDocs, deleteDoc, doc, query, orderBy } from "firebase/firestore";
 import {
   getSoundConfig,
   setSoundConfig,
@@ -56,13 +60,20 @@ export default function NotificationSettingsPage() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [isIT, setIsIT] = useState(false);
   const [soundOptions, setSoundOptions] = useState(getSoundOptions());
+  const [devices, setDevices] = useState<any[]>([]);
+  const [loadingDevices, setLoadingDevices] = useState(false);
+  const [currentDeviceId, setCurrentDeviceId] = useState<string | null>(null);
 
   useEffect(() => {
     // Load user info
     const role = localStorage.getItem("userRole");
     const dept = localStorage.getItem("department");
+    const uid = localStorage.getItem("userId");
+    const dId = localStorage.getItem("deviceId");
+    
     setUserRole(role);
     setIsIT(dept === "IT" || role === "admin");
+    setCurrentDeviceId(dId);
 
     // Load saved preferences
     const saved = localStorage.getItem("notification-preferences");
@@ -75,7 +86,48 @@ export default function NotificationSettingsPage() {
 
     // Preload sounds
     preloadSounds();
+
+    // Fetch devices
+    if (uid) fetchDevices(uid);
   }, []);
+
+  const fetchDevices = async (uid: string) => {
+    setLoadingDevices(true);
+    try {
+      const devicesCol = collection(db, "users", uid, "devices");
+      const snap = await getDocs(query(devicesCol, orderBy("lastPushSync", "desc")));
+      const list = snap.docs.map(d => ({ 
+        id: d.id, 
+        ...d.data(),
+        lastSyncDate: d.data().lastPushSync?.toDate?.() || null
+      }));
+      setDevices(list);
+    } catch (err) {
+      console.error("Fetch devices error:", err);
+    } finally {
+      setLoadingDevices(false);
+    }
+  };
+
+  const handleDeleteDevice = async (deviceId: string) => {
+    const uid = localStorage.getItem("userId");
+    if (!uid) return;
+    
+    const isCurrent = deviceId === currentDeviceId;
+    const confirmMsg = isCurrent 
+      ? "This is your current device. Removing it will stop push notifications on this browser. Continue?"
+      : "Remove this device from your push notification list?";
+      
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      await deleteDoc(doc(db, "users", uid, "devices", deviceId));
+      setDevices(prev => prev.filter(d => d.id !== deviceId));
+      toast.success("Device removed successfully");
+    } catch (err) {
+      toast.error("Failed to remove device");
+    }
+  };
 
   const handleSoundTypeChange = (type: SoundType) => {
     const newConfig = { ...soundConfig, type };
@@ -343,6 +395,118 @@ export default function NotificationSettingsPage() {
           </CardContent>
         </Card>
 
+        {/* Registered Devices */}
+        <Card className="bg-white rounded-[24px] border border-zinc-200/60 shadow-sm overflow-hidden">
+          <CardHeader className="border-b border-zinc-100 p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-zinc-900 text-white rounded-[8px]">
+                  <Smartphone size={16} />
+                </div>
+                <span className="font-black text-[10px] uppercase tracking-widest text-zinc-500">
+                  Registered Devices
+                </span>
+              </div>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => {
+                  const uid = localStorage.getItem("userId");
+                  if (uid) fetchDevices(uid);
+                }}
+                disabled={loadingDevices}
+                className="size-8 rounded-lg text-zinc-400 hover:text-zinc-900"
+              >
+                <RefreshCw size={14} className={cn(loadingDevices && "animate-spin")} />
+              </Button>
+            </div>
+          </CardHeader>
+
+          <CardContent className="p-6">
+            {devices.length === 0 ? (
+              <div className="text-center py-8">
+                <div className="size-12 rounded-2xl bg-zinc-50 flex items-center justify-center mx-auto mb-3">
+                  <BellOff size={20} className="text-zinc-300" />
+                </div>
+                <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                  No devices synced
+                </p>
+                <p className="text-[10px] text-zinc-400 mt-1 max-w-[200px] mx-auto">
+                  Sync your browser on the dashboard to receive push notifications.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {devices.map((device) => {
+                  const isCurrent = device.id === currentDeviceId;
+                  const isMobile = device.userAgent?.toLowerCase().includes("mobile");
+                  const isMac = device.userAgent?.toLowerCase().includes("mac os");
+                  
+                  return (
+                    <div 
+                      key={device.id}
+                      className={cn(
+                        "flex items-center justify-between p-4 rounded-2xl border transition-all",
+                        isCurrent 
+                          ? "bg-indigo-50/50 border-indigo-100" 
+                          : "bg-zinc-50 border-transparent hover:border-zinc-200"
+                      )}
+                    >
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        <div className={cn(
+                          "size-10 rounded-xl flex items-center justify-center flex-shrink-0",
+                          isCurrent ? "bg-indigo-100 text-indigo-600" : "bg-zinc-200 text-zinc-500"
+                        )}>
+                          {isMobile ? <Smartphone size={18} /> : isMac ? <Laptop size={18} /> : <Monitor size={18} />}
+                        </div>
+                        <div className="overflow-hidden">
+                          <div className="flex items-center gap-2">
+                            <p className="font-bold text-sm text-zinc-900 truncate">
+                              {device.platform || "Unknown Device"}
+                            </p>
+                            {isCurrent && (
+                              <Badge className="bg-indigo-500 text-[8px] h-4 px-1.5 font-black uppercase">
+                                Current
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-zinc-500 truncate">
+                            Synced: {device.lastSyncDate ? device.lastSyncDate.toLocaleString() : "Never"}
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteDevice(device.id)}
+                        className="text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-xl"
+                      >
+                        <Trash2 size={16} />
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            
+            <div className="mt-6 p-4 bg-amber-50 rounded-2xl border border-amber-100">
+              <div className="flex gap-3">
+                <AlertCircle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-amber-700">
+                    Troubleshooting
+                  </p>
+                  <p className="text-[10px] text-amber-600 leading-relaxed">
+                    If you're receiving multiple notifications for the same event, try removing 
+                    old devices listed above. If notifications aren't arriving, re-sync from 
+                    the dashboard.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Do Not Disturb */}
         <Card className="bg-white rounded-[24px] border border-zinc-200/60 shadow-sm overflow-hidden">
           <CardHeader className="border-b border-zinc-100 p-6">
@@ -436,6 +600,27 @@ export default function NotificationSettingsPage() {
                 >
                   <Settings size={14} className="mr-2" />
                   Manage Sound Library
+                </Button>
+              </div>
+
+              <div className="p-4 bg-zinc-50 rounded-2xl">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-zinc-200 rounded-lg">
+                      <Bell size={16} className="text-zinc-700" />
+                    </div>
+                    <span className="font-bold text-sm text-zinc-900">Push Subscriptions</span>
+                  </div>
+                </div>
+                <p className="text-xs text-zinc-500 mb-4">
+                  Manage all active push notification subscriptions across the organization
+                </p>
+                <Button
+                  onClick={() => router.push("/admin/notifications/subscriptions")}
+                  className="w-full h-11 rounded-xl bg-zinc-900 text-white font-bold text-[10px] uppercase tracking-widest hover:bg-zinc-800"
+                >
+                  <Shield size={14} className="mr-2" />
+                  Manage All Subscriptions
                 </Button>
               </div>
             </CardContent>

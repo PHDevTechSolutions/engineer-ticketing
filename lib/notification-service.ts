@@ -21,20 +21,32 @@ export async function sendPushNotification(payload: NotificationPayload): Promis
   message: string;
 }> {
   try {
-    // Get all tokens
+    // Get all tokens and deduplicate by deviceId
     const db = getFirestore();
     const devicesQuery = query(collectionGroup(db, "devices"));
     const devicesSnap = await getDocs(devicesQuery);
     
-    const tokens: string[] = [];
+    // Use a map to store the latest token per deviceId to prevent multiple push notifications on same device
+    const deviceTokens = new Map<string, { token: string; lastSync: any }>();
+    
     devicesSnap.forEach((d) => {
       const deviceData = d.data();
+      const deviceId = deviceData.deviceId || d.id; // fallback to doc ID if deviceId missing
+      
       if (deviceData.fcmToken && deviceData.notificationsEnabled !== false) {
-        tokens.push(deviceData.fcmToken);
+        const existing = deviceTokens.get(deviceId);
+        const currentSync = deviceData.lastPushSync?.toDate?.() || new Date(0);
+        
+        if (!existing || currentSync > existing.lastSync) {
+          deviceTokens.set(deviceId, { 
+            token: deviceData.fcmToken, 
+            lastSync: currentSync 
+          });
+        }
       }
     });
 
-    const uniqueTokens = [...new Set(tokens)];
+    const uniqueTokens = Array.from(deviceTokens.values()).map(v => v.token);
 
     if (uniqueTokens.length === 0) {
       return { success: true, successCount: 0, failureCount: 0, message: "No tokens found" };
