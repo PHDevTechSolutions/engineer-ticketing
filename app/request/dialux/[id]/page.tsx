@@ -341,18 +341,52 @@ export default function DialuxRequestReviewPage() {
     <div className="h-screen w-full flex flex-col items-center justify-center gap-4 bg-[#F4F7F7]">
       <Loader2 className="animate-spin text-zinc-900" size={32} />
       <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest text-center">
-        Syncing Engiconnect...<br />Loading Simulation Details
+        Loading...
       </p>
     </div>
   );
 
   const hasImages = data?.attachments && data.attachments.length > 0;
 
+  // Helper to check if file is PDF
+  const isPDF = (url: string): boolean => {
+    return url.toLowerCase().endsWith('.pdf') || url.includes('.pdf?');
+  };
+
+  // Helper to check if PDF is stored as "raw" type (new uploads after fix)
+  const isRawPDF = (url: string): boolean => {
+    return url.includes('cloudinary.com') && url.includes('/raw/');
+  };
+
+  // Helper to check if PDF is stored as "image" type (old uploads before fix)
+  const isOldPDF = (url: string): boolean => {
+    return url.includes('cloudinary.com') && url.includes('/image/') && url.toLowerCase().endsWith('.pdf');
+  };
+
+  // Helper to get direct PDF URL (only works for new raw-type PDFs)
+  const getPDFUrl = (url: string): string => {
+    if (isRawPDF(url)) return url; // New PDF - direct access works
+    if (isOldPDF(url)) {
+      // Old PDF - try converting to raw URL (may not work, depends on Cloudinary settings)
+      return url.replace('/image/', '/raw/');
+    }
+    return url;
+  };
+
+  // Helper to get PDF viewer URL (uses Google Docs viewer for all Cloudinary PDFs)
+  // This works for both old and new PDFs
+  const getPDFViewerUrl = (url: string): string => {
+    if (url.includes('cloudinary.com')) {
+      // Use original URL for Google Docs viewer (works with both /image/ and /raw/)
+      return `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(url)}`;
+    }
+    return url;
+  };
+
   return (
     <SidebarProvider defaultOpen={false}>
       <AppSidebar userId={userContext.id} />
       <SidebarInset className="bg-[#F4F7F7]">
-
         <header className="flex h-16 items-center justify-between border-b bg-white px-4 md:px-6 sticky top-0 z-50">
           <div className="flex items-center gap-2 md:gap-4 min-w-0">
             <Button variant="ghost" size="icon" className="text-zinc-400 shrink-0" onClick={() => router.back()}>
@@ -415,21 +449,88 @@ export default function DialuxRequestReviewPage() {
                   </a>
                 )}
               </div>
-
               <div className="flex-1 bg-zinc-100 flex flex-col items-center justify-center relative p-4 min-h-[450px]">
                 {hasImages ? (
                   <>
                     <div className="flex-1 w-full flex items-center justify-center overflow-hidden">
-                      <TransformWrapper>
-                        <TransformComponent wrapperClass="!w-full !h-full flex items-center justify-center">
-                          <img 
-                            src={selectedImage || ""} 
-                            alt="Simulation Reference" 
-                            className="max-w-full max-h-[400px] object-contain rounded-lg shadow-sm"
-                          />
-                        </TransformComponent>
-                      </TransformWrapper>
+                      {selectedImage && isPDF(selectedImage) ? (
+                        // PDF Preview - Show preview options
+                        <div className="flex flex-col items-center justify-center gap-6">
+                          <div className="flex flex-col items-center gap-3">
+                            <FileText size={80} className="text-zinc-400" />
+                            <p className="text-[10px] font-bold text-zinc-500 uppercase">PDF Document</p>
+                            {isOldPDF(selectedImage) && (
+                              <p className="text-[9px] text-amber-600 bg-amber-50 px-2 py-1 rounded">
+                                Legacy PDF - Use Google Docs for preview/download
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex flex-col gap-3 w-full max-w-xs">
+                            <a
+                              href={getPDFViewerUrl(selectedImage)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[11px] font-black text-white uppercase flex items-center justify-center gap-2 hover:opacity-90 px-4 py-3 bg-blue-600 rounded-lg"
+                            >
+                              <ExternalLink size={14} /> Preview with Google Docs
+                            </a>
+                            {isRawPDF(selectedImage) ? (
+                              // New PDF - show download and open buttons
+                              <div className="flex gap-3">
+                                <a
+                                  href={getPDFUrl(selectedImage)}
+                                  download
+                                  className="flex-1 text-[10px] font-black text-blue-600 uppercase flex items-center justify-center gap-1 hover:underline px-3 py-2 bg-blue-50 rounded-lg"
+                                >
+                                  Download <ExternalLink size={12} />
+                                </a>
+                                <a
+                                  href={getPDFUrl(selectedImage)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="flex-1 text-[10px] font-black text-zinc-600 uppercase flex items-center justify-center gap-1 hover:underline px-3 py-2 bg-zinc-100 rounded-lg"
+                                >
+                                  Open <ExternalLink size={12} />
+                                </a>
+                              </div>
+                            ) : (
+                              // Old PDF - only Google Docs viewer works
+                              <a
+                                href={getPDFViewerUrl(selectedImage)}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[10px] font-black text-zinc-600 uppercase flex items-center justify-center gap-1 hover:underline px-3 py-2 bg-zinc-100 rounded-lg"
+                              >
+                                Download via Google Docs <ExternalLink size={12} />
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        // Image Preview
+                        <div className="flex flex-col items-center justify-center h-full">
+                          <TransformWrapper>
+                            <TransformComponent wrapperClass="!w-full flex items-center justify-center">
+                              <img
+                                src={selectedImage || ""}
+                                alt="Simulation Reference"
+                                className="max-w-full max-h-[380px] object-contain rounded-lg shadow-sm block mx-auto"
+                              />
+                            </TransformComponent>
+                          </TransformWrapper>
+                          <a
+                            href={selectedImage || ""}
+                            download
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-4 text-[10px] font-black text-blue-600 uppercase flex items-center gap-1 hover:underline px-4 py-2 bg-blue-50 rounded-lg"
+                          >
+                            Download Image <ExternalLink size={12} />
+                          </a>
+                        </div>
+                      )}
                     </div>
+                    {/* Attachment Thumbnails */}
                     {data.attachments.length > 1 && (
                       <div className="w-full flex gap-2 mt-4 overflow-x-auto py-2 px-1">
                         {data.attachments.map((img: string, idx: number) => (
@@ -437,11 +538,15 @@ export default function DialuxRequestReviewPage() {
                             key={idx}
                             onClick={() => setSelectedImage(img)}
                             className={cn(
-                              "size-14 rounded-md border-2 overflow-hidden flex-shrink-0 transition-all",
+                              "size-14 rounded-md border-2 overflow-hidden flex-shrink-0 transition-all flex items-center justify-center bg-white",
                               selectedImage === img ? "border-blue-500 scale-105 shadow-md" : "border-transparent opacity-50 hover:opacity-100"
                             )}
                           >
-                            <img src={img} className="w-full h-full object-cover" alt={`Thumb ${idx}`} />
+                            {isPDF(img) ? (
+                              <FileText size={24} className="text-zinc-400" />
+                            ) : (
+                              <img src={img} className="w-full h-full object-cover" alt={`Thumb ${idx}`} />
+                            )}
                           </button>
                         ))}
                       </div>
