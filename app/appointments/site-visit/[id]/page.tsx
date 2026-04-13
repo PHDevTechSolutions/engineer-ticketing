@@ -43,7 +43,7 @@ export default function AppointmentDetailsPage() {
     const [loading, setLoading] = React.useState(true)
     const [data, setData] = React.useState<any>(null)
     const [submitterName, setSubmitterName] = React.useState("")
-    const [userContext, setUserContext] = React.useState({ role: "", id: "", name: "", profilePicture: "" })
+    const [userContext, setUserContext] = React.useState({ role: "", id: "", name: "", profilePicture: "", dept: "", userRole: "" })
     const [actionLoading, setActionLoading] = React.useState(false)
     const [confNotes, setConfNotes] = React.useState("")
 
@@ -149,7 +149,9 @@ export default function AppointmentDetailsPage() {
                     role: user.Department?.toLowerCase() || "",
                     id: storedId,
                     name: user.Firstname + " " + user.Lastname,
-                    profilePicture: user.profilePicture || ""
+                    profilePicture: user.ProfilePicture || "",
+                    dept: user.Department?.toLowerCase() || "",
+                    userRole: (user.RoleCode || user.Role || "").toUpperCase()
                 })
 
                 const docRef = doc(db, "appointments", id)
@@ -230,6 +232,14 @@ export default function AppointmentDetailsPage() {
     const isSales = userContext.role === "sales"
     const isRequestor = userContext.id === data?.submittedBy
     const isStaff = isEngineering || userContext.role === "admin"
+    
+    // Only IT, Engineering Leader, and Engineering Manager can assign personnel
+    const canAssignPersonnel = userContext.dept === "it" || 
+        (userContext.dept === "engineering" && ["LEADER", "MANAGER"].includes(userContext.userRole))
+    
+    // DEBUG: Check user values
+    console.log("[DEBUG] userContext:", { dept: userContext.dept, userRole: userContext.userRole, canAssignPersonnel })
+
     const isPending = status === "PENDING"
     const isConfirmed = status === "CONFIRMED"
     const isCompleted = status === "COMPLETED"
@@ -456,7 +466,7 @@ export default function AppointmentDetailsPage() {
                         {/* --- LEFT COLUMN: ACTION CENTER --- */}
                         <div className="lg:col-span-4 space-y-1.5 order-2 lg:order-1">
                             <div className="relative">
-                                {isEngineering && isPending && (
+                                {canAssignPersonnel && isPending && (
                                     <div className="space-y-1.5">
                                         {/* PERSONNEL ASSIGNMENT SECTION (If UNASSIGNED) */}
                                         {(!data?.pic || data.pic === "UNASSIGNED") ? (
