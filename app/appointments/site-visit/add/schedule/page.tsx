@@ -1130,7 +1130,6 @@ export default function SchedulePage() {
                         className="w-full h-9 px-3 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-2 focus:ring-zinc-900 transition-all appearance-none shadow-inner pt-3.5 disabled:opacity-70 disabled:cursor-not-allowed"
                         value={formData.region}
                         onChange={(e) => setFormData({ ...formData, region: e.target.value, province: "", city: "", barangay: "" })}
-                        disabled={isCustomerSelected}
                       >
                         <option value=""></option>
                         {regions.map(r => <option key={r.code} value={r.code}>{r.name}</option>)}
@@ -1142,7 +1141,7 @@ export default function SchedulePage() {
                       <select 
                         className="w-full h-9 px-3 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-2 focus:ring-zinc-900 transition-all appearance-none disabled:opacity-50 shadow-inner pt-3.5 disabled:opacity-70 disabled:cursor-not-allowed"
                         value={formData.province}
-                        disabled={isCustomerSelected || (!formData.region || formData.region === "130000000")}
+                        disabled={!formData.region || formData.region === "130000000"}
                         onChange={(e) => setFormData({ ...formData, province: e.target.value, city: "", barangay: "" })}
                       >
                         <option value="">{formData.region === "130000000" ? "NCR" : ""}</option>
@@ -1155,7 +1154,7 @@ export default function SchedulePage() {
                       <select 
                         className="w-full h-9 px-3 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-2 focus:ring-zinc-900 transition-all appearance-none disabled:opacity-50 shadow-inner pt-3.5 disabled:opacity-70 disabled:cursor-not-allowed"
                         value={formData.city}
-                        disabled={isCustomerSelected || (!formData.province && formData.region !== "130000000")}
+                        disabled={!formData.province && formData.region !== "130000000"}
                         onChange={(e) => setFormData({ ...formData, city: e.target.value, barangay: "" })}
                       >
                         <option value=""></option>
@@ -1168,7 +1167,7 @@ export default function SchedulePage() {
                       <select 
                         className="w-full h-9 px-3 rounded-xl bg-zinc-50/50 border border-zinc-100 text-[11px] font-black uppercase outline-none focus:ring-2 focus:ring-zinc-900 transition-all appearance-none disabled:opacity-50 shadow-inner pt-3.5 disabled:opacity-70 disabled:cursor-not-allowed"
                         value={formData.barangay}
-                        disabled={isCustomerSelected || !formData.city}
+                        disabled={!formData.city}
                         onChange={(e) => setFormData({ ...formData, barangay: e.target.value })}
                       >
                         <option value=""></option>
@@ -1186,7 +1185,6 @@ export default function SchedulePage() {
                         placeholder=" " 
                         value={formData.street} 
                         onChange={e => setFormData({...formData, street: e.target.value})}
-                        disabled={isCustomerSelected}
                       />
                       <label className="absolute left-3 top-1 text-[7px] font-black uppercase text-zinc-400 tracking-widest transition-all group-focus-within:text-zinc-900">Street / House No. / Unit</label>
                     </div>
@@ -1196,7 +1194,6 @@ export default function SchedulePage() {
                         placeholder=" " 
                         value={formData.landmark} 
                         onChange={e => setFormData({...formData, landmark: e.target.value})}
-                        disabled={isCustomerSelected}
                       />
                       <label className="absolute left-3 top-1 text-[7px] font-black uppercase text-zinc-400 tracking-widest transition-all group-focus-within:text-zinc-900">Landmark / Building Name</label>
                     </div>
