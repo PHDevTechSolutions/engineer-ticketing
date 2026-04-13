@@ -573,12 +573,12 @@ export default function SiteVisitListPage() {
     
     /**
      * VISIBILITY PROTOCOL:
-     * - IT, SUPER ADMIN, MANAGER, LEADER: Global visibility
+     * - IT, ENGINEERING, SUPER ADMIN, MANAGER, LEADER: Global visibility
      * - TSM (SALES): Can see their own AND all TSA visits
      * - TSA (SALES): Restricted to personal records (submittedBy matches userId)
      * - OTHERS (MEMBER): Restricted to personal records (submittedBy matches userId)
      */
-    const hasGlobalAccess = userDept === "IT" || ["SUPER ADMIN", "LEADER"].includes(userRole);
+    const hasGlobalAccess = userDept === "IT" || userDept === "ENGINEERING" || ["SUPER ADMIN", "LEADER"].includes(userRole);
     const isTSM = userRole === "TSM";
     const isManager = userRole === "MANAGER";
 
