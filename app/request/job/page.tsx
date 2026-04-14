@@ -368,9 +368,10 @@ function RoleInsights({ user, requests, setShowGuide }: any) {
  */
 export default function JobRequestManagementPage() {
     const router = useRouter()
-    const [user, setUser] = React.useState<{ id: string | null; dept: string; role: string; refId: string }>({ id: null, dept: "", role: "", refId: "" })
+    const [user, setUser] = React.useState<{ id: string | null; dept: string; role: string; refId: string; name: string }>({ id: null, dept: "", role: "", refId: "", name: "" })
     const [isUserLoading, setIsUserLoading] = React.useState(true)
     const [requests, setRequests] = React.useState<any[]>([])
+    const [subordinateIds, setSubordinateIds] = React.useState<string[]>([])
     const [isDataLoading, setIsDataLoading] = React.useState(true)
     const [selectedStatus, setSelectedStatus] = React.useState<string | null>(null)
     const [searchQuery, setSearchQuery] = React.useState("")
@@ -392,14 +393,58 @@ export default function JobRequestManagementPage() {
 
                 // Get role from firestore for accuracy
                 const userDoc = await getDoc(doc(db, "users", storedId))
-                const firestoreRole = userDoc.exists() ? (userDoc.data().Role || userDoc.data().role || "MEMBER") : "MEMBER"
+                const firestoreRole = (userDoc.exists() ? (userDoc.data().Role || userDoc.data().role || "MEMBER") : "MEMBER").toUpperCase()
+
+                const name = `${data.Firstname || ""} ${data.Lastname || ""}`.trim()
+                const referenceId = (data.ReferenceID || "").toUpperCase()
+
+                // Robust Role Detection
+                const isTSM = firestoreRole === "TSM" || firestoreRole === "TERRITORY SALES MANAGER" || (data.Position || "").toUpperCase().includes("TSM") || (data.Position || "").toUpperCase().includes("TERRITORY SALES MANAGER")
+                const isManager = firestoreRole === "MANAGER" || firestoreRole === "SALES HEAD" || (data.Position || "").toUpperCase().includes("MANAGER") || (data.Position || "").toUpperCase().includes("SALES HEAD")
+                const finalRole = isManager ? "MANAGER" : (isTSM ? "TSM" : firestoreRole)
 
                 setUser({
                     id: storedId,
                     dept: data.Department?.toUpperCase() || "SALES",
-                    role: firestoreRole.toUpperCase(),
-                    refId: data.ReferenceID || ""
+                    role: finalRole,
+                    refId: referenceId,
+                    name
                 })
+
+                // Fetch subordinates if role is TSM or MANAGER
+                if (isTSM || isManager) {
+                    const usersRes = await fetch('/api/user')
+                    const allUsers: any[] = await usersRes.json()
+                    let subs: any[] = []
+
+                    const clean = (n: string) => (n || "").replace(/,/g, "").replace(/\s+/g, " ").trim().toUpperCase()
+                    const myCleanName = clean(name)
+
+                    if (isTSM) {
+                        // TSM sees all TSAs where TSM field matches their name OR ReferenceID
+                        subs = allUsers.filter(u => {
+                            const uTSM = clean(u.TSM)
+                            const uTSMName = clean(u.TSMName)
+                            const uTSM_low = clean(u.tsm)
+                            const uTSMName_low = clean(u.tsmName)
+                            return uTSM === myCleanName || uTSM === referenceId ||
+                                   uTSMName === myCleanName || uTSM_low === myCleanName ||
+                                   uTSM_low === referenceId || uTSMName_low === myCleanName
+                        })
+                    } else if (isManager) {
+                        // Manager sees all TSMs and TSAs where Manager field matches their name OR ReferenceID
+                        subs = allUsers.filter(u => {
+                            const uMan = clean(u.Manager)
+                            const uManName = clean(u.ManagerName)
+                            const uMan_low = clean(u.manager)
+                            const uManName_low = clean(u.managerName)
+                            return uMan === myCleanName || uMan === referenceId ||
+                                   uManName === myCleanName || uMan_low === myCleanName ||
+                                   uMan_low === referenceId || uManName_low === myCleanName
+                        })
+                    }
+                    setSubordinateIds(subs.map(u => u._id))
+                }
             } catch (error) {
                 console.error("Profile Retrieval Error:", error)
             } finally {
@@ -424,8 +469,37 @@ export default function JobRequestManagementPage() {
                     fullId: doc.id,
                     ...data,
                     status: data.status?.toUpperCase() || "PENDING",
+                    submittedBy: data.submittedBy,
                 }
             })
+
+            /**
+             * VISIBILITY PROTOCOL:
+             * - IT, ENGINEERING, SUPER ADMIN, MANAGER, LEADER: Global visibility
+             * - TSM (SALES): Can see their own AND all TSA requests
+             * - TSA (SALES): Restricted to personal records (submittedBy matches userId)
+             * - OTHERS (MEMBER): Restricted to personal records (submittedBy matches userId)
+             */
+            const userDept = user.dept.toUpperCase();
+            const userRole = user.role.toUpperCase();
+            const hasGlobalAccess = userDept === "IT" || userDept === "ENGINEERING" || ["SUPER ADMIN", "LEADER"].includes(userRole);
+            const isTSM = userRole === "TSM";
+            const isManager = userRole === "MANAGER";
+
+            // Client-side filtering for non-admin users
+            if (!hasGlobalAccess) {
+                if (isTSM || isManager) {
+                    // TSM and MANAGER can see their own AND all their subordinate requests
+                    liveData = liveData.filter(r =>
+                        r.submittedBy === user.id ||
+                        subordinateIds.includes(r.submittedBy)
+                    );
+                } else {
+                    // TSA and other Members ONLY see their own requests
+                    liveData = liveData.filter(r => r.submittedBy === user.id);
+                }
+            }
+
             setRequests(liveData)
             setIsDataLoading(false)
         }, (error) => {
@@ -434,7 +508,7 @@ export default function JobRequestManagementPage() {
         })
 
         return () => unsubscribe()
-    }, [user, isUserLoading])
+    }, [user, isUserLoading, subordinateIds])
 
     const filteredRequests = React.useMemo(() => {
         return requests.filter(r => {

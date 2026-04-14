@@ -874,15 +874,42 @@ export default function EngiconnectDashboard() {
 
         const unsubDialux = onSnapshot(collection(db, "dialux_requests"), snap => {
             let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+            // Normalize submittedBy to match Dialux page logic
+            docs = docs.map((d: any) => ({
+                ...d,
+                submittedBy: d.submittedBy || d.createdBy || d.userId
+            }))
             if (!hasGlobalAccess) {
                 docs = docs.filter((d: any) => d.submittedBy === userId || subordinateIds.includes(d.submittedBy))
             }
-            const pending = docs.filter((d: any) => d.status === "PENDING").length
-            const completed = docs.filter((d: any) => d.status === "COMPLETED").length
+            // SMART NOTIFICATIONS: Only count if request needs THIS department's attention
+            const isEngineering = userDept === "ENGINEERING" || userDept === "IT"
+            const isSales = userDept === "SALES"
+            const isManager = ["SUPER ADMIN", "MANAGER", "LEADER"].includes(userRole)
+            
+            const pending = docs.filter((d: any) => {
+                const status = (d.status || "").toUpperCase()
+                const isDone = ["COMPLETED", "CANCELLED", "DONE", "CLOSED"].includes(status)
+                if (isDone) return false
+                
+                // Engineering needs to act on these statuses
+                const needsEng = status.includes("REVIEW") || status.includes("PROGRESS") || 
+                                status.includes("DESIGN") || status.includes("SIMULATION")
+                // Sales needs to act on these statuses
+                const needsSales = status === "PENDING" || status.includes("SUBMITTED") || 
+                                  status.includes("AWAITING") || status.includes("PAYMENT")
+                
+                if (isManager) return true
+                if (isEngineering && needsEng) return true
+                if (isSales && needsSales) return true
+                return !isEngineering && !isSales
+            }).length
+            
+            const completed = docs.filter((d: any) => (d.status || "").toUpperCase() === "COMPLETED").length
             const unread = calculateUnread(docs, userId)
-            setNotifications(prev => ({ 
-                ...prev, 
-                dialuxRequest: pending, 
+            setNotifications(prev => ({
+                ...prev,
+                dialuxRequest: pending,
                 dialuxCompleted: completed,
                 unreadByService: { ...prev.unreadByService, dialux: unread }
             }))
