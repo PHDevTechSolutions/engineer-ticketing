@@ -145,13 +145,38 @@ export default function AppointmentDetailsPage() {
             try {
                 const res = await fetch(`/api/user?id=${encodeURIComponent(storedId)}`)
                 const user = await res.json()
+                
+                // Fetch role from Firebase where the correct MANAGER role is stored
+                const { getDoc, doc } = await import("firebase/firestore")
+                const { db } = await import("@/lib/firebase")
+                const userDocRef = doc(db, "users", storedId)
+                const userDocSnap = await getDoc(userDocRef)
+                const firestoreRole = userDocSnap.exists() ? (userDocSnap.data().Role || userDocSnap.data().role || "").toUpperCase() : ""
+                
+                // DEBUG: Log all user fields
+                console.log("[DEBUG] MongoDB user data:", { Role: user.Role, RoleCode: user.RoleCode, Position: user.Position })
+                console.log("[DEBUG] Firebase user role:", firestoreRole)
+                
+                const position = (user.Position || "").toUpperCase()
+                const roleCode = (user.RoleCode || "").toUpperCase()
+                const mongoRole = (user.Role || "").toUpperCase()
+                
+                // Use Firebase role if available (it's the correct one), otherwise fall back to MongoDB logic
+                const combinedRole = firestoreRole.includes("MANAGER") || firestoreRole.includes("LEADER")
+                    ? firestoreRole
+                    : position.includes("MANAGER") || position.includes("LEADER") || 
+                      roleCode.includes("MANAGER") || roleCode.includes("LEADER") ||
+                      mongoRole.includes("MANAGER") || mongoRole.includes("LEADER")
+                      ? (position.includes("ENGINEERING") ? "ENGINEERING MANAGER" : "MANAGER")
+                      : roleCode || mongoRole || "STAFF"
+                
                 setUserContext({
                     role: user.Department?.toLowerCase() || "",
                     id: storedId,
                     name: user.Firstname + " " + user.Lastname,
                     profilePicture: user.ProfilePicture || "",
                     dept: user.Department?.toLowerCase() || "",
-                    userRole: (user.RoleCode || user.Role || "").toUpperCase()
+                    userRole: combinedRole
                 })
 
                 const docRef = doc(db, "appointments", id)
@@ -233,12 +258,27 @@ export default function AppointmentDetailsPage() {
     const isRequestor = userContext.id === data?.submittedBy
     const isStaff = isEngineering || userContext.role === "admin"
     
-    // Only IT, Engineering Leader, and Engineering Manager can assign personnel
-    const canAssignPersonnel = userContext.dept === "it" || 
-        (userContext.dept === "engineering" && ["LEADER", "MANAGER"].includes(userContext.userRole))
+    // IT, Engineering Leader, Engineering Manager, and Super Admin can assign personnel
+    const userDeptUpper = userContext.dept.toUpperCase().trim()
+    const userRoleUpper = userContext.userRole.trim()
+    const isEngDept = userDeptUpper === "ENGINEERING"
+    const isManagerRole = ["LEADER", "MANAGER", "SUPER ADMIN", "ENGINEERING MANAGER", "ENGINEERING LEADER"].includes(userRoleUpper)
+    
+    const canAssignPersonnel = 
+        userDeptUpper === "IT" || 
+        (isEngDept && isManagerRole) ||
+        ["ENGINEERING MANAGER", "ENGINEERING LEADER"].includes(userRoleUpper)
     
     // DEBUG: Check user values
-    console.log("[DEBUG] userContext:", { dept: userContext.dept, userRole: userContext.userRole, canAssignPersonnel })
+    console.log("[DEBUG] userContext:", { 
+        dept: userContext.dept, 
+        deptUpper: userDeptUpper,
+        userRole: userContext.userRole, 
+        roleUpper: userRoleUpper,
+        isEngDept,
+        isManagerRole,
+        canAssignPersonnel 
+    })
 
     const isPending = status === "PENDING"
     const isConfirmed = status === "CONFIRMED"

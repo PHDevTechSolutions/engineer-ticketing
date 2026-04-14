@@ -811,7 +811,16 @@ export default function EngiconnectDashboard() {
                 }
             }
 
-            const pending = docs.filter((d: any) => d.status === "PENDING").length
+            const isEngSV = userDept === "ENGINEERING" || userDept === "IT"
+            const isSalesSV = userDept === "SALES"
+            const isMgrSV = ["SUPER ADMIN", "MANAGER", "LEADER"].includes(userRole)
+            const pending = docs.filter((d: any) => {
+                const s = (d.status || "").toUpperCase()
+                if (["COMPLETED", "CANCELLED", "DONE"].includes(s)) return false
+                const needEng = s.includes("CONFIRMED") || s.includes("SCHEDULED") || s.includes("APPROVED")
+                const needSales = s === "PENDING" || s.includes("SUBMITTED")
+                return isMgrSV || (isEngSV && needEng) || (isSalesSV && needSales)
+            }).length
             const unread = calculateUnread(docs, userId)
             setNotifications(prev => ({ 
                 ...prev, 
@@ -833,7 +842,16 @@ export default function EngiconnectDashboard() {
                 docs = docs.filter((d: any) => d.submittedBy === userId || subordinateIds.includes(d.submittedBy))
             }
 
-            const pending = docs.filter((d: any) => d.department === "ENGINEERING" && d.status === "PEND_REVIEW").length
+            const isEngSD = userDept === "ENGINEERING" || userDept === "IT"
+            const isSalesSD = userDept === "SALES"
+            const isMgrSD = ["SUPER ADMIN", "MANAGER", "LEADER"].includes(userRole)
+            const pending = docs.filter((d: any) => {
+                const s = (d.status || "").toUpperCase()
+                if (["COMPLETED", "CANCELLED", "DONE", "RELEASED"].includes(s)) return false
+                const needEng = s.includes("REVIEW") || s.includes("PROGRESS") || s.includes("DESIGN")
+                const needSales = s.includes("PENDING") || s.includes("AWAITING") || s.includes("CLIENT")
+                return isMgrSD || (isEngSD && needEng) || (isSalesSD && needSales)
+            }).length
             const unread = calculateUnread(docs, userId)
             setNotifications(prev => ({ 
                 ...prev, 
@@ -849,7 +867,16 @@ export default function EngiconnectDashboard() {
                 docs = docs.filter((d: any) => (d.submittedBy || d.createdBy) === userId || subordinateIds.includes(d.submittedBy || d.createdBy))
             }
 
-            const pending = docs.filter((d: any) => d.status === "PENDING").length
+            const isEngJR = userDept === "ENGINEERING" || userDept === "IT"
+            const isSalesJR = userDept === "SALES"
+            const isMgrJR = ["SUPER ADMIN", "MANAGER", "LEADER"].includes(userRole)
+            const pending = docs.filter((d: any) => {
+                const s = (d.status || "").toUpperCase()
+                if (["COMPLETED", "CANCELLED", "DONE"].includes(s)) return false
+                const needEng = s.includes("ASSIGNED") || s.includes("PROGRESS") || s.includes("APPROVED")
+                const needSales = s === "PENDING" || s.includes("SUBMITTED") || s.includes("AWAITING")
+                return isMgrJR || (isEngJR && needEng) || (isSalesJR && needSales)
+            }).length
             const unread = calculateUnread(docs, userId)
             setNotifications(prev => ({ 
                 ...prev, 
@@ -869,7 +896,17 @@ export default function EngiconnectDashboard() {
             if (!hasGlobalAccess) {
                 docs = docs.filter((d: any) => d.submittedBy === userId || subordinateIds.includes(d.submittedBy))
             }
-            setNotifications(prev => ({ ...prev, otherRequest: docs.filter((d: any) => d.status === "PENDING").length }))
+            const isEngOR = userDept === "ENGINEERING" || userDept === "IT"
+            const isProcOR = userDept === "PROCUREMENT"
+            const isMgrOR = ["SUPER ADMIN", "MANAGER", "LEADER"].includes(userRole)
+            const pending = docs.filter((d: any) => {
+                const s = (d.status || "").toUpperCase()
+                if (["COMPLETED", "CANCELLED", "DONE", "RELEASED"].includes(s)) return false
+                const needEng = s.includes("TESTING") || s.includes("REVIEW") || s.includes("TECHNICAL")
+                const needProc = s.includes("PROCUREMENT") || s.includes("PURCHASE") || s.includes("ORDER")
+                return isMgrOR || (isEngOR && needEng) || (isProcOR && needProc)
+            }).length
+            setNotifications(prev => ({ ...prev, otherRequest: pending }))
         })
 
         const unsubDialux = onSnapshot(collection(db, "dialux_requests"), snap => {
